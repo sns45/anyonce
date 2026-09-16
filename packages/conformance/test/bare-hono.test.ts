@@ -15,7 +15,7 @@ describe('bare hono fixture', () => {
       .filter((r) => r.status === 'pass')
       .map((r) => r.id)
       .sort();
-    expect(passed).toEqual(BARE_PASS_IDS);
+    expect(passed).toEqual([...BARE_PASS_IDS].sort());
     const failed = summary.results
       .filter((r) => r.status === 'fail')
       .map((r) => r.id)
@@ -28,12 +28,15 @@ describe('bare hono fixture', () => {
   test('REQ-CONF-2: every failure on the bare fixture is a status or counter mismatch, never a runner error', async () => {
     const app = createFixtureApp();
     const summary = await runVectors(app.fetch, loadVectors(), { tiers: ['core'] });
+    let total = 0;
     for (const result of summary.results) {
       for (const step of result.steps) {
         for (const failure of step.failures) {
+          total += 1;
           expect(failure).toMatch(/^(status|handlerInvocations|header [A-Za-z-]+|body):/);
         }
       }
     }
+    expect(total).toBeGreaterThan(0);
   }, 30_000);
 });
