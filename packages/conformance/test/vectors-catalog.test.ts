@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CORE_IDS } from './catalog';
+import { CORE_IDS, PROFILE_IDS } from './catalog';
 
 const vectorsDir = join(import.meta.dir, '../../../conformance/vectors');
 
@@ -31,5 +31,13 @@ describe('vector catalog', () => {
       .filter((v) => (v.requires ?? []).length > 0)
       .map((v) => v.id);
     expect(requiring).toEqual(['core/expiry-executes-again']);
+  });
+
+  test('REQ-CONF-4: profile tier contains the anyonce extension vectors', () => {
+    expect(loadTier('profile').map((v) => v.id)).toEqual(PROFILE_IDS);
+  });
+
+  test('REQ-CONF-4: profile vectors never require a capability', () => {
+    expect(loadTier('profile').filter((v) => (v.requires ?? []).length > 0)).toEqual([]);
   });
 });

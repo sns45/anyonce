@@ -1,0 +1,33 @@
+{
+  "id": "profile/replayed-header",
+  "tier": "profile",
+  "title": "A replayed response carries Idempotency-Replayed: true and the original does not",
+  "description": "anyonce profile: replay is marked with the Idempotency-Replayed response header so clients can tell a replay from a fresh execution.",
+  "fixture": "echo",
+  "steps": [
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-replayed-1", "Content-Type": "text/plain" },
+        "body": "r"
+      },
+      "expect": { "status": 201, "headers": { "Idempotency-Replayed": { "absent": true } } }
+    },
+    {
+      "id": "retry",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-replayed-1", "Content-Type": "text/plain" },
+        "body": "r"
+      },
+      "expect": {
+        "status": 201,
+        "headers": { "Idempotency-Replayed": "true" },
+        "bodyEquals": { "sameAs": "first" }
+      }
+    }
+  ]
+}

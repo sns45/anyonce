@@ -1,0 +1,34 @@
+{
+  "id": "profile/omitted-body-replay",
+  "tier": "profile",
+  "title": "A result above the stored size cap replays with status and headers but an empty body",
+  "description": "anyonce profile (D12): the original streams through untouched; the replay returns the original status, an empty body, Idempotency-Replayed: true and Idempotency-Replay: omitted. The cap is 1 MiB, so the fixture returns one byte more.",
+  "fixture": "large",
+  "steps": [
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/large?bytes=1048577",
+        "headers": { "Idempotency-Key": "k-omitted-1", "Content-Type": "text/plain" },
+        "body": "l"
+      },
+      "expect": { "status": 200, "bodyBytes": 1048577, "handlerInvocations": 1 }
+    },
+    {
+      "id": "retry",
+      "request": {
+        "method": "POST",
+        "path": "/large?bytes=1048577",
+        "headers": { "Idempotency-Key": "k-omitted-1", "Content-Type": "text/plain" },
+        "body": "l"
+      },
+      "expect": {
+        "status": 200,
+        "bodyBytes": 0,
+        "headers": { "Idempotency-Replayed": "true", "Idempotency-Replay": "omitted" },
+        "handlerInvocations": 1
+      }
+    }
+  ]
+}

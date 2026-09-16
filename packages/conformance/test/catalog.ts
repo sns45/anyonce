@@ -12,3 +12,13 @@ export const CORE_IDS = [
   'core/sf-string-quoted-key',
   'core/two-keys-execute-twice',
 ];
+
+export const PROFILE_IDS = [
+  'profile/4xx-replayed',
+  'profile/5xx-not-stored',
+  'profile/key-too-long',
+  'profile/omitted-body-replay',
+  'profile/problem-code-member',
+  'profile/replayed-header',
+  'profile/retry-after-on-409',
+];
