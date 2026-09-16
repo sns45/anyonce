@@ -27,7 +27,12 @@ function checkHeader(
   if ('absent' in expectation) {
     return actual === null ? undefined : `header ${name}: expected absent, got "${actual}"`;
   }
-  const re = new RegExp(expectation.regex);
+  let re: RegExp;
+  try {
+    re = new RegExp(expectation.regex);
+  } catch {
+    return `header ${name}: invalid regex /${expectation.regex}/`;
+  }
   if (actual === null) return `header ${name}: expected /${expectation.regex}/, got absent`;
   if (!re.test(actual)) return `header ${name}: expected /${expectation.regex}/, got "${actual}"`;
   return undefined;

@@ -163,4 +163,14 @@ describe('evaluateExpect', () => {
     );
     expect(out).toHaveLength(3);
   });
+
+  test('REQ-CONF-1: a malformed header regex yields a failure string instead of throwing', () => {
+    expect(
+      evaluateExpect(
+        { status: 200, headers: { 'X-A': { regex: '(' } } },
+        observed(200, { 'X-A': 'v' }),
+        ctx(),
+      ),
+    ).toEqual(['header X-A: invalid regex /(/']);
+  });
 });
