@@ -1,0 +1,30 @@
+{
+  "id": "core/sf-string-quoted-key",
+  "tier": "core",
+  "title": "A quoted Structured Field string key is accepted and deduplicated",
+  "draftRef": "section-2.1",
+  "description": "Idempotency-Key is an Item Structured Header whose value MUST be a String, so the quoted form must be accepted and a retry with the same quoted key must replay.",
+  "fixture": "echo",
+  "steps": [
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "\"quoted-key-1\"", "Content-Type": "text/plain" },
+        "body": "quoted"
+      },
+      "expect": { "status": 201, "bodyEquals": "quoted", "handlerInvocations": 1 }
+    },
+    {
+      "id": "retry",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "\"quoted-key-1\"", "Content-Type": "text/plain" },
+        "body": "quoted"
+      },
+      "expect": { "status": 201, "bodyEquals": { "sameAs": "first" }, "handlerInvocations": 1 }
+    }
+  ]
+}

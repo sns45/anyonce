@@ -1,0 +1,40 @@
+{
+  "id": "core/mismatch-does-not-poison",
+  "tier": "core",
+  "title": "A rejected mismatch leaves the original record intact",
+  "draftRef": "section-2.7",
+  "description": "Clients MUST correct the request before retrying. After a 422, retrying with the original payload still replays the original result and does not execute again.",
+  "fixture": "echo",
+  "steps": [
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-poison-1", "Content-Type": "text/plain" },
+        "body": "payload-a"
+      },
+      "expect": { "status": 201, "bodyEquals": "payload-a", "handlerInvocations": 1 }
+    },
+    {
+      "id": "changed",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-poison-1", "Content-Type": "text/plain" },
+        "body": "payload-b"
+      },
+      "expect": { "status": 422, "handlerInvocations": 1 }
+    },
+    {
+      "id": "corrected",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-poison-1", "Content-Type": "text/plain" },
+        "body": "payload-a"
+      },
+      "expect": { "status": 201, "bodyEquals": { "sameAs": "first" }, "handlerInvocations": 1 }
+    }
+  ]
+}

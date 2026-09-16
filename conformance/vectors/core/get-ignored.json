@@ -1,0 +1,42 @@
+{
+  "id": "core/get-ignored",
+  "tier": "core",
+  "title": "An Idempotency-Key on a GET request is ignored",
+  "draftRef": "section-1",
+  "description": "The header makes non-idempotent methods such as POST or PATCH fault-tolerant; GET is already idempotent. Two GETs with the same key must both execute and the second must not replay the first body.",
+  "fixture": "counter",
+  "steps": [
+    {
+      "id": "get-before",
+      "request": {
+        "method": "GET",
+        "path": "/counter",
+        "headers": { "Idempotency-Key": "k-get-1" }
+      },
+      "expect": { "status": 200, "bodyJson": { "count": 0 } }
+    },
+    {
+      "id": "post",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-get-2", "Content-Type": "text/plain" },
+        "body": "x"
+      },
+      "expect": { "status": 201, "handlerInvocations": 1 }
+    },
+    {
+      "id": "get-after",
+      "request": {
+        "method": "GET",
+        "path": "/counter",
+        "headers": { "Idempotency-Key": "k-get-1" }
+      },
+      "expect": {
+        "status": 200,
+        "bodyJson": { "count": 1 },
+        "headers": { "Idempotency-Replayed": { "absent": true } }
+      }
+    }
+  ]
+}
