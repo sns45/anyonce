@@ -26,7 +26,7 @@ Observations that feed S3:
 
 ## Gap entries
 
-To be filled during P0 and P5. Format for each entry:
+Format for each entry:
 
 ```
 ### G<n>: <title>
@@ -36,3 +36,17 @@ anyonce choice: <behavior>, vector(s): <ids>
 Proposed draft text: <text>
 Status: open | issue filed <url>
 ```
+
+### G1: error response media type
+Draft section: section-2.7
+What the draft says: "SHOULD reply with an HTTP 400 status code with body containing a link pointing to relevant documentation"; RFC 7807 shown as an example, a Link header shown as an alternative. No media type is required.
+anyonce choice: all errors are RFC 9457 problem details with application/problem+json and a stable code member (D10, D11); vectors core/key-missing-required, core/mismatch-422, core/concurrent-409, profile/problem-code-member. See Q14 on whether the core tier should assert it.
+Proposed draft text: "Error responses for the 400, 409 and 422 cases SHOULD use the application/problem+json media type [RFC9457]. A Link header with rel="describedby" MAY be sent in addition."
+Status: open
+
+### G2: keys on safe methods
+Draft section: section-1
+What the draft says: the header makes non-idempotent methods such as POST or PATCH fault-tolerant; silent on a key sent with GET.
+anyonce choice: a key on GET is ignored, the request executes and is never stored or replayed (REQ-HTTP-1); vector core/get-ignored.
+Proposed draft text: "A resource SHOULD ignore the Idempotency-Key header on requests whose method is idempotent by definition (Section 9.2.2 of [RFC9110])."
+Status: open

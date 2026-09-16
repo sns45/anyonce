@@ -79,3 +79,9 @@ Recommended resolution: P4 starts after P2 merges, in parallel with P3 and P5; i
 With `go 1.25.3` pinned in `go.mod`, a Go 1.24 CI runner cannot build the module without toolchain auto-download, so a two-minor matrix is not meaningful until Go 1.26 ships.
 
 Recommended resolution: CI uses `go-version-file: go/go.mod` (one toolchain, the pinned one) in P0. When Go 1.26 is released, `go.mod` moves to `go 1.26` and the matrix gains `1.25.x` as the second entry. Recorded here so REQ-REL-4 is not marked complete on the Go axis until then.
+
+## Q14: core vectors assert application/problem+json, which the draft does not mandate
+
+`core/key-missing-required`, `core/mismatch-422` and `core/concurrent-409` require `Content-Type: application/problem+json`, and `core/get-ignored` asserts the absence of `Idempotency-Replayed`. Draft section 2.7 shows RFC 7807 bodies as one example and a `Link` header as an alternative for all three error cases, so a draft-conformant third party that answers with `Link` and a text body fails three of eleven core vectors, which contradicts D17. REQ-CONF-3 literally says "400 with application/problem+json", so the vectors follow it for now.
+
+Recommended resolution: before the P5 grading run, drop the `Content-Type` assertions from those three core vectors and the `Idempotency-Replayed` absence check from `core/get-ignored` (status plus `handlerInvocations` already prove the behavior; `profile/problem-code-member` covers the anyonce body shape), and keep the media type as a `profile` expectation. Recorded as draft gaps G1 and G2 so S3 can propose that the draft name the media type.
