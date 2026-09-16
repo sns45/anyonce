@@ -102,9 +102,15 @@ export async function runVector(
         continue;
       }
       if (partners.length > 0) {
-        const group = partners
-          .map((id) => pending.get(id))
-          .filter((e): e is { step: Step; promise: Promise<ObservedResponse> } => e !== undefined);
+        const group = partners.map((id) => {
+          const entry = pending.get(id);
+          if (entry === undefined) {
+            throw new Error(
+              `step ${step.id}: concurrentWith references ${id}, which is not pending`,
+            );
+          }
+          return entry;
+        });
         for (const id of partners) pending.delete(id);
         const responses = await Promise.all([...group.map((g) => g.promise), promise]);
         const own = responses[responses.length - 1] as ObservedResponse;

@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
+import { loadVectors } from '../src/load';
 import { runVectors } from '../src/run';
 import type { Vector } from '../src/types';
 
@@ -167,6 +168,47 @@ describe('runVectors', () => {
     );
     expect(summary.results[0]?.status).toBe('error');
     expect(summary.errored).toBe(1);
+  });
+
+  test('REQ-CONF-1: a concurrentWith reference to a step that is not pending yields an error result', async () => {
+    const fx = bareFixture();
+    const notPending: Vector = {
+      id: 'core/concurrent-with-settled',
+      tier: 'core',
+      title: 't',
+      draftRef: 'section-2.6',
+      description: 'd',
+      fixture: 'echo',
+      steps: [
+        { id: 'a', request: { method: 'POST', path: '/echo', body: 'a' }, expect: { status: 201 } },
+        { id: 'b', request: { method: 'POST', path: '/echo', body: 'b' }, expect: { status: 201 } },
+        {
+          id: 'c',
+          concurrentWith: ['a'],
+          request: { method: 'POST', path: '/echo', body: 'c' },
+          expect: { status: 201 },
+        },
+      ],
+    };
+    const summary = await runVectors(fx.handler, [notPending]);
+    expect(summary.results[0]?.status).toBe('error');
+    expect(summary.results[0]?.error).toContain('concurrentWith references a');
+  });
+});
+
+describe('loadVectors', () => {
+  test('REQ-CONF-1: loadVectors reads the repo vectors sorted by id', () => {
+    const vectors = loadVectors();
+    expect(vectors).toHaveLength(18);
+    const ids = vectors.map((v) => v.id);
+    const sorted = [...ids].sort((a, b) => a.localeCompare(b));
+    expect(ids).toEqual(sorted);
+    expect(ids[0]).toBe('core/concurrent-409');
+    expect(ids[ids.length - 1]).toBe('profile/retry-after-on-409');
+  });
+
+  test('REQ-CONF-1: loadVectors throws for a directory that does not exist', () => {
+    expect(() => loadVectors('/nonexistent/anyonce-vectors')).toThrow();
   });
 });
 
