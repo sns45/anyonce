@@ -1,0 +1,17 @@
+{
+  "name": "@anyonce/fixture-hono",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/app.ts",
+  "exports": {
+    ".": "./src/app.ts"
+  },
+  "scripts": {
+    "start": "bun run src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.0.0"
+  }
+}
