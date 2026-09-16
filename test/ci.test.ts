@@ -37,6 +37,10 @@ describe('ci workflow', () => {
     expect(runs(ci.jobs.ts as Job)).not.toContain('compose.test');
   });
 
+  test('REQ-REL-4: the ts job runs the typecheck gate', () => {
+    expect(runs(ci.jobs.ts as Job)).toContain('bun run typecheck');
+  });
+
   test('REQ-REL-4: tee pipelines use bash with pipefail', () => {
     for (const name of ['ts', 'services']) {
       const job = ci.jobs[name] as Job;

@@ -17,6 +17,7 @@ jobs:
           go-version-file: go/go.mod
       - run: bun install --frozen-lockfile
       - run: bun run lint
+      - run: bun run typecheck
       - run: bun run build
       - shell: bash
         run: bun run test 2>&1 | tee test.log
