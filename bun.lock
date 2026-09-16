@@ -24,6 +24,9 @@
     "packages/conformance": {
       "name": "@anyonce/conformance",
       "version": "0.0.0",
+      "devDependencies": {
+        "@anyonce/fixture-hono": "workspace:*",
+      },
     },
   },
   "packages": {

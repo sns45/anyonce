@@ -22,3 +22,12 @@ export const PROFILE_IDS = [
   'profile/replayed-header',
   'profile/retry-after-on-409',
 ];
+
+/** Vectors that hold even without an idempotency layer: they only assert that handlers execute. */
+export const BARE_PASS_IDS = [
+  'core/expiry-executes-again',
+  'core/get-ignored',
+  'core/post-executes-once',
+  'core/two-keys-execute-twice',
+  'profile/5xx-not-stored',
+];

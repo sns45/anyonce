@@ -21,5 +21,8 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean --shims",
     "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@anyonce/fixture-hono": "workspace:*"
   }
 }
