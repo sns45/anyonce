@@ -1,1 +1,2 @@
-export const VERSION = '0.0.0';
+export { evaluateExpect } from './expect';
+export type * from './types';
