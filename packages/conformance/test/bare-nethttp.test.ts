@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadVectors } from '../src/load';
 import { runVectors } from '../src/run';
-import { BARE_PASS_IDS } from './catalog';
+import { BARE_PASS_IDS, CORE_IDS, PROFILE_IDS } from './catalog';
 
 const goDir = join(import.meta.dir, '../../../go');
 const hasGo = Bun.which('go') !== null;
@@ -51,12 +51,21 @@ describe.skipIf(!hasGo)('bare net/http fixture', () => {
 
   test('REQ-CONF-2: over a URL the bare net/http fixture passes only the execution-only vectors', async () => {
     const summary = await runVectors({ baseUrl }, loadVectors(), { capabilities: ['short-ttl'] });
+    expect(summary.results).toHaveLength(CORE_IDS.length + PROFILE_IDS.length);
     expect(summary.errored).toBe(0);
+    expect(summary.notApplicable).toBe(0);
     const passed = summary.results
       .filter((r) => r.status === 'pass')
       .map((r) => r.id)
       .sort();
-    expect(passed).toEqual(BARE_PASS_IDS);
+    expect(passed).toEqual([...BARE_PASS_IDS].sort());
+    const failed = summary.results
+      .filter((r) => r.status === 'fail')
+      .map((r) => r.id)
+      .sort();
+    expect(failed).toEqual(
+      [...CORE_IDS, ...PROFILE_IDS].filter((id) => !BARE_PASS_IDS.includes(id)).sort(),
+    );
   }, 30_000);
 });
 
