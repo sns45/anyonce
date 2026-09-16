@@ -19,11 +19,15 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
     "@changesets/cli": "^3.0.3",
+    "@cloudflare/vitest-pool-workers": "0.12.21",
+    "@cloudflare/workers-types": "^5.20260916.1",
     "@types/bun": "^1.4.2",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "tsup": "^8.5.1",
     "typescript": "^7.0.2",
+    "vitest": "3.2.7",
+    "wrangler": "^4.132.0",
     "yaml": "^2.9.1"
   }
 }
