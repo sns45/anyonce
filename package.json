@@ -1,0 +1,29 @@
+{
+  "name": "anyonce-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "conformance/fixtures/*"
+  ],
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "build": "bun run --filter '@anyonce/*' build",
+    "test": "bun test packages conformance scripts",
+    "test:reqs": "bun run scripts/reqs.ts --phase p0",
+    "test:workers": "vitest run --config test/workers/vitest.config.ts",
+    "vectors:validate": "bun test packages/conformance/test/vectors-validate.test.ts",
+    "services:check": "bun run scripts/services-check.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@changesets/cli": "^3.0.3",
+    "@types/bun": "^1.4.2",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2",
+    "yaml": "^2.9.1"
+  }
+}

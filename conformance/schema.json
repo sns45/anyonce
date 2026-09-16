@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://in8.sh/anyonce/conformance/schema.json",
+  "title": "anyonce conformance vector",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "tier", "title", "description", "fixture", "steps"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^(core|profile)/[a-z0-9]+(-[a-z0-9]+)*$" },
+    "tier": { "enum": ["core", "profile"] },
+    "title": { "type": "string", "minLength": 1 },
+    "draftRef": { "type": "string", "pattern": "^section-[0-9]+(\\.[0-9]+)*$" },
+    "description": { "type": "string", "minLength": 1 },
+    "requires": { "type": "array", "uniqueItems": true, "items": { "enum": ["short-ttl"] } },
+    "fixture": { "enum": ["echo", "status", "slow", "large", "counter"] },
+    "steps": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/step" } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "tier": { "const": "core" } } },
+      "then": { "required": ["draftRef"], "properties": { "draftRef": true } }
+    }
+  ],
+  "$defs": {
+    "stepId": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "request", "expect"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stepId" },
+        "delayMs": { "type": "integer", "minimum": 0 },
+        "concurrentWith": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/stepId" }
+        },
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "path"],
+          "properties": {
+            "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+            "path": { "type": "string", "pattern": "^/" },
+            "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+            "body": { "type": "string" }
+          }
+        },
+        "expect": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": {
+            "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+            "headers": {
+              "type": "object",
+              "additionalProperties": {
+                "oneOf": [
+                  { "type": "string" },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["present"],
+                    "properties": { "present": { "const": true } }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["absent"],
+                    "properties": { "absent": { "const": true } }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["regex"],
+                    "properties": { "regex": { "type": "string" } }
+                  }
+                ]
+              }
+            },
+            "bodyEquals": {
+              "oneOf": [
+                { "type": "string" },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["sameAs"],
+                  "properties": { "sameAs": { "$ref": "#/$defs/stepId" } }
+                }
+              ]
+            },
+            "bodyJson": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  { "type": "string" },
+                  { "type": "number" },
+                  { "type": "boolean" },
+                  { "type": "null" }
+                ]
+              }
+            },
+            "bodyBytes": { "type": "integer", "minimum": 0 },
+            "handlerInvocations": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    }
+  }
+}
