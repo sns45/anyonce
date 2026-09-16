@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 
 type Job = {
-  steps: Array<{ uses?: string; run?: string; with?: Record<string, unknown> }>;
+  steps: Array<{ uses?: string; run?: string; shell?: string; with?: Record<string, unknown> }>;
   strategy?: { matrix?: Record<string, unknown[]> };
 };
 const ci = parse(readFileSync(join(import.meta.dir, '../.github/workflows/ci.yml'), 'utf8')) as {
@@ -29,7 +29,23 @@ describe('ci workflow', () => {
     const job = ci.jobs.services as Job;
     expect(runs(job)).toContain('docker compose -f test/compose.yml up -d --wait');
     expect(runs(job)).toContain('bun run services:check');
+    expect(runs(job)).toContain('bun run test:services');
     expect(runs(job)).toContain('scripts/no-skips.sh');
+  });
+
+  test('REQ-REL-4: the ts job does not run the compose service tests', () => {
+    expect(runs(ci.jobs.ts as Job)).not.toContain('compose.test');
+  });
+
+  test('REQ-REL-4: tee pipelines use bash with pipefail', () => {
+    for (const name of ['ts', 'services']) {
+      const job = ci.jobs[name] as Job;
+      for (const step of job.steps) {
+        if (step.run?.includes('| tee')) {
+          expect(step.shell).toBe('bash');
+        }
+      }
+    }
   });
 
   test('REQ-REL-4: node-compat runs the built output on Node 22 and go uses the go.mod toolchain', () => {

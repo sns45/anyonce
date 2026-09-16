@@ -25,6 +25,8 @@ describe('service containers', () => {
     }
     expect(compose.services.redis?.image).toMatch(/^redis:7/);
     expect(compose.services.postgres?.image).toMatch(/^postgres:16/);
+    expect(compose.services.dynamodb?.ports).toContain('18000:8000');
+    expect(compose.services.postgres?.ports).toContain('15432:5432');
     expect(SERVICES.map((s) => s.name).sort()).toEqual(Object.keys(compose.services).sort());
   });
 
