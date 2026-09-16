@@ -54,7 +54,7 @@ Recommended resolution: TTL-expired record is absent (D14) and yields `acquired`
 
 The draft sets no maximum key length. Grading third parties on it contradicts D17.
 
-Recommended resolution: tier `profile`, id `profile/key-too-long`. Gap entry proposes the draft recommend a documented maximum. `core` keeps ten vectors by adding `core/key-empty-quoted` (`Idempotency-Key: ""` is a valid sf-string but an empty key, expect 400) so the CHECKLIST count still holds.
+Recommended resolution: tier `profile`, id `profile/key-too-long`. Gap entry proposes the draft recommend a documented maximum. `core` still has eleven vectors because two draft-derived cases were added instead: `core/mismatch-does-not-poison` (section 2.7, a rejected 422 leaves the original record intact) and `core/header-name-case-insensitive` (section 2.1 via RFC 9110 field name rules). An empty quoted key was considered and rejected as a core vector because the draft does not forbid it.
 
 ## Q10: branch coverage cannot come from `bun test --coverage` (A6)
 
@@ -73,3 +73,9 @@ Recommended resolution: subpath export `@anyonce/core/http` (Web APIs only, zero
 The prompt says P4 depends on P1 only. The webhook receiver returns the same 409, 422 and replay responses as the HTTP adapter and reuses its helpers.
 
 Recommended resolution: P4 starts after P2 merges, in parallel with P3 and P5; its first task is the queue adapter, which truly needs only P1.
+
+## Q13: REQ-REL-4 "Go latest two minors" versus D19 "latest stable pinned in go.mod"
+
+With `go 1.25.3` pinned in `go.mod`, a Go 1.24 CI runner cannot build the module without toolchain auto-download, so a two-minor matrix is not meaningful until Go 1.26 ships.
+
+Recommended resolution: CI uses `go-version-file: go/go.mod` (one toolchain, the pinned one) in P0. When Go 1.26 is released, `go.mod` moves to `go 1.26` and the matrix gains `1.25.x` as the second entry. Recorded here so REQ-REL-4 is not marked complete on the Go axis until then.
