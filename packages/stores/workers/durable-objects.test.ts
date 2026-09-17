@@ -16,7 +16,12 @@ for (const shard of ['scope', 'scope-key'] as const) {
   storeContractSuite(
     `durable-objects-${shard}`,
     () => {
-      const store = new DurableObjectsStore({ namespace: env.IDEMPOTENCY, shard });
+      // trackForPurge, because REQ-STORE-7 in the suite asserts a purge count from the Worker side.
+      const store = new DurableObjectsStore({
+        namespace: env.IDEMPOTENCY,
+        shard,
+        trackForPurge: true,
+      });
       return { store, physicallyRemove: (op) => store.physicallyRemove(op) };
     },
     runner,
@@ -36,6 +41,32 @@ describe('durable objects specifics', () => {
     );
     expect(outcomes.filter((o) => o.outcome === 'acquired')).toHaveLength(1);
     expect(outcomes.filter((o) => o.outcome === 'in_flight')).toHaveLength(49);
+  });
+
+  test('REQ-ST-DO-1: purge does nothing without trackForPurge and sweeps the addressed objects with it', async () => {
+    const op = { scope: 'purge-opt-in', key: 'k', fingerprint: 'a' };
+    const untracked = new DurableObjectsStore({ namespace: env.IDEMPOTENCY, shard: 'scope' });
+    await untracked.begin(op, { leaseMs: LEASE_MS, ttlMs: 1_000, now: T0 });
+    expect(await untracked.purge(T0 + 5_000)).toBe(0);
+    const stub = env.IDEMPOTENCY.get(
+      env.IDEMPOTENCY.idFromName('purge-opt-in'),
+    ) as DurableObjectStub<IdempotencyObject>;
+    const before = await runInDurableObject(stub, (_i, state) =>
+      state.storage.sql.exec('SELECT key FROM anyonce_records').toArray(),
+    );
+    expect(before.map((r) => r.key)).toEqual(['k']);
+
+    const tracked = new DurableObjectsStore({
+      namespace: env.IDEMPOTENCY,
+      shard: 'scope',
+      trackForPurge: true,
+    });
+    await tracked.get(op, T0 + 1);
+    expect(await tracked.purge(T0 + 5_000)).toBe(1);
+    const after = await runInDurableObject(stub, (_i, state) =>
+      state.storage.sql.exec('SELECT key FROM anyonce_records').toArray(),
+    );
+    expect(after).toEqual([]);
   });
 
   test('REQ-ST-DO-1: the alarm purges rows whose wall clock expiry has passed and reschedules for the rest', async () => {

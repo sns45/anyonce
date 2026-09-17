@@ -230,6 +230,14 @@ export interface DurableObjectsStoreOptions {
   shard?: 'scope' | 'scope-key';
   /** Added to the alarm time so a late complete from the previous fence holder still finds its row. Default 60000. */
   nativeTtlGraceMs?: number;
+  /**
+   * Remember every object name this store instance has addressed, so `purge(now)` can reach those objects.
+   * Default false, because the set grows with the number of distinct scopes (or scopes and keys) the isolate
+   * serves and nothing else reads it: each object's alarm sweeps itself regardless. With it false `purge`
+   * records nothing, does nothing and returns 0. Set it to true only when something on the Worker side calls
+   * `purge`.
+   */
+  trackForPurge?: boolean;
 }
 
 /** REQ-ST-DO-1: the Worker-side Store; every call is one RPC to the object that owns the scope (or the key). */
@@ -237,17 +245,19 @@ export class DurableObjectsStore implements Store {
   private readonly namespace: DurableObjectNamespace<IdempotencyObject>;
   private readonly shard: 'scope' | 'scope-key';
   private readonly grace: number;
+  private readonly trackForPurge: boolean;
   private readonly touched = new Set<string>();
 
   constructor(options: DurableObjectsStoreOptions) {
     this.namespace = options.namespace;
     this.shard = options.shard ?? 'scope';
     this.grace = options.nativeTtlGraceMs ?? DEFAULT_GRACE_MS;
+    this.trackForPurge = options.trackForPurge ?? false;
   }
 
   private stub(op: Pick<Operation, 'scope' | 'key'>): IdempotencyObjectRpc {
     const name = this.shard === 'scope' ? op.scope : `${op.scope}${SHARD_SEPARATOR}${op.key}`;
-    this.touched.add(name);
+    if (this.trackForPurge) this.touched.add(name);
     return this.byName(name);
   }
 
@@ -276,11 +286,16 @@ export class DurableObjectsStore implements Store {
     return this.stub(op).get(op, now);
   }
 
-  /** Reaches every object this instance has touched; the alarm covers the rest on the object's own schedule. */
+  /**
+   * Needs `trackForPurge: true`; without it this returns 0 and does nothing. With it, a pass sweeps what the
+   * objects this instance has addressed hold right now, which is never the whole namespace, because a Worker
+   * cannot enumerate one. Rows that expire after the pass are the alarm's, on each object's own schedule.
+   */
   async purge(now: number): Promise<number> {
+    if (!this.trackForPurge) return 0;
     let removed = 0;
     for (const name of this.touched) removed += await this.byName(name).purge(now);
-    // A full pass leaves nothing owed; the set is rebuilt by the next call that touches an object.
+    // Each of those objects has just been swept; the set refills from the next call that addresses one.
     this.touched.clear();
     return removed;
   }

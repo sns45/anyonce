@@ -9,10 +9,10 @@ Every store implements the same `Store` contract (requirements 4.2) and passes t
 | redis | TS, Go | single node or cluster (every script takes one key) | one Lua script per transition (EVALSHA, EVAL fallback) | yes, PEXPIRE at ttl plus 60 s grace | any Redis 7; adapters for ioredis, node-redis and Upstash REST | one round trip per transition; bodies stored base64 so the REST client stays binary safe | 1 MiB |
 | postgres | TS, Go | serializable enough: one statement per transition | INSERT ON CONFLICT DO UPDATE WHERE, refusal classified by one SELECT | no, purge(now) with the expires_at index | migrations/postgres/0001_anyonce.sql or ensureSchema(query) | one statement per transition, two on a refused claim; run purge on a schedule | 1 MiB |
 | d1 | TS | strongly consistent within the database | INSERT ON CONFLICT DO UPDATE WHERE, refusal classified by one SELECT | no, purge(now) with the expires_at index (a cron trigger is the usual scheduler) | migrations/d1/0001_anyonce.sql via wrangler d1 migrations, or ensureSchema(db) | one statement per transition; rows up to 2 MB | 1 MiB |
-| durable-objects | TS | strongly consistent per object | single writer per object, one SQLite statement per transition | alarm sweep by wall clock (expires_at plus 60 s grace) | bind IdempotencyObject with new_sqlite_classes; DurableObjectsStore({ namespace }) | one RPC per transition; per scope sharding serializes a scope's requests, per scope and key sharding spreads them | 1 MiB (2 MB row limit) |
+| durable-objects | TS | strongly consistent per object | single writer per object, one SQLite statement per transition | alarm sweep by wall clock (expires_at plus 60 s grace); Worker-side purge needs trackForPurge: true | bind IdempotencyObject with new_sqlite_classes; DurableObjectsStore({ namespace }) | one RPC per transition; per scope sharding serializes a scope's requests, per scope and key sharding spreads them | 1 MiB (2 MB row limit) |
 | sqlite | Go | single process, WAL | one connection (SetMaxOpenConns 1), one statement per transition | no, purge(now) with the expires_at index | Open(ctx, path), then EnsureSchema(ctx) applies schema.sql; modernc.org/sqlite, no cgo | one statement per transition; single writer by construction | 1 MiB |
 
-`DurableObjectsStore.purge(now)` from a Worker reaches only the objects that store instance has already touched, because a Worker cannot enumerate a namespace; the object's own alarm is the real sweep and it runs whether or not anyone calls `purge`.
+`DurableObjectsStore.purge(now)` from a Worker is opt in. With `trackForPurge: true` the store remembers every object it addresses and a purge pass reaches exactly those, never the whole namespace, because a Worker cannot enumerate one. Without it the store remembers nothing and `purge` returns 0. Either way the object's own alarm is the real sweep and it runs whether or not anyone calls `purge`, so the option is worth setting only when something on the Worker side calls it.
 
 ## Choosing
 
@@ -20,7 +20,7 @@ On Workers, pick Durable Objects when one scope's requests may serialize through
 
 ## Purge scheduling
 
-DynamoDB and Redis need no scheduling: the backend expires rows itself, and `purge(now)` returns 0 (Q21). Durable Objects sweep themselves through the object alarm; a Worker-side `purge` call is optional and partial, as noted above. Postgres, D1 and SQLite have no native expiry, so `purge(now)` has to run on a schedule against the `expires_at` index: for D1 a Worker cron trigger, for Postgres and SQLite a cron job or the application's own scheduler. Nothing breaks without it, because logical expiry is enforced on read, but the table grows.
+DynamoDB and Redis need no scheduling: the backend expires rows itself, and `purge(now)` returns 0 (Q21). Durable Objects sweep themselves through the object alarm; a Worker-side `purge` call is opt in (`trackForPurge: true`) and partial, as noted above. Postgres, D1 and SQLite have no native expiry, so `purge(now)` has to run on a schedule against the `expires_at` index: for D1 a Worker cron trigger, for Postgres and SQLite a cron job or the application's own scheduler. Nothing breaks without it, because logical expiry is enforced on read, but the table grows.
 
 ## Migrations
 
