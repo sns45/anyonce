@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,6 +68,24 @@ func TestPostgresStore(t *testing.T) {
 		summary := conformance.Run(t, mux, conformance.Options{Capabilities: []string{"short-ttl"}})
 		if summary.Passed != len(summary.Results) || len(summary.Results) != 20 {
 			t.Fatalf("passed %d of %d", summary.Passed, len(summary.Results))
+		}
+	})
+}
+
+func TestPostgresOpenPingFailure(t *testing.T) {
+	t.Run("REQ-ST-PG-1: Open reports a ping failure and does not hand back a store over a dead handle", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		// Port 1 is never a Postgres listener, so the first ping fails and Open must close what it opened.
+		store, err := postgres.Open(ctx, "postgres://anyonce:anyonce@127.0.0.1:1/anyonce?sslmode=disable")
+		if err == nil {
+			t.Fatal("expected a ping failure")
+		}
+		if store != nil {
+			t.Fatalf("expected no store, got %v", store)
+		}
+		if !strings.Contains(err.Error(), "postgres: ping:") {
+			t.Fatalf("expected a wrapped ping error, got %v", err)
 		}
 	})
 }

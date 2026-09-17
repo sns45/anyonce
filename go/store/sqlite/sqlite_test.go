@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,6 +64,22 @@ func TestSQLiteStore(t *testing.T) {
 		summary := conformance.Run(t, mux, conformance.Options{Capabilities: []string{"short-ttl"}})
 		if summary.Passed != len(summary.Results) || len(summary.Results) != 20 {
 			t.Fatalf("passed %d of %d", summary.Passed, len(summary.Results))
+		}
+	})
+}
+
+func TestSQLiteOpenPingFailure(t *testing.T) {
+	t.Run("REQ-ST-SQLITE-1: Open reports a ping failure and does not hand back a store over a dead handle", func(t *testing.T) {
+		// A directory is not a database file, so sql.Open succeeds lazily and the first ping fails.
+		store, err := sqlite.Open(context.Background(), t.TempDir())
+		if err == nil {
+			t.Fatal("expected a ping failure")
+		}
+		if store != nil {
+			t.Fatalf("expected no store, got %v", store)
+		}
+		if !strings.Contains(err.Error(), "sqlite: ping:") {
+			t.Fatalf("expected a wrapped ping error, got %v", err)
 		}
 	})
 }

@@ -46,6 +46,8 @@ func Open(ctx context.Context, dsn string) (*sqlstore.Store, error) {
 	}
 	db.SetMaxOpenConns(60)
 	if err := db.PingContext(ctx); err != nil {
+		// sql.Open never dials, so the handle and its pool goroutines exist even when the ping fails.
+		_ = db.Close()
 		return nil, fmt.Errorf("postgres: ping: %w", err)
 	}
 	return New(db), nil

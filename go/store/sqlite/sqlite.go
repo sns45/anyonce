@@ -52,6 +52,8 @@ func Open(ctx context.Context, path string) (*sqlstore.Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 	if err := db.PingContext(ctx); err != nil {
+		// sql.Open never touches the file, so the handle and its pool goroutines exist even when the ping fails.
+		_ = db.Close()
 		return nil, fmt.Errorf("sqlite: ping: %w", err)
 	}
 	return New(db), nil

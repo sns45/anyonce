@@ -41,6 +41,12 @@ func TestDynamoDBStore(t *testing.T) {
 		return storetest.Harness{Store: s, PhysicallyRemove: s.PhysicallyRemove, MaxResultBytes: dynamodb.MaxResultBytes, NativePurge: true}
 	})
 
+	t.Run("REQ-ST-DDB-1: EnsureTable is idempotent, taking the ResourceInUse and already-enabled TTL branches", func(t *testing.T) {
+		if err := dynamodb.EnsureTable(ctx, c, table); err != nil {
+			t.Fatalf("second EnsureTable on the same table: %v", err)
+		}
+	})
+
 	t.Run("REQ-ST-DDB-1: a refused begin classifies from the returned old item and the ttl attribute is enabled", func(t *testing.T) {
 		s := dynamodb.New(c, dynamodb.Options{Table: table})
 		op := anyonce.Operation{Scope: fmt.Sprintf("rvocf-%d", time.Now().UnixNano()), Key: "k", Fingerprint: "a"}
