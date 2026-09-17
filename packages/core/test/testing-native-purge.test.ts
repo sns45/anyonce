@@ -3,7 +3,7 @@ import { MemoryStore } from '../src/memory';
 import { type StoreSuiteOptions, storeContractSuite } from '../src/testing/index';
 import type { Store } from '../src/types';
 
-/** A backend whose rows are swept by the service itself, so purge has nothing to do (DynamoDB TTL, Redis PEXPIREAT). */
+/** A backend whose rows are swept by the service itself, so purge has nothing to do (DynamoDB TTL, Redis PEXPIRE). */
 class NativeTtlStore implements Store {
   private readonly inner = new MemoryStore();
   begin: Store['begin'] = (op, opts) => this.inner.begin(op, opts);

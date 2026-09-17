@@ -14,7 +14,8 @@ export interface StoreSuiteOptions {
   /** Q20: the largest body this backend stores whole. Defaults to MAX_RESULT_BYTES. */
   maxResultBytes?: number;
   /**
-   * The backend expires rows itself (DynamoDB TTL, Redis PEXPIREAT), so purge is a no-op that returns 0.
+   * The backend expires rows itself (DynamoDB TTL, Redis PEXPIRE relative to the write plus a grace), so
+   * purge is a no-op that returns 0.
    * Logical expiry on read is still required: an expired record stays absent to get and to begin.
    */
   nativePurge?: boolean;

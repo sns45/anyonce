@@ -204,3 +204,5 @@ REQ-STORE-7 says `purge(now)` returns the count removed and the contract suite a
 Recommended resolution: the contract suite takes `nativePurge: true` in its options (Go `Harness.NativePurge`) for DynamoDB and Redis. Under that option the suite still requires logical expiry on read (`get` returns null and `begin` acquires after `expires_at`) and only drops the removed-count assertion; `purge` returns 0 and `docs/stores.md` says so in the native TTL column. Stores without native TTL (Postgres, D1, SQLite, memory, Durable Objects from the Worker side) keep the count assertion. REQ-STORE-7's wording is read as "returns the count this call removed", which is 0 when the backend already did the work.
 
 **Decision: pending.** P3 proceeds on the recommendation.
+
+Amendment recorded in P3: REQ-ST-REDIS-1 said `PEXPIREAT`, but both Redis stores set a relative `PEXPIRE` of the TTL plus the grace because the logical clock is injected and an absolute wall-clock deadline cannot be derived from it, so the requirement text and the `nativePurge` doc comment now say `PEXPIRE` (relative to the write, plus a grace).
