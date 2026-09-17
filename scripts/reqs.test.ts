@@ -7,7 +7,9 @@ import {
   coverageReport,
   expandScope,
   parseDefinedIds,
+  parsePhaseDeps,
   parsePhaseScopes,
+  phaseScope,
 } from './reqs';
 
 const sample = `
@@ -28,15 +30,15 @@ const sample = `
 - **NFR-1** Overhead.
 - **NFR-6** Prose.
 ## 6. Phases
-| Phase | Deliverable | REQs |
-|---|---|---|
-| P0 Scaffold and vectors | Repo. | CONF-1..4, REL-4 |
-| P1 Core | Engine. | CORE-1..2 |
-| P3 Stores | Stores. | ST-* |
-| P4a Queue door | Queue. | CORE-2 |
-| P4b Webhook door | Webhook. | REL-4 |
-| P6 Docs | Docs. | NFR-* |
-| P7 Standards and launch | S1..S3 executed. | 0.4 |
+| Phase | Deliverable | REQs | Depends on |
+|---|---|---|---|
+| P0 Scaffold and vectors | Repo. | CONF-1..4, REL-4 | none |
+| P1 Core | Engine. | CORE-1..2 | P0 |
+| P3 Stores | Stores. | ST-* | P1 |
+| P4a Queue door | Queue. | CORE-2 | P1 |
+| P4b Webhook door | Webhook. | REL-4 | P3 |
+| P6 Docs | Docs. | NFR-* | P3, P4a, P4b |
+| P7 Standards and launch | S1..S3 executed. | 0.4 | P6 |
 `;
 
 describe('reqs script', () => {
@@ -77,6 +79,20 @@ describe('reqs script', () => {
     expect(scopes.get('p4a')).toEqual(['REQ-CORE-2']);
     expect(scopes.get('p4b')).toEqual(['REQ-REL-4']);
     expect(scopes.get('p7')).toEqual([]);
+  });
+
+  test('reqs script: phase scope is the phase plus the transitive closure of its dependencies', () => {
+    const defined = parseDefinedIds(sample);
+    const scopes = parsePhaseScopes(sample, defined);
+    const deps = parsePhaseDeps(sample);
+    expect(phaseScope('p0', scopes, deps)).toEqual(scopes.get('p0') ?? []);
+    const p4a = phaseScope('p4a', scopes, deps);
+    expect(p4a).toEqual([...(scopes.get('p0') ?? []), ...(scopes.get('p1') ?? [])]);
+    for (const id of scopes.get('p3') ?? []) expect(p4a).not.toContain(id);
+    const p6 = phaseScope('p6', scopes, deps);
+    for (const phase of ['p0', 'p1', 'p3', 'p4a', 'p4b', 'p6']) {
+      for (const id of scopes.get(phase) ?? []) expect(p6).toContain(id);
+    }
   });
 
   test('reqs script: collects ids from TypeScript and Go test names', () => {

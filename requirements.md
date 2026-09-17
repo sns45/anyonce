@@ -354,19 +354,19 @@ Claude Code MUST read the real anyq consumer handler signature from `github.com/
 
 ## 6. Phases (input to `writing-plans`)
 
-Each phase ends with: tests green in CI, `verification-before-completion` evidence pasted into the PR, code review via `requesting-code-review`, branch finished via `finishing-a-development-branch`. P4a starts after P1 and runs in parallel with P2; after P2, phases 3, 4b and 5 are independent of each other. These are the sub-agent parallelization points.
+Each phase ends with: tests green in CI, `verification-before-completion` evidence pasted into the PR, code review via `requesting-code-review`, branch finished via `finishing-a-development-branch`. P4a starts after P1 and runs in parallel with P2; after P2, phases 3, 4b and 5 are independent of each other. These are the sub-agent parallelization points. The Depends on column lists each phase's direct prerequisite phases; a phase's scope is itself plus the transitive closure of these dependencies.
 
-| Phase | Deliverable | REQs |
-|---|---|---|
-| P0 Scaffold and vectors | Repo, workspaces, CI skeleton, `conformance/schema.json`, all `core` and `profile` vectors written and schema-validated, fixture apps (Hono, net/http). Vectors first: they are the executable form of this spec. | CONF-1..4, REL-4 |
-| P1 Core | TS core + memory store + store contract suite + engine; Go core + memory store + storetest. | CORE-1..8, STORE-1..11 |
-| P2 HTTP adapter | `withIdempotency`, Hono middleware, TS conformance runner, all core+profile vectors green with memory store. Go `httpmw` + Go runner green. | HTTP-1..18, CONF-5..7 |
-| P3 Stores | DO, D1, DynamoDB, Redis, Postgres (TS); DynamoDB, Redis, Postgres, SQLite (Go). Each passes contract suite and full conformance via the HTTP adapter. | ST-* |
-| P4a Queue door | anyq adapters (TS, Go), companion strategy, `docs/queue-ids.md`. Starts after P1, parallel with P2. | Q-1..8, DOC-9 |
-| P4b Webhook door | webhook receivers (TS, Go), anyhook interop test. Starts after P2, parallel with P3 and P5. | WH-1..7 |
-| P5 Cross-implementation report | Run suite against hono-idempotency, idempo, Fiber; `REPORT.md`, `DRAFT-GAPS.md`; file S4 issues. | CONF-8..9 |
-| P6 Docs, examples, release | All docs, six examples with CI smoke, benchmarks, 0.1.0 release with provenance and forgeseal signing, `llms.txt`. | DOC-*, REL-*, NFR-* |
-| P7 Standards and launch | S1..S3 executed; five launch surfaces via the project-launch skill; case study with the 0.3 claim as the "Why this is new" section. | 0.4 |
+| Phase | Deliverable | REQs | Depends on |
+|---|---|---|---|
+| P0 Scaffold and vectors | Repo, workspaces, CI skeleton, `conformance/schema.json`, all `core` and `profile` vectors written and schema-validated, fixture apps (Hono, net/http). Vectors first: they are the executable form of this spec. | CONF-1..4, REL-4 | none |
+| P1 Core | TS core + memory store + store contract suite + engine; Go core + memory store + storetest. | CORE-1..8, STORE-1..11 | P0 |
+| P2 HTTP adapter | `withIdempotency`, Hono middleware, TS conformance runner, all core+profile vectors green with memory store. Go `httpmw` + Go runner green. | HTTP-1..18, CONF-5..7 | P1 |
+| P3 Stores | DO, D1, DynamoDB, Redis, Postgres (TS); DynamoDB, Redis, Postgres, SQLite (Go). Each passes contract suite and full conformance via the HTTP adapter. | ST-* | P2 |
+| P4a Queue door | anyq adapters (TS, Go), companion strategy, `docs/queue-ids.md`. Starts after P1, parallel with P2. | Q-1..8, DOC-9 | P1 |
+| P4b Webhook door | webhook receivers (TS, Go), anyhook interop test. Starts after P2, parallel with P3 and P5. | WH-1..7 | P2 |
+| P5 Cross-implementation report | Run suite against hono-idempotency, idempo, Fiber; `REPORT.md`, `DRAFT-GAPS.md`; file S4 issues. | CONF-8..9 | P2 |
+| P6 Docs, examples, release | All docs, six examples with CI smoke, benchmarks, 0.1.0 release with provenance and forgeseal signing, `llms.txt`. | DOC-*, REL-*, NFR-* | P3, P4a, P4b, P5 |
+| P7 Standards and launch | S1..S3 executed; five launch surfaces via the project-launch skill; case study with the 0.3 claim as the "Why this is new" section. | 0.4 | P6 |
 
 ---
 

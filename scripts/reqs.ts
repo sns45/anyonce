@@ -67,6 +67,51 @@ export function parsePhaseScopes(text: string, defined: string[]): Map<string, s
   return scopes;
 }
 
+/** Parses the section 6 table's fourth "Depends on" column into direct phase dependencies. */
+export function parsePhaseDeps(text: string): Map<string, string[]> {
+  const deps = new Map<string, string[]>();
+  for (const line of text.split('\n')) {
+    const row = /^\|\s*(P\d[a-z]?)\b[^|]*\|[^|]*\|[^|]*\|([^|]*)\|/.exec(line);
+    if (!row) continue;
+    const cell = (row[2] as string).trim();
+    const list =
+      cell === '' || cell.toLowerCase() === 'none'
+        ? []
+        : cell
+            .split(',')
+            .map((s) => s.trim().toLowerCase())
+            .filter((s) => s !== '');
+    deps.set((row[1] as string).toLowerCase(), list);
+  }
+  return deps;
+}
+
+/** Returns the phase's own ids plus the transitive closure of its dependencies' ids, de-duplicated, in table order. */
+export function phaseScope(
+  phase: string,
+  scopes: Map<string, string[]>,
+  deps: Map<string, string[]>,
+): string[] {
+  const seenPhases = new Set<string>();
+  const out: string[] = [];
+  const seenIds = new Set<string>();
+
+  function visit(p: string): void {
+    if (seenPhases.has(p)) return;
+    seenPhases.add(p);
+    for (const dep of deps.get(p) ?? []) visit(dep);
+    for (const id of scopes.get(p) ?? []) {
+      if (!seenIds.has(id)) {
+        seenIds.add(id);
+        out.push(id);
+      }
+    }
+  }
+
+  visit(phase);
+  return out;
+}
+
 function walk(dir: string, out: string[]): void {
   for (const name of readdirSync(dir)) {
     if (SKIP_DIRS.has(name)) continue;
@@ -138,17 +183,18 @@ function main(argv: string[]): number {
   const text = readFileSync(join(root, 'requirements.md'), 'utf8');
   const defined = parseDefinedIds(text);
   const scopes = parsePhaseScopes(text, defined);
+  const deps = parsePhaseDeps(text);
   const phaseArg = argv.indexOf('--phase');
   let scoped: string[];
   if (argv.includes('--all')) {
     scoped = defined;
   } else if (phaseArg >= 0) {
-    const upTo = (argv[phaseArg + 1] ?? '').toLowerCase();
-    scoped = [];
-    for (const [phase, ids] of scopes) {
-      scoped.push(...ids);
-      if (phase === upTo) break;
+    const target = (argv[phaseArg + 1] ?? '').toLowerCase();
+    if (!scopes.has(target)) {
+      console.error(`unknown phase: ${target || '(none given)'}`);
+      return 2;
     }
+    scoped = phaseScope(target, scopes, deps);
   } else {
     console.error('usage: bun run scripts/reqs.ts --phase p0 | --all');
     return 2;
