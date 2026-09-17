@@ -8,6 +8,7 @@
         "@anyonce/core": "workspace:*",
         "@anyonce/fixture-hono": "workspace:*",
         "@anyonce/hono": "workspace:*",
+        "@anyonce/stores": "workspace:*",
         "@biomejs/biome": "^2.5.14",
         "@changesets/cli": "^3.0.3",
         "@cloudflare/vitest-pool-workers": "0.12.21",

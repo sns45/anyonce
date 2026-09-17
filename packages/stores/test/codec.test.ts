@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import type { IdempotencyRecord, OmittedResult, StoredResult } from '@anyonce/core';
-import { decodeResultMeta, encodeResultMeta, newRow, rowToRecord } from '../src/codec';
+import {
+  base64ToBytes,
+  bytesToBase64,
+  decodeResultMeta,
+  encodeResultMeta,
+  newRow,
+  rowToRecord,
+} from '../src/codec';
 
 const op = { scope: 'POST /p', key: 'k', fingerprint: 'fp' };
 const T0 = 1_700_000_000_000;
@@ -153,5 +160,15 @@ describe('codec', () => {
     expect(record.fence).toBe(3);
     expect(record.leaseUntil).toBe(5);
     expect(record.createdAt).toBe(1);
+  });
+
+  test('REQ-ST-REDIS-1: bytes round trip through base64 without node Buffer, including empty and 1 MiB inputs', () => {
+    const small = new Uint8Array([0, 1, 254, 255, 10, 13]);
+    expect(base64ToBytes(bytesToBase64(small))).toEqual(small);
+    expect(bytesToBase64(new Uint8Array(0))).toBe('');
+    expect(base64ToBytes('')).toEqual(new Uint8Array(0));
+    const big = new Uint8Array(1_048_576);
+    for (let i = 0; i < big.length; i++) big[i] = (i * 7) & 0xff;
+    expect(base64ToBytes(bytesToBase64(big))).toEqual(big);
   });
 });

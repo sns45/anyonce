@@ -83,3 +83,19 @@ export function rowToRecord(row: RecordRow): IdempotencyRecord {
   if (num(row.result_omitted) === 1) record.resultOmitted = true;
   return record;
 }
+
+/** Web-API base64, for the stores that persist a body as text (Redis hashes, the Upstash REST client). */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk)
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  return btoa(binary);
+}
+
+export function base64ToBytes(text: string): Uint8Array {
+  const binary = atob(text);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
