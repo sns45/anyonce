@@ -97,6 +97,14 @@ describe('ci workflow', () => {
     expect(golangci?.with?.version).toBe('v2.13.2');
   });
 
+  test('REQ-REL-4: the go job builds with cgo disabled', () => {
+    const job = ci.jobs.go as Job;
+    const steps = job.steps.map((s) => s.run ?? '');
+    const cgoAt = steps.indexOf('CGO_ENABLED=0 go build ./...');
+    expect(cgoAt).toBeGreaterThan(-1);
+    expect(steps.indexOf('go vet ./...')).toBeGreaterThan(cgoAt);
+  });
+
   test('REQ-REL-4: the go job runs the engine coverage gate', () => {
     expect(runs(ci.jobs.go as Job)).toContain('go-engine-coverage.sh');
   });
