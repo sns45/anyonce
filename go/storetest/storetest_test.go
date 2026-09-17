@@ -53,30 +53,86 @@ func TestRunFailsABrokenStore(t *testing.T) {
 	})
 }
 
-// capSpy delegates to a memory store and remembers the largest body Complete was handed.
-type capSpy struct {
-	anyonce.Store
-	mu      sync.Mutex
-	largest int
+// largestBody is shared by every capSpy the factory builds, so the counter survives a fresh store per subtest.
+type largestBody struct {
+	mu    sync.Mutex
+	bytes int
 }
 
-func (c *capSpy) Complete(ctx context.Context, op anyonce.Operation, fence int64, result anyonce.StoredResult, now time.Time) (anyonce.CompleteStatus, error) {
-	c.mu.Lock()
-	if len(result.Body) > c.largest {
-		c.largest = len(result.Body)
+func (l *largestBody) observe(n int) {
+	l.mu.Lock()
+	if n > l.bytes {
+		l.bytes = n
 	}
-	c.mu.Unlock()
+	l.mu.Unlock()
+}
+
+func (l *largestBody) read() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.bytes
+}
+
+// capSpy delegates to its own memory store and remembers the largest body Complete was handed.
+type capSpy struct {
+	anyonce.Store
+	largest *largestBody
+}
+
+func (c capSpy) Complete(ctx context.Context, op anyonce.Operation, fence int64, result anyonce.StoredResult, now time.Time) (anyonce.CompleteStatus, error) {
+	c.largest.observe(len(result.Body))
 	return c.Store.Complete(ctx, op, fence, result, now)
 }
 
 func TestHarnessResultCap(t *testing.T) {
 	t.Run("REQ-STORE-11: a harness cap below 1 MiB shrinks the round trip body", func(t *testing.T) {
-		spy := &capSpy{Store: memory.New()}
+		largest := &largestBody{}
 		storetest.Run(t, "capped", func(*testing.T) storetest.Harness {
-			return storetest.Harness{Store: spy, MaxResultBytes: 4096}
+			// Factory promises a fresh harness per subtest, so the store is built here, not shared.
+			return storetest.Harness{Store: capSpy{Store: memory.New(), largest: largest}, MaxResultBytes: 4096}
 		})
-		if spy.largest != 4096 {
-			t.Fatalf("largest body handed to Complete is %d, want 4096", spy.largest)
+		if got := largest.read(); got != 4096 {
+			t.Fatalf("largest body handed to Complete is %d, want 4096", got)
+		}
+	})
+}
+
+// nativeSweep delegates to a memory store but reports 0 from Purge, the way a backend that expires rows itself
+// behaves: nothing for the suite to count, while an expired row is still logically absent on read.
+type nativeSweep struct {
+	anyonce.Store
+	removed int
+}
+
+func (n nativeSweep) Purge(context.Context, time.Time) (int, error) { return n.removed, nil }
+
+func nativeHarness(removed int) storetest.Harness {
+	m := memory.New()
+	return storetest.Harness{Store: nativeSweep{Store: m, removed: removed}, PhysicallyRemove: m.PhysicallyRemove, NativePurge: true}
+}
+
+// TestNativePurgeProbe only runs inside the subprocess spawned below; it is expected to fail.
+func TestNativePurgeProbe(t *testing.T) {
+	if os.Getenv("STORETEST_PROBE") != "native" {
+		t.Skip("probe runs in a subprocess")
+	}
+	storetest.Run(t, "native-liar", func(*testing.T) storetest.Harness { return nativeHarness(3) })
+}
+
+func TestHarnessNativePurge(t *testing.T) {
+	t.Run("REQ-STORE-7: a native-purge harness passes with a purge that returns 0 and keeps expiry on read", func(t *testing.T) {
+		storetest.Run(t, "native", func(*testing.T) storetest.Harness { return nativeHarness(0) })
+	})
+
+	t.Run("REQ-STORE-7: the suite fails a native-purge store that claims it removed rows", func(t *testing.T) {
+		cmd := exec.Command(os.Args[0], "-test.run", "^TestNativePurgeProbe$", "-test.v")
+		cmd.Env = append(os.Environ(), "STORETEST_PROBE=native")
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			t.Fatalf("expected the probe to fail; output:\n%s", out)
+		}
+		if !strings.Contains(string(out), "must report 0 removed") {
+			t.Fatalf("probe output does not name the native purge assertion:\n%s", out)
 		}
 	})
 }
