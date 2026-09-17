@@ -26,7 +26,7 @@ benchmarks/
 
 ## Commands
 
-- `bun install` at root (workspaces). `bun run build`, `bun run test`, `bun run test:workers` (vitest-pool-workers for DO and D1), `bun run test:reqs` (REQ coverage check), `bun run test:coverage` (vitest v8 branch coverage on the engine, the key validator and the sf-string parser), `bun run lint` (Biome), `bun run conformance -- --url <base>`, `scripts/doctor.sh` (checks bun, go, docker and golangci-lint at the pinned versions).
+- `bun install` at root (workspaces). `bun run build`, `bun run test`, `bun run test:workers` (vitest-pool-workers for DO and D1), `bun run test:reqs` (REQ coverage check), `bun run test:coverage` (vitest v8 branch coverage on the engine, the key validator and the sf-string parser; added in P1), `bun run lint` (Biome), `bun run conformance -- --url <base>`, `scripts/doctor.sh` (checks bun, go, docker and golangci-lint at the pinned versions).
 - `docker compose -f test/compose.yml up -d` starts DynamoDB Local, Redis 7, Postgres 16, Redpanda, ElasticMQ for integration tests. Tests skip with a clear message if a service is down; CI treats skips as failures.
 - Go: `cd go && go build ./... && go vet ./... && go test -race ./... && golangci-lint run` (golangci-lint pinned to v2.13.2 locally and in CI).
 

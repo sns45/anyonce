@@ -36,7 +36,17 @@ if [ -n "$go_bin" ]; then
   go_number=$(printf '%s\n' "$go_report" | awk '{print $3}' | sed 's/^go//')
   go_major=$(printf '%s\n' "$go_number" | cut -d. -f1)
   go_minor=$(printf '%s\n' "$go_number" | cut -d. -f2)
-  if [ "${go_major:-0}" -gt 1 ] || { [ "${go_major:-0}" -eq 1 ] && [ "${go_minor:-0}" -ge 26 ]; }; then
+  case "$go_major" in
+    '' | *[!0-9]*) go_major_numeric="" ;;
+    *) go_major_numeric=$go_major ;;
+  esac
+  case "$go_minor" in
+    '' | *[!0-9]*) go_minor_numeric="" ;;
+    *) go_minor_numeric=$go_minor ;;
+  esac
+  if [ -z "$go_major_numeric" ] || [ -z "$go_minor_numeric" ]; then
+    say go "warn $go_report ($go_bin, non-numeric version, cannot compare against 1.26)"
+  elif [ "$go_major_numeric" -gt 1 ] || { [ "$go_major_numeric" -eq 1 ] && [ "$go_minor_numeric" -ge 26 ]; }; then
     say go "ok $go_report ($go_bin)"
   else
     say go "OLD $go_report ($go_bin, want 1.26 or newer)"
@@ -46,7 +56,13 @@ if [ -n "$go_bin" ]; then
   if [ -n "$path_go" ] && [ "$path_go" != "$go_bin" ]; then
     path_number=$("$path_go" version 2>/dev/null | awk '{print $3}' | sed 's/^go//')
     path_minor=$(printf '%s\n' "$path_number" | cut -d. -f2)
-    if [ "${path_minor:-0}" -lt "${go_minor:-0}" ]; then
+    case "$path_minor" in
+      '' | *[!0-9]*) path_minor_numeric="" ;;
+      *) path_minor_numeric=$path_minor ;;
+    esac
+    if [ -z "$path_minor_numeric" ] || [ -z "$go_minor_numeric" ]; then
+      : # non-numeric minor on either side, skip the PATH-order comparison
+    elif [ "$path_minor_numeric" -lt "$go_minor_numeric" ]; then
       say "go(PATH)" "warn $path_go is go$path_number; put $go_bin first on PATH"
     fi
   fi
