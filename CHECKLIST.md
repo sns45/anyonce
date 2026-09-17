@@ -4,9 +4,10 @@ Each gate is run with `verification-before-completion`. Paste the raw command ou
 
 ## Every phase
 
+- [ ] `scripts/doctor.sh` passes (bun, go, docker, golangci-lint present at the pinned versions)
 - [ ] `bun run lint` clean, `bun run build` clean, `bun run test` green, `bun run test:reqs` reports no uncovered REQ ids in this phase's scope
 - [ ] `cd go && go vet ./... && go test -race ./... && golangci-lint run` clean (once Go code exists)
-- [ ] No em or en dashes: `rg -n "[\x{2013}\x{2014}]" --glob '!node_modules' --glob '!*.lock' .` returns nothing
+- [ ] No em or en dashes: `rg -n "[\x{2013}\x{2014}]" --glob '!node_modules' --glob '!*.lock' --glob '!docs/reference/**' .` returns nothing
 - [ ] No full keys logged: `rg -n "console\.(log|info|warn|error)\(.*key" packages go` reviewed, only `redactKey` usages
 - [ ] Changeset present for any public API change
 - [ ] `docs/superpowers/questions.md` reviewed; every open question has a recommended resolution
@@ -22,7 +23,7 @@ Each gate is run with `verification-before-completion`. Paste the raw command ou
 
 ## P1 core
 
-- [ ] Engine branch coverage 100% (TS via `bun test --coverage`, Go via `go test -coverprofile` on `anyonce/engine.go`)
+- [ ] Engine, key validator and sf-string parser branch coverage 100% via `bun run test:coverage` (vitest, `@vitest/coverage-v8`, `branches: 100`); Go via `go test -coverprofile` on `anyonce/engine.go`
 - [ ] Store contract suite exported (`@anyonce/core/testing`, `anyonce/storetest`) and consumed by the memory stores
 - [ ] REQ-STORE-8 race test: 20 iterations, exactly one `acquired` each, in both languages
 - [ ] `@anyonce/core` has no `dependencies`; bundle under 8 KB min+gzip (`bun run size`)
@@ -44,13 +45,19 @@ Each gate is run with `verification-before-completion`. Paste the raw command ou
 - [ ] `docs/stores.md` row added: consistency, atomicity mechanism, native TTL, setup, cost note
 - [ ] For DO: alarm purge tested; for DynamoDB: TTL attribute set and `ReturnValuesOnConditionCheckFailure` path tested; for Redis: EVALSHA fallback tested; for Postgres/D1/SQLite: migration file applied by `ensureSchema()` test
 
-## P4 queue and webhook doors
+## P4a queue door
 
 - [ ] anyq adapter tests green against memory/Redis Streams, ElasticMQ (SQS), Redpanda (Kafka), TS and Go
 - [ ] Stored queue record contains no payload bytes (REQ-Q-5)
+- [ ] Companion strategy (REQ-Q-8) tested with and without a strategy; the park downgrade never calls the handler before the lease expires
+- [ ] Mismatch paths route to dead-letter with reason `fingerprint-mismatch`
+- [ ] `docs/queue-ids.md` covers all nine anyq adapters with redelivery id stability (REQ-DOC-9)
+
+## P4b webhook door
+
 - [ ] Webhook verification gate test precedes happy path in git history (REQ-WH-2)
 - [ ] anyhook sign → anyonce receive interop test green; Standard Webhooks vectors green
-- [ ] Mismatch paths route to dead-letter (queue) and fire `onSuspicious` (webhook)
+- [ ] Mismatch fires `onSuspicious` (REQ-WH-5)
 
 ## P5 cross-implementation report
 

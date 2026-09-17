@@ -1,0 +1,100 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: bun install --frozen-lockfile
+      - run: bun run doctor
+        env:
+          DOCTOR_SKIP_GOLANGCI: '1'
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run build
+      - shell: bash
+        run: bun run test 2>&1 | tee test.log
+      - run: scripts/no-skips.sh test.log
+      - run: bun run test:reqs
+
+  vectors-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run vectors:validate
+
+  workers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run test:workers
+
+  go:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    strategy:
+      matrix:
+        go: [stable, oldstable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -race ./...
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          working-directory: go
+          version: v2.13.2
+
+  services:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: docker compose -f test/compose.yml up -d --wait
+      - run: bun run services:check
+      - shell: bash
+        run: bun run test:services 2>&1 | tee services.log
+      - run: scripts/no-skips.sh services.log
+      - if: always()
+        run: docker compose -f test/compose.yml down -v
+
+  node-compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: node --input-type=module -e "const m = await import('./packages/conformance/dist/index.js'); if (typeof m.runVectors !== 'function') process.exit(1);"
+      - run: node -e "const m = require('./packages/conformance/dist/index.cjs'); if (typeof m.runVectors !== 'function') process.exit(1);"

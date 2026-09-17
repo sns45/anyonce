@@ -1,0 +1,34 @@
+{
+  "id": "profile/4xx-replayed",
+  "tier": "profile",
+  "title": "A stored 4xx result is replayed",
+  "description": "anyonce profile (D6): results with status below 500 are stored, so a 404 from the handler replays as 404 without a second execution.",
+  "fixture": "status",
+  "steps": [
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/status/404",
+        "headers": { "Idempotency-Key": "k-4xx-1", "Content-Type": "text/plain" },
+        "body": "s"
+      },
+      "expect": { "status": 404, "bodyEquals": "status:404", "handlerInvocations": 1 }
+    },
+    {
+      "id": "retry",
+      "request": {
+        "method": "POST",
+        "path": "/status/404",
+        "headers": { "Idempotency-Key": "k-4xx-1", "Content-Type": "text/plain" },
+        "body": "s"
+      },
+      "expect": {
+        "status": 404,
+        "bodyEquals": { "sameAs": "first" },
+        "headers": { "Idempotency-Replayed": "true" },
+        "handlerInvocations": 1
+      }
+    }
+  ]
+}

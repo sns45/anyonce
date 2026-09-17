@@ -35,7 +35,7 @@ GraphQL: Could not resolve to a Repository with the name 'sns45/anyonce'. (repos
 | Expires | 18 April 2026 |
 | Em or en dashes in file | 0 |
 
-The editor's copy at `github.com/ietf-wg-httpapi/idempotency` was cloned read-only to `/tmp/ietf-idempotency` and compared section by section. The delta is recorded in `conformance/DRAFT-GAPS.md` under "Editor's copy delta".
+The editor's copy at `github.com/ietf-wg-httpapi/idempotency` was cloned read-only to `/tmp/ietf-idempotency` and compared section by section. Editor's copy last commit: `dab060c`, 26 February 2025, draft 06. The delta is recorded in `conformance/DRAFT-GAPS.md` under "Editor's copy delta".
 
 ## Sibling projects
 
@@ -51,9 +51,9 @@ Interfaces recorded in `docs/reference/anyq-interfaces.md` and `docs/reference/a
 | Tool | Version | Note |
 |---|---|---|
 | bun | 1.2.21 | |
-| go | 1.25.3 darwin/arm64 | anyq pins `go 1.25.3`, anyhook pins `go 1.24` |
+| go | 1.25.3 first on PATH (cached toolchain); 1.27.1 installed at /opt/homebrew/bin/go; current stable is 1.27.1 | PATH order should be fixed so the brew binary wins |
 | node | 22.17.0 | for the Node compat matrix (REQ-REL-4) |
 | docker | 28.3.2 | |
 | gh | present, authenticated as `sns45` | |
 | rg | present | |
-| golangci-lint | not installed | must be installed before the first Go gate (`brew install golangci-lint`), noted in `docs/superpowers/questions.md` |
+| golangci-lint | 2.13.2 (installed during P0, pinned in CI) | pinned to the same version locally and in CI, per `docs/superpowers/questions.md` Q6 |

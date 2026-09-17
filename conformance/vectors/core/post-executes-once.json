@@ -1,0 +1,20 @@
+{
+  "id": "core/post-executes-once",
+  "tier": "core",
+  "title": "A POST with a fresh Idempotency-Key executes the handler exactly once",
+  "draftRef": "section-2.6",
+  "description": "First time request: the resource processes the request normally. The counter proves one invocation.",
+  "fixture": "echo",
+  "steps": [
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-post-once-1", "Content-Type": "text/plain" },
+        "body": "hello"
+      },
+      "expect": { "status": 201, "bodyEquals": "hello", "handlerInvocations": 1 }
+    }
+  ]
+}

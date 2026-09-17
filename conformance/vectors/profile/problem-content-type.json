@@ -1,0 +1,45 @@
+{
+  "id": "profile/problem-content-type",
+  "tier": "profile",
+  "title": "Error responses use the problem details media type",
+  "description": "anyonce profile (D10): every error response is RFC 9457 problem details with Content-Type application/problem+json.",
+  "fixture": "echo",
+  "steps": [
+    {
+      "id": "missing",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Content-Type": "text/plain" },
+        "body": "no key"
+      },
+      "expect": {
+        "status": 400,
+        "headers": { "Content-Type": { "regex": "^application/problem\\+json" } }
+      }
+    },
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-ctype-1", "Content-Type": "text/plain" },
+        "body": "payload-a"
+      },
+      "expect": { "status": 201 }
+    },
+    {
+      "id": "changed",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-ctype-1", "Content-Type": "text/plain" },
+        "body": "payload-b"
+      },
+      "expect": {
+        "status": 422,
+        "headers": { "Content-Type": { "regex": "^application/problem\\+json" } }
+      }
+    }
+  ]
+}

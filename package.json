@@ -1,0 +1,36 @@
+{
+  "name": "anyonce-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "conformance/fixtures/*"
+  ],
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "doctor": "scripts/doctor.sh",
+    "build": "bun run --filter '@anyonce/*' build",
+    "test": "bun test packages conformance scripts test/ci.test.ts",
+    "test:services": "bun test test/compose.test.ts",
+    "test:reqs": "bun run scripts/reqs.ts --phase p0",
+    "typecheck": "bun run --filter '@anyonce/*' typecheck && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p test/tsconfig.json && tsc --noEmit -p test/workers/tsconfig.json",
+    "test:workers": "vitest run --config test/workers/vitest.config.ts",
+    "vectors:validate": "bun test packages/conformance/test/vectors-validate.test.ts",
+    "services:check": "bun run scripts/services-check.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@changesets/cli": "^3.0.3",
+    "@cloudflare/vitest-pool-workers": "0.12.21",
+    "@cloudflare/workers-types": "^5.20260916.1",
+    "@types/bun": "^1.4.2",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "tsup": "^8.5.1",
+    "typescript": "^5",
+    "vitest": "3.2.7",
+    "wrangler": "^4.132.0",
+    "yaml": "^2.9.1"
+  }
+}

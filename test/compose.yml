@@ -1,0 +1,58 @@
+name: anyonce-test
+# Host ports 18000 and 15432 avoid common local collisions; container ports are the defaults.
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:2.6.1
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]
+    ports: ["18000:8000"]
+    # DynamoDB Local returns HTTP 400 to an unauthenticated GET; that response still proves the port is up.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8000 || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  redis:
+    image: redis:7.4-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  postgres:
+    image: postgres:16.9-alpine
+    environment:
+      POSTGRES_USER: anyonce
+      POSTGRES_PASSWORD: anyonce
+      POSTGRES_DB: anyonce
+    ports: ["15432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U anyonce"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  redpanda:
+    image: redpandadata/redpanda:v24.3.11
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=512M
+      - --overprovisioned
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://127.0.0.1:9092
+    ports: ["9092:9092"]
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+  elasticmq:
+    image: softwaremill/elasticmq-native:1.6.12
+    ports: ["9324:9324", "9325:9325"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9325 >/dev/null || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
