@@ -44,7 +44,7 @@ describe('shared sql', () => {
       "DELETE FROM anyonce_records WHERE scope = ?1 AND key = ?2 AND fence = ?3 AND state = 'in_flight'",
     );
     expect(GET_SQL).toContain('expires_at > ?3');
-    expect(PURGE_SQL).toContain('DELETE FROM anyonce_records WHERE expires_at <= ?1');
+    expect(PURGE_SQL).toBe('DELETE FROM anyonce_records WHERE expires_at <= ?1');
     expect(SELECT_SQL).toContain('WHERE scope = ?1 AND key = ?2');
   });
 
@@ -73,5 +73,10 @@ describe('shared sql', () => {
 
   test('REQ-ST-PG-1: REMOVE_SQL is the test-only physical delete by scope and key with no RETURNING', () => {
     expect(REMOVE_SQL).toBe('DELETE FROM anyonce_records WHERE scope = ?1 AND key = ?2');
+  });
+
+  test('REQ-ST-PG-1: PURGE_SQL has no RETURNING, so a sweep is counted by the driver rather than materialized', () => {
+    expect(PURGE_SQL).not.toContain('RETURNING');
+    expect(pgSql(PURGE_SQL)).toBe('DELETE FROM anyonce_records WHERE expires_at <= $1');
   });
 });

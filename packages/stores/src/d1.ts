@@ -118,9 +118,10 @@ export class D1Store implements Store {
     return row === null ? null : rowToRecord(asRow(row));
   }
 
+  /** run() rather than all(): D1 reports the delete's row count in meta.changes, so no row is materialized. */
   async purge(now: number): Promise<number> {
-    const { results } = await this.db.prepare(PURGE_SQL).bind(now).all();
-    return results.length;
+    const { meta } = await this.db.prepare(PURGE_SQL).bind(now).run();
+    return meta.changes;
   }
 
   async physicallyRemove(op: Pick<Operation, 'scope' | 'key'>): Promise<void> {

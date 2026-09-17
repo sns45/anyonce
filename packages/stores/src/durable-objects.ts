@@ -42,7 +42,7 @@ ON CONFLICT(scope, key) DO UPDATE SET expires_wall = excluded.expires_wall`;
 
 const SWEEP_REMOVE_SQL = 'DELETE FROM anyonce_sweep WHERE scope = ?1 AND key = ?2';
 
-/** Drops sweep entries whose record is gone; PURGE_SQL returns scope only, so the orphans are found by join. */
+/** Drops sweep entries whose record is gone; PURGE_SQL returns no rows, so the orphans are found by join. */
 const SWEEP_PRUNE_SQL = `
 DELETE FROM anyonce_sweep WHERE NOT EXISTS (
   SELECT 1 FROM anyonce_records
@@ -200,9 +200,12 @@ export class IdempotencyObject extends DurableObject implements IdempotencyObjec
 
   async purge(now: number): Promise<number> {
     this.init();
-    const removed = this.ctx.storage.sql.exec(PURGE_SQL, now).toArray();
-    if (removed.length > 0) this.ctx.storage.sql.exec(SWEEP_PRUNE_SQL);
-    return removed.length;
+    const cursor = this.ctx.storage.sql.exec(PURGE_SQL, now);
+    // rowsWritten is final only once the cursor is drained; the delete returns no rows, so this is empty.
+    cursor.toArray();
+    const removed = cursor.rowsWritten;
+    if (removed > 0) this.ctx.storage.sql.exec(SWEEP_PRUNE_SQL);
+    return removed;
   }
 
   async physicallyRemove(op: Pick<Operation, 'scope' | 'key'>): Promise<void> {

@@ -80,8 +80,13 @@ export const SELECT_SQL = `
 SELECT scope, key, fingerprint, state, fence, lease_until, created_at, expires_at, result_meta, result_body, result_omitted
 FROM anyonce_records WHERE scope = ?1 AND key = ?2`;
 
-/** ?1 now. */
-export const PURGE_SQL = `DELETE FROM anyonce_records WHERE expires_at <= ?1 RETURNING scope`;
+/**
+ * ?1 now. No RETURNING: every driver already reports how many rows a DELETE affected (pg rowCount, postgres.js
+ * count, D1 meta.changes, Durable Object SqlStorageCursor.rowsWritten, Go RowsAffected), and materializing one
+ * row per expired record only to count them costs memory on exactly the sweep that has the most to remove.
+ * This makes the statement byte identical to the Go one.
+ */
+export const PURGE_SQL = `DELETE FROM anyonce_records WHERE expires_at <= ?1`;
 
 /** ?1 scope, ?2 key: test-only physical removal. */
 export const REMOVE_SQL = `DELETE FROM anyonce_records WHERE scope = ?1 AND key = ?2`;

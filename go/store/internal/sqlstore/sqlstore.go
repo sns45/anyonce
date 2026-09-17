@@ -64,7 +64,9 @@ const getSQL = `
 SELECT scope, key, fingerprint, state, fence, lease_until, created_at, expires_at, result_meta, result_body, result_omitted
 FROM anyonce_records WHERE scope = ?1 AND key = ?2 AND expires_at > ?3`
 
-// purgeSQL: ?1 now. Go counts RowsAffected rather than using RETURNING.
+// purgeSQL: ?1 now. No RETURNING in either language: the count comes from the driver's affected-row report,
+// RowsAffected here and rowCount, count, meta.changes or rowsWritten in TypeScript, so the statement text is
+// byte identical to PURGE_SQL and the parity test asserts that.
 const purgeSQL = `DELETE FROM anyonce_records WHERE expires_at <= ?1`
 
 // removeSQL: ?1 scope, ?2 key: test-only physical removal.

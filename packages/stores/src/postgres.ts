@@ -22,28 +22,53 @@ import {
   SELECT_SQL,
 } from './sql';
 
-/** The one call the store needs. pg clients and pools satisfy it directly. */
+/**
+ * The one call the store needs. pg clients and pools satisfy it directly. rowCount is how many rows the
+ * statement affected, which is what `purge` reports; pg types it as `number | null` (null for a statement that
+ * reports no count), so the store reads it as `rowCount ?? 0`.
+ */
 export interface PostgresQuery {
-  query(sql: string, params: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
+  query(
+    sql: string,
+    params: unknown[],
+  ): Promise<{ rows: Record<string, unknown>[]; rowCount?: number | null }>;
 }
 
+/** postgres.js resolves to the row array itself, carrying the affected-row count on its `count` property. */
 export function fromPostgresJs(sql: {
   unsafe(text: string, params?: unknown[]): Promise<unknown>;
 }): PostgresQuery {
   return {
-    query: async (text, params) => ({
-      rows: (await sql.unsafe(text, params)) as Record<string, unknown>[],
-    }),
+    query: async (text, params) => {
+      const result = (await sql.unsafe(text, params)) as Record<string, unknown>[] & {
+        count?: number;
+      };
+      return { rows: result, rowCount: result.count ?? null };
+    },
   };
 }
 
+/**
+ * Neon's HTTP driver must be constructed as `neon(url, { fullResults: true })`. By default a query resolves to
+ * a bare row array, which carries no affected-row count, so `purge` would have nothing to report; with
+ * fullResults each query resolves to `{ rows, rowCount }`, which is what this adapter maps. A bare array is
+ * refused with a message naming the option rather than silently purging and reporting 0.
+ */
 export function fromNeon(sql: {
   query(text: string, params: unknown[]): Promise<unknown>;
 }): PostgresQuery {
   return {
-    query: async (text, params) => ({
-      rows: (await sql.query(text, params)) as Record<string, unknown>[],
-    }),
+    query: async (text, params) => {
+      const result = (await sql.query(text, params)) as {
+        rows?: Record<string, unknown>[];
+        rowCount?: number | null;
+      };
+      if (!Array.isArray(result?.rows))
+        throw new TypeError(
+          'anyonce: fromNeon needs the full result shape; construct the client as neon(url, { fullResults: true }) so every query resolves to { rows, rowCount }',
+        );
+      return { rows: result.rows, rowCount: result.rowCount ?? null };
+    },
   };
 }
 
@@ -161,8 +186,9 @@ export class PostgresStore implements Store {
     return rows[0] === undefined ? null : rowToRecord(asRow(rows[0]));
   }
 
+  /** The driver's affected-row count, not a RETURNING row per record, so a large sweep costs no extra memory. */
   async purge(now: number): Promise<number> {
-    return (await this.db.query(PURGE, [now])).rows.length;
+    return (await this.db.query(PURGE, [now])).rowCount ?? 0;
   }
 
   /** Test-only physical removal. */
