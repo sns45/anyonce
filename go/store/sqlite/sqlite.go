@@ -43,7 +43,9 @@ func EnsureSchema(ctx context.Context, db *sql.DB) error {
 // Open opens the database file at path through modernc.org/sqlite, pings it, sets a five second busy timeout
 // and WAL journal mode, caps the connection pool at one (the atomicity mechanism: a single writer means every
 // transition is one statement with no other connection able to interleave), and returns a store over it. Call
-// EnsureSchema before first use.
+// EnsureSchema before first use. The cap is fixed rather than an option, unlike postgres.Open: SQLite
+// serializes writers at the file level anyway, so a larger pool would only trade a wait inside database/sql
+// for SQLITE_BUSY retries at the file.
 func Open(ctx context.Context, path string) (*sqlstore.Store, error) {
 	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
 	db, err := sql.Open("sqlite", dsn)

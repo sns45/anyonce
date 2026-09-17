@@ -37,14 +37,30 @@ func EnsureSchema(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// Open connects to dsn through pgx, pings it, sets the connection pool cap the concurrency contract test needs,
-// and returns a store over it. Call EnsureSchema before first use.
-func Open(ctx context.Context, dsn string) (*sqlstore.Store, error) {
+// DefaultMaxOpenConns is the pool cap Open applies when Options.MaxOpenConns is zero.
+const DefaultMaxOpenConns = 10
+
+// Options configure Open. MaxOpenConns is the pool cap handed to sql.DB.SetMaxOpenConns; zero means
+// DefaultMaxOpenConns, which suits an ordinary service where each request holds one connection for one
+// statement. Raise it when many goroutines claim at once: the contract suite's REQ-STORE-8 race runs 50
+// concurrent begins and passes 60, so no goroutine waits for a connection and the race is real contention in
+// Postgres rather than in the pool.
+type Options struct {
+	MaxOpenConns int
+}
+
+// Open connects to dsn through pgx, pings it, caps the connection pool per opts, and returns a store over it.
+// Call EnsureSchema before first use.
+func Open(ctx context.Context, dsn string, opts Options) (*sqlstore.Store, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: open: %w", err)
 	}
-	db.SetMaxOpenConns(60)
+	maxOpen := opts.MaxOpenConns
+	if maxOpen == 0 {
+		maxOpen = DefaultMaxOpenConns
+	}
+	db.SetMaxOpenConns(maxOpen)
 	if err := db.PingContext(ctx); err != nil {
 		// sql.Open never dials, so the handle and its pool goroutines exist even when the ping fails.
 		_ = db.Close()
