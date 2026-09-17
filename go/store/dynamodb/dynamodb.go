@@ -32,6 +32,17 @@ const (
 	completed = string(anyonce.StateCompleted)
 )
 
+// The four expressions below are byte identical to the TypeScript store's BEGIN_CONDITION, BEGIN_UPDATE,
+// COMPLETE_CONDITION and ABANDON_CONDITION; packages/stores/test/parity.test.ts asserts it, so change both
+// sides in the same commit.
+const beginCondition = `attribute_not_exists(pk) OR expires_at <= :now OR (fingerprint = :fp AND #state = :in_flight AND lease_until <= :now)`
+
+const beginUpdate = `SET fingerprint = :fp, #state = :in_flight, fence = if_not_exists(fence, :zero) + :one, lease_until = :lease, created_at = :now, expires_at = :exp, #ttl = :ttl, result_omitted = :zero REMOVE result_meta, result_body`
+
+const completeCondition = `fence = :fence AND expires_at > :now AND #state = :in_flight`
+
+const abandonCondition = `fence = :fence AND #state = :in_flight`
+
 // KeySeparator is the unit separator: the scope and the key are joined with it into the single partition key
 // pk, so one composed key stays unambiguous (Q22).
 const KeySeparator = string(rune(31))
@@ -157,11 +168,10 @@ func (s *Store) Begin(ctx context.Context, op anyonce.Operation, opts anyonce.Be
 		// The native attribute is a wall clock deadline in seconds; every logical field comes from opts.Now.
 		ttlSeconds := time.Now().Add(opts.TTL + s.grace).Unix()
 		out, err := s.client.UpdateItem(ctx, &awsdynamodb.UpdateItemInput{
-			TableName:           aws.String(s.table),
-			Key:                 key(op.Scope, op.Key),
-			ConditionExpression: aws.String("attribute_not_exists(pk) OR expires_at <= :now OR (fingerprint = :fp AND #state = :in_flight AND lease_until <= :now)"),
-			UpdateExpression: aws.String("SET fingerprint = :fp, #state = :in_flight, fence = if_not_exists(fence, :zero) + :one, " +
-				"lease_until = :lease, created_at = :now, expires_at = :exp, #ttl = :ttl, result_omitted = :zero REMOVE result_meta, result_body"),
+			TableName:                aws.String(s.table),
+			Key:                      key(op.Scope, op.Key),
+			ConditionExpression:      aws.String(beginCondition),
+			UpdateExpression:         aws.String(beginUpdate),
 			ExpressionAttributeNames: map[string]string{"#state": "state", "#ttl": "ttl"},
 			ExpressionAttributeValues: map[string]types.AttributeValue{
 				":fp":        str(op.Fingerprint),
@@ -238,7 +248,7 @@ func (s *Store) Complete(ctx context.Context, op anyonce.Operation, fence int64,
 	_, err = s.client.UpdateItem(ctx, &awsdynamodb.UpdateItemInput{
 		TableName:                           aws.String(s.table),
 		Key:                                 key(op.Scope, op.Key),
-		ConditionExpression:                 aws.String("fence = :fence AND expires_at > :now AND #state = :in_flight"),
+		ConditionExpression:                 aws.String(completeCondition),
 		UpdateExpression:                    aws.String(update),
 		ExpressionAttributeNames:            map[string]string{"#state": "state"},
 		ExpressionAttributeValues:           values,
@@ -271,7 +281,7 @@ func (s *Store) Abandon(ctx context.Context, op anyonce.Operation, fence int64) 
 	_, err := s.client.DeleteItem(ctx, &awsdynamodb.DeleteItemInput{
 		TableName:           aws.String(s.table),
 		Key:                 key(op.Scope, op.Key),
-		ConditionExpression: aws.String("fence = :fence AND #state = :in_flight"),
+		ConditionExpression: aws.String(abandonCondition),
 		ExpressionAttributeNames: map[string]string{
 			"#state": "state",
 		},

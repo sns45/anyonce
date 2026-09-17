@@ -34,6 +34,21 @@ export function itemKey(op: Pick<Operation, 'scope' | 'key'>): string {
   return `${op.scope}${KEY_SEPARATOR}${op.key}`;
 }
 
+/**
+ * The four DynamoDB expressions. Each is byte identical to the Go store's constant of the same shape
+ * (beginCondition, beginUpdate, completeCondition, abandonCondition); parity.test.ts asserts it, so change
+ * both sides in the same commit.
+ */
+export const BEGIN_CONDITION =
+  'attribute_not_exists(pk) OR expires_at <= :now OR (fingerprint = :fp AND #state = :in_flight AND lease_until <= :now)';
+
+export const BEGIN_UPDATE =
+  'SET fingerprint = :fp, #state = :in_flight, fence = if_not_exists(fence, :zero) + :one, lease_until = :lease, created_at = :now, expires_at = :exp, #ttl = :ttl, result_omitted = :zero REMOVE result_meta, result_body';
+
+export const COMPLETE_CONDITION = 'fence = :fence AND expires_at > :now AND #state = :in_flight';
+
+export const ABANDON_CONDITION = 'fence = :fence AND #state = :in_flight';
+
 export interface DynamoDbStoreOptions {
   client: DynamoDBClient;
   /** Default anyonce_records. One partition key, pk, holding the scope and the key (Q22). No sort key. */
@@ -96,10 +111,8 @@ export class DynamoDbStore implements Store {
           new UpdateItemCommand({
             TableName: this.table,
             Key: this.key(op),
-            ConditionExpression:
-              'attribute_not_exists(pk) OR expires_at <= :now OR (fingerprint = :fp AND #state = :in_flight AND lease_until <= :now)',
-            UpdateExpression:
-              'SET fingerprint = :fp, #state = :in_flight, fence = if_not_exists(fence, :zero) + :one, lease_until = :lease, created_at = :now, expires_at = :exp, #ttl = :ttl, result_omitted = :zero REMOVE result_meta, result_body',
+            ConditionExpression: BEGIN_CONDITION,
+            UpdateExpression: BEGIN_UPDATE,
             ExpressionAttributeNames: { '#state': 'state', '#ttl': 'ttl' },
             ExpressionAttributeValues: {
               ':fp': { S: op.fingerprint },
@@ -169,7 +182,7 @@ export class DynamoDbStore implements Store {
         new UpdateItemCommand({
           TableName: this.table,
           Key: this.key(op),
-          ConditionExpression: 'fence = :fence AND expires_at > :now AND #state = :in_flight',
+          ConditionExpression: COMPLETE_CONDITION,
           UpdateExpression: update,
           ExpressionAttributeNames: { '#state': 'state' },
           ExpressionAttributeValues: values,
@@ -193,7 +206,7 @@ export class DynamoDbStore implements Store {
         new DeleteItemCommand({
           TableName: this.table,
           Key: this.key(op),
-          ConditionExpression: 'fence = :fence AND #state = :in_flight',
+          ConditionExpression: ABANDON_CONDITION,
           ExpressionAttributeNames: { '#state': 'state' },
           ExpressionAttributeValues: { ':fence': n(fence), ':in_flight': { S: 'in_flight' } },
           ReturnValuesOnConditionCheckFailure: 'ALL_OLD',
