@@ -9,8 +9,9 @@ Every store implements the same `Store` contract (requirements 4.2) and passes t
 | redis | TS, Go | single node or cluster with hash tags | one Lua script per transition (EVALSHA, EVAL fallback) | yes, PEXPIRE at ttl plus 60 s grace | any Redis 7; adapters for ioredis, node-redis and Upstash REST | one round trip per transition; bodies stored base64 so the REST client stays binary safe | 1 MiB |
 | postgres | TS, Go | serializable enough: one statement per transition | INSERT ON CONFLICT DO UPDATE WHERE, refusal classified by one SELECT | no, purge(now) with the expires_at index | migrations/postgres/0001_anyonce.sql or ensureSchema(query) | one statement per transition, two on a refused claim; run purge on a schedule | 1 MiB |
 | d1 | TS | strongly consistent within the database | INSERT ON CONFLICT DO UPDATE WHERE, refusal classified by one SELECT | no, purge(now) with the expires_at index (a cron trigger is the usual scheduler) | migrations/d1/0001_anyonce.sql via wrangler d1 migrations, or ensureSchema(db) | one statement per transition; rows up to 2 MB | 1 MiB |
+| durable-objects | TS | strongly consistent per object | single writer per object, one SQLite statement per transition | alarm sweep by wall clock (expires_at plus 60 s grace) | bind IdempotencyObject with new_sqlite_classes; DurableObjectsStore({ namespace }) | one RPC per transition; per scope sharding serializes a scope's requests, per scope and key sharding spreads them | 1 MiB (2 MB row limit) |
 
-Rows for Durable Objects and SQLite are added by their store PRs.
+Rows for SQLite are added by its store PR.
 
 ## Cloudflare KV is not a store (REQ-ST-KV-1)
 
