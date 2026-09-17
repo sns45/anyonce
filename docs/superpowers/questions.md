@@ -188,3 +188,11 @@ REQ-HTTP-7 says the response streams to the client while a copy is buffered, and
 Recommended resolution: the capture is pull driven. The handler's stream is read at the client's pace, the record completes only when the client has received the whole body (or cancelled, after which the remaining bytes are drained for the store), and the client sees EOF only after the record is complete. Consequences, to be documented in `docs/semantics.md` (P6): a duplicate that arrives while the first client is still receiving the body gets 409 with Retry-After, not a replay; a client that stalls without cancelling holds the claim until the lease expires, at which point a retry takes over the claim. Go behaves the same way for bodies large enough to block on the socket (the handler writes to the connection and the record completes when the handler returns); a small body fits the server buffer, so a Go record can complete before the client has read anything.
 
 **Decision: pending.** P2 proceeds on the recommendation.
+
+## Q20: DynamoDB's 400 KB item limit against the 1 MiB round trip in REQ-STORE-11
+
+REQ-STORE-11 asks every store to round trip a body of exactly `maxResultBytes` (1 MiB). A DynamoDB item is capped at 400 KB including attribute names, so no single-item design can hold it. D1 rows and SQLite-backed Durable Object values allow 2 MB, Redis and Postgres allow far more, so DynamoDB is the only store affected.
+
+Recommended resolution: the contract suite reads the cap from the harness (`StoreHarness.maxResultBytes`, Go `Harness.MaxResultBytes`, default 1 MiB) and the DynamoDB harness declares 300 KiB. `docs/stores.md` records the DynamoDB cap, and the adapter option `maxResultBytes` must be set to at most 300 KiB when the DynamoDB store is used; larger results are stored in the omitted form (status and headers replay, body does not), which is the D12 degradation, not a failure. Chunking bodies across items was considered and rejected: it makes the replay read non atomic across items, multiplies write cost, and serves a case the omitted form already handles honestly.
+
+**Decision: pending.** P3 proceeds on the recommendation.
