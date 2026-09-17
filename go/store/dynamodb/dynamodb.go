@@ -124,6 +124,14 @@ func refusal(err error) (map[string]types.AttributeValue, bool) {
 	return failed.Item, true
 }
 
+// unclassifiableRefusal is the error for a refusal that carried no old item back, which leaves Begin with
+// nothing to classify. It names the option that has to be honoured, as the TypeScript store's message does.
+func unclassifiableRefusal(err error) error {
+	return fmt.Errorf("dynamodb: begin was refused without returning the old item, so the refusal cannot be "+
+		"classified; the endpoint must honour ReturnValuesOnConditionCheckFailure (DynamoDB Local 2.x or later, "+
+		"or a live table): %w", err)
+}
+
 // Begin claims the operation with one conditional UpdateItem. A refusal is classified from the old item the
 // write returned: TTL expiry first, then fingerprint, then state and lease.
 func (s *Store) Begin(ctx context.Context, op anyonce.Operation, opts anyonce.BeginOptions) (anyonce.BeginOutcome, error) {
@@ -155,8 +163,11 @@ func (s *Store) Begin(ctx context.Context, op anyonce.Operation, opts anyonce.Be
 			return anyonce.BeginOutcome{Kind: anyonce.BeginAcquired, Fence: readNum(out.Attributes, "fence")}, nil
 		}
 		item, refused := refusal(err)
-		if !refused || item == nil {
+		if !refused {
 			return anyonce.BeginOutcome{}, fmt.Errorf("dynamodb: begin: %w", err)
+		}
+		if item == nil {
+			return anyonce.BeginOutcome{}, unclassifiableRefusal(err)
 		}
 		row := itemToRow(item)
 		if row.ExpiresAt <= nowMs {
@@ -178,6 +189,11 @@ func (s *Store) Begin(ctx context.Context, op anyonce.Operation, opts anyonce.Be
 
 // Complete stores the result if the fence still holds and the row is live and in flight.
 func (s *Store) Complete(ctx context.Context, op anyonce.Operation, fence int64, result anyonce.StoredResult, now time.Time) (anyonce.CompleteStatus, error) {
+	if !result.Omitted && len(result.Body) > MaxResultBytes {
+		return "", fmt.Errorf("dynamodb: cannot store a %d byte body because an item is capped at 400 KB (Q20); "+
+			"set Policy.MaxResultBytes to at most %d so a larger result is stored in the omitted form instead",
+			len(result.Body), MaxResultBytes)
+	}
 	meta, err := rowcodec.EncodeMeta(result)
 	if err != nil {
 		return "", fmt.Errorf("dynamodb: complete: %w", err)
