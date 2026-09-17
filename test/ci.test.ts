@@ -20,8 +20,9 @@ const runs = (job: Job) => job.steps.map((s) => s.run ?? '').join('\n');
 const uses = (job: Job) => job.steps.map((s) => s.uses ?? '');
 
 describe('ci workflow', () => {
-  test('REQ-REL-4: declares the ts, vectors-validate, workers, go, services and node-compat jobs', () => {
+  test('REQ-REL-4: declares the ts, vectors-validate, workers, go, services, node-compat and deno jobs', () => {
     expect(Object.keys(ci.jobs).sort()).toEqual([
+      'deno',
       'go',
       'node-compat',
       'services',
@@ -29,6 +30,16 @@ describe('ci workflow', () => {
       'vectors-validate',
       'workers',
     ]);
+  });
+
+  test('REQ-REL-4: the runtime matrix jobs build first and run the node and deno suites', () => {
+    expect(runs(ci.jobs.workers as Job)).toContain('bun run build');
+    expect(runs(ci.jobs.workers as Job).indexOf('bun run build')).toBeLessThan(
+      runs(ci.jobs.workers as Job).indexOf('bun run test:workers'),
+    );
+    expect(runs(ci.jobs['node-compat'] as Job)).toContain('bun run test:node');
+    expect(runs(ci.jobs.deno as Job)).toContain('bun run test:deno');
+    expect(uses(ci.jobs.deno as Job)).toContain('denoland/setup-deno@v2');
   });
 
   test('REQ-REL-4: the services job starts the compose stack and proves connectivity', () => {
@@ -105,10 +116,17 @@ describe('ci workflow', () => {
     expect(names.indexOf('key-log gate')).toBeGreaterThan(lintAt);
   });
 
-  test('REQ-REL-4: node-compat requires both core entries', () => {
+  test('REQ-REL-4: node-compat requires every CJS entry', () => {
     const text = runs(ci.jobs['node-compat'] as Job);
-    expect(text).toContain("require('@anyonce/core')");
-    expect(text).toContain("require('@anyonce/core/testing')");
+    for (const entry of [
+      '@anyonce/core',
+      '@anyonce/core/testing',
+      '@anyonce/core/http',
+      '@anyonce/hono',
+      '@anyonce/conformance/runtime',
+    ]) {
+      expect(text).toContain(`require('${entry}')`);
+    }
   });
 
   test('REQ-REL-4: every bun test job fails on skipped tests', () => {

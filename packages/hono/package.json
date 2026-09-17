@@ -1,0 +1,35 @@
+{
+  "name": "@anyonce/hono",
+  "version": "0.0.0",
+  "description": "Hono middleware for anyonce idempotency",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@anyonce/core": "workspace:*",
+    "hono": ">=4.8.0"
+  },
+  "devDependencies": {
+    "@anyonce/conformance": "workspace:*",
+    "@anyonce/core": "workspace:*",
+    "@anyonce/fixture-hono": "workspace:*",
+    "hono": "^4.13.8"
+  }
+}

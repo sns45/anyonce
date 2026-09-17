@@ -10,6 +10,8 @@ import {
   omitBody,
   resultSize,
 } from '../src/engine';
+import { MemoryStore } from '../src/memory';
+import { T0 } from '../src/testing/index';
 import type {
   BeginOutcome,
   CompleteStatus,
@@ -300,6 +302,24 @@ describe('execute', () => {
     };
     const out = await execute(store, op, async () => ok, policy({ hooks }));
     expect(out.kind).toBe('replayed');
+  });
+
+  test('REQ-CORE-1: run receives the fence of the acquired claim and 0 under fail-open', async () => {
+    const store = new MemoryStore();
+    const fences: number[] = [];
+    const run = async (fence: number) => {
+      fences.push(fence);
+      return { kind: 'http' as const, status: 200 };
+    };
+    await execute(store, op, run, defaultPolicy({ clock: () => T0 }));
+    const failing = {
+      ...store,
+      begin: async () => {
+        throw new Error('down');
+      },
+    } as unknown as Store;
+    await execute(failing, op, run, defaultPolicy({ clock: () => T0, onStoreError: 'fail-open' }));
+    expect(fences).toEqual([1, 0]);
   });
 
   test('REQ-CORE-1: without a clock the engine uses Date.now and without hooks it is silent', async () => {

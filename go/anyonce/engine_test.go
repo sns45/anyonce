@@ -103,8 +103,8 @@ func policy(mut func(*anyonce.Policy)) anyonce.Policy {
 	return p
 }
 
-func run(result anyonce.StoredResult, err error, runs *int) func(context.Context) (anyonce.StoredResult, error) {
-	return func(context.Context) (anyonce.StoredResult, error) {
+func run(result anyonce.StoredResult, err error, runs *int) func(context.Context, int64) (anyonce.StoredResult, error) {
+	return func(context.Context, int64) (anyonce.StoredResult, error) {
 		*runs++
 		return result, err
 	}
@@ -305,7 +305,7 @@ func TestExecute(t *testing.T) {
 		defer cancel()
 		s := &fakeStore{begin: anyonce.BeginOutcome{Kind: anyonce.BeginAcquired, Fence: 4}}
 		runs := 0
-		handler := func(context.Context) (anyonce.StoredResult, error) {
+		handler := func(context.Context, int64) (anyonce.StoredResult, error) {
 			runs++
 			cancel()
 			return okResult, nil
@@ -323,7 +323,7 @@ func TestExecute(t *testing.T) {
 		cancellable, cancel := context.WithCancel(ctx)
 		defer cancel()
 		s := &fakeStore{begin: anyonce.BeginOutcome{Kind: anyonce.BeginAcquired, Fence: 5}}
-		handler := func(runCtx context.Context) (anyonce.StoredResult, error) {
+		handler := func(runCtx context.Context, _ int64) (anyonce.StoredResult, error) {
 			cancel()
 			return anyonce.StoredResult{}, runCtx.Err()
 		}
@@ -358,6 +358,25 @@ func TestExecute(t *testing.T) {
 		res, err := anyonce.Execute(ctx, s, op, run(okResult, nil, &runs), anyonce.Policy{})
 		if !errors.Is(err, anyonce.ErrStoreUnavailable) || res.Kind != anyonce.ResultStoreError || runs != 0 {
 			t.Fatalf("%+v %v runs %d", res, err, runs)
+		}
+	})
+
+	t.Run("REQ-CORE-1: run receives the fence of the acquired claim and 0 under fail-open", func(t *testing.T) {
+		var fences []int64
+		record := func(_ context.Context, fence int64) (anyonce.StoredResult, error) {
+			fences = append(fences, fence)
+			return okResult, nil
+		}
+		if _, err := anyonce.Execute(ctx, &fakeStore{begin: anyonce.BeginOutcome{Kind: anyonce.BeginAcquired, Fence: 7}}, op, record, anyonce.DefaultPolicy()); err != nil {
+			t.Fatal(err)
+		}
+		open := anyonce.DefaultPolicy()
+		open.OnStoreError = anyonce.FailOpen
+		if _, err := anyonce.Execute(ctx, &fakeStore{beginErr: errors.New("down")}, op, record, open); err != nil {
+			t.Fatal(err)
+		}
+		if len(fences) != 2 || fences[0] != 7 || fences[1] != 0 {
+			t.Fatalf("fences %v", fences)
 		}
 	})
 }

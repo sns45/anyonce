@@ -172,3 +172,19 @@ Recommended resolution: the Go `Execute` returns `(Result, nil)` for executed, r
 D12 caps a stored result at `maxResultBytes`, and `resultSize` is what decides when `execute` swaps the full result for the omitted form. A `StoredResult` carries a status, a header list and a body, so the cap could be measured over the whole serialized record or over the body alone, and the two answers differ by the header bytes right at the boundary.
 
 Recommended resolution: `resultSize` is the body byte length only; headers are allowlisted and small, and the cap exists to bound stored bodies (D12).
+
+## Q18: REQ-HTTP-5 needs a problem code that D11 does not list
+
+REQ-HTTP-5 says a missing principal under `requirePrincipal` is a 500 configuration error, and REQ-HTTP-13 says every error is a problem details document with a stable code, but D11's code list has no entry for it.
+
+Recommended resolution: add `missing-principal` (500) to the D11 list and to `docs/problems.md`. A `requirePrincipal: true` configuration without a `principal` function fails at construction (`resolveHttpOptions` throws, Go `httpmw.New` panics), which is the "startup-time check where possible" half of the requirement; the request-time half returns the new problem.
+
+**Decision: pending.** P2 proceeds on the recommendation.
+
+## Q19: when a streamed HTTP result completes, and what a stalled client costs
+
+REQ-HTTP-7 says the response streams to the client while a copy is buffered, and the record completes with the captured result. The first P2 capture read the handler's stream as fast as it could, so the record completed regardless of the client and a slow client could hold the whole body in memory. The whole-branch review asked for backpressure.
+
+Recommended resolution: the capture is pull driven. The handler's stream is read at the client's pace, the record completes only when the client has received the whole body (or cancelled, after which the remaining bytes are drained for the store), and the client sees EOF only after the record is complete. Consequences, to be documented in `docs/semantics.md` (P6): a duplicate that arrives while the first client is still receiving the body gets 409 with Retry-After, not a replay; a client that stalls without cancelling holds the claim until the lease expires, at which point a retry takes over the claim. Go behaves the same way for bodies large enough to block on the socket (the handler writes to the connection and the record completes when the handler returns); a small body fits the server buffer, so a Go record can complete before the client has read anything.
+
+**Decision: pending.** P2 proceeds on the recommendation.

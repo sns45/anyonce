@@ -91,7 +91,8 @@ async function abandonQuietly(
 export async function execute(
   store: Store,
   op: Operation,
-  run: () => Promise<StoredResult>,
+  /** Receives the fence of the acquired claim; 0 when running without a claim under fail-open. */
+  run: (fence: number) => Promise<StoredResult>,
   policy: ExecutePolicy,
 ): Promise<ExecuteResult> {
   const now = (): number => (policy.clock ?? Date.now)();
@@ -110,7 +111,7 @@ export async function execute(
   } catch (error) {
     safely(() => hooks.onStoreError?.(op, error));
     if (policy.onStoreError === 'fail-closed') return { kind: 'store_error', error };
-    return { kind: 'executed', result: await run(), stored: false };
+    return { kind: 'executed', result: await run(0), stored: false };
   }
 
   if (outcome.outcome === 'completed') {
@@ -134,7 +135,7 @@ export async function execute(
 
   let result: StoredResult;
   try {
-    result = await run();
+    result = await run(fence);
   } catch (error) {
     await abandonQuietly(store, op, fence, hooks, safely);
     throw error;

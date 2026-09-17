@@ -29,7 +29,7 @@ export function parseSfString(input: string): SfStringResult {
       i++;
       if (i >= s.length) return fail('unterminated escape');
       const next = s.charCodeAt(i);
-      if (next !== 0x22 && next !== 0x5c) return fail(`invalid escape \\${s[i]}`);
+      if (next !== 0x22 && next !== 0x5c) return fail(`invalid escape at index ${i}`);
       out += s[i];
       i++;
       continue;

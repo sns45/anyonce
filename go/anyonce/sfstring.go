@@ -23,7 +23,7 @@ func ParseSfString(input string) (string, error) {
 				return "", fmt.Errorf("%w: unterminated escape", ErrInvalidKey)
 			}
 			if s[i] != '"' && s[i] != '\\' {
-				return "", fmt.Errorf("%w: invalid escape \\%c", ErrInvalidKey, s[i])
+				return "", fmt.Errorf("%w: invalid escape at index %d", ErrInvalidKey, i)
 			}
 			out.WriteByte(s[i])
 		case c == '"':

@@ -3,6 +3,7 @@
 import { join } from 'node:path';
 
 export const CORE_BUDGET_BYTES = 8192;
+export const HTTP_BUDGET_BYTES = 16384;
 
 export interface Budget {
   name: string;
@@ -12,6 +13,11 @@ export interface Budget {
 
 export const BUDGETS: Budget[] = [
   { name: '@anyonce/core', entry: 'packages/core/src/index.ts', limit: CORE_BUDGET_BYTES },
+  {
+    name: '@anyonce/core/http',
+    entry: 'packages/core/src/http/index.ts',
+    limit: HTTP_BUDGET_BYTES,
+  },
 ];
 
 export async function measureBundle(entry: string): Promise<{ minified: number; gzip: number }> {

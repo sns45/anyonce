@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "bun run src/server.ts",
+    "build": "tsup src/app.ts --format esm --clean",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

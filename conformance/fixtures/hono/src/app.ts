@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 export interface FixtureState {
@@ -10,16 +10,21 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Reference fixture for the conformance suite (requirements REQ-CONF-2), with no idempotency layer.
- * Every POST fixture increments the shared counter; /reset is the only control endpoint.
+ * Reference fixture for the conformance suite (requirements REQ-CONF-2). With no layer it has no idempotency at all.
+ * A layer is mounted after /reset (the control endpoint stays outside it) and before every fixture route.
  */
-export function createFixtureApp(state: FixtureState = { count: 0 }): Hono {
+export function createFixtureApp(
+  state: FixtureState = { count: 0 },
+  layer?: MiddlewareHandler,
+): Hono {
   const app = new Hono();
 
   app.post('/reset', (c) => {
     state.count = 0;
     return c.body(null, 204);
   });
+
+  if (layer !== undefined) app.use(layer);
 
   app.get('/counter', (c) => c.json({ count: state.count }));
 

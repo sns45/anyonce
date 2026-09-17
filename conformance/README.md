@@ -20,7 +20,7 @@ Mount these behind your idempotency layer. All POST routes must require the `Ide
 | `GET /counter` | 200 with `{"count": n}`. Behind the layer (a key on GET must be ignored) |
 | `POST /reset` | 204, counter set to 0. The only control endpoint, mounted outside the layer |
 
-Reference apps with no idempotency layer: `fixtures/hono` (`bun run --filter @anyonce/fixture-hono start`) and `go/cmd/fixture` (`go run ./cmd/fixture`). Both print the listening address.
+Reference apps with no idempotency layer: `fixtures/hono` (`bun run --filter @anyonce/fixture-hono start`) and `go/cmd/fixture` (`go run ./cmd/fixture`). Both print the listening address. `go run ./cmd/fixture -idempotent -ttl-ms 2000` serves the Go fixture behind `httpmw` with the memory store, which is what the P2 URL-mode test drives.
 
 ## Vector format (REQ-CONF-1)
 
@@ -37,16 +37,35 @@ Execution rules:
 
 `requires: ["short-ttl"]` marks a vector that needs a TTL of at most 2000 ms on the target. Pass `capabilities: ['short-ttl']` (or `--capability short-ttl` on the CLI in P2) only when your target is configured that way. Otherwise the vector is reported as `not-applicable` and does not count as a pass or a fail.
 
+One vector depends on the runner rather than the target: `core/header-name-case-insensitive` spells the field name in lowercase, and the TypeScript runner cannot vary that spelling because the `Headers` class lowercases every name it is given, so the vector only discriminates when it is run from the Go runner, and a CLI run is not a substitute for that.
+
 ## Running
 
 In-process (TypeScript):
 
 ```ts
-import { loadVectors, runVectors } from '@anyonce/conformance';
-const summary = await runVectors(app.fetch, loadVectors(), { tiers: ['core'] });
+import { runConformance } from '@anyonce/conformance';
+const { summary, report } = await runConformance({ target: app.fetch, tiers: ['core'], report: 'markdown' });
 ```
 
-Against a URL: `runVectors({ baseUrl: 'http://localhost:3000' }, loadVectors())`. The CLI, report formats and the Go runner arrive in P2.
+Against a URL from the command line (any implementation, any language):
+
+```sh
+bunx @anyonce/conformance --url http://localhost:3000 --tier core --report markdown
+bunx @anyonce/conformance --url http://localhost:3000 --capability short-ttl --ttl-ms 2000 --report junit --out report.xml
+```
+
+Flags: `--url` (required), `--tier core|profile` (repeatable, default both), `--only <id>` (repeatable), `--capability short-ttl` (declares that the target's TTL is at most 2000 ms), `--ttl-ms <n>` (the target's TTL, checked against the capability), `--report json|markdown|junit` (default markdown), `--out <file>`. Exit code 0 when every applicable vector passed, 1 when any failed or errored, 2 on usage errors.
+
+Reports: `json` is the run summary plus `target` and `generatedAt`; `markdown` is a table with one row per vector; `junit` has one `testcase` per vector with `failure`, `skipped` (not applicable) or `error` children.
+
+Go, inside a test:
+
+```go
+conformance.Run(t, handler, conformance.Options{Capabilities: []string{"short-ttl"}})
+```
+
+`handler` is an `http.Handler` (served by `httptest.NewServer` for the run) or a base URL string. `conformance.RunVectors` and `conformance.Format` are the library forms.
 
 ## Adding a vector
 

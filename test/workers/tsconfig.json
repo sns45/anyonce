@@ -1,5 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers"] },
+  "compilerOptions": {
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers", "vite/client"]
+  },
   "include": ["."]
 }

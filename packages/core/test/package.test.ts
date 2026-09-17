@@ -64,4 +64,25 @@ describe('package hygiene', () => {
     const text = await (result.outputs[0] as { text(): Promise<string> }).text();
     expect(text).not.toContain('storeContractSuite');
   });
+
+  test('REQ-CORE-7: the root entry never imports the http subpath', async () => {
+    const source = readFileSync(join(pkgDir, 'src/index.ts'), 'utf8');
+    expect(source).not.toMatch(/from\s*["']\.\/http/);
+    const result = await Bun.build({
+      entrypoints: [join(pkgDir, 'src/index.ts')],
+      target: 'browser',
+      minify: false,
+    });
+    expect(result.success).toBe(true);
+    const text = await (result.outputs[0] as { text(): Promise<string> }).text();
+    expect(text).not.toContain('withIdempotency');
+    expect(text).not.toContain('application/problem+json');
+  });
+
+  test('REQ-CORE-7: package.json exports the http subpath with types first', () => {
+    const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')) as {
+      exports: Record<string, Record<string, string>>;
+    };
+    expect(Object.keys(pkg.exports['./http'] as object)).toEqual(['types', 'import', 'require']);
+  });
 });

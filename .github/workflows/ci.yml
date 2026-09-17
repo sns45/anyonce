@@ -55,6 +55,7 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
+      - run: bun run build
       - run: bun run test:workers
 
   go:
@@ -109,4 +110,19 @@ jobs:
       - run: bun run build
       - run: node --input-type=module -e "const m = await import('./packages/conformance/dist/index.js'); if (typeof m.runVectors !== 'function') process.exit(1);"
       - run: node -e "const m = require('./packages/conformance/dist/index.cjs'); if (typeof m.runVectors !== 'function') process.exit(1);"
-      - run: node -e "require('@anyonce/core'); require('@anyonce/core/testing')"
+      - run: node -e "require('@anyonce/core'); require('@anyonce/core/testing'); require('@anyonce/core/http'); require('@anyonce/hono'); require('@anyonce/conformance/runtime')"
+      - run: bun run test:node
+
+  deno:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run test:deno

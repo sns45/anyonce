@@ -4,6 +4,10 @@
     "": {
       "name": "anyonce-monorepo",
       "devDependencies": {
+        "@anyonce/conformance": "workspace:*",
+        "@anyonce/core": "workspace:*",
+        "@anyonce/fixture-hono": "workspace:*",
+        "@anyonce/hono": "workspace:*",
         "@biomejs/biome": "^2.5.14",
         "@changesets/cli": "^3.0.3",
         "@cloudflare/vitest-pool-workers": "0.12.21",
@@ -29,6 +33,9 @@
     "packages/conformance": {
       "name": "@anyonce/conformance",
       "version": "0.0.0",
+      "bin": {
+        "anyonce-conformance": "./dist/cli.js",
+      },
       "devDependencies": {
         "@anyonce/fixture-hono": "workspace:*",
       },
@@ -36,6 +43,24 @@
     "packages/core": {
       "name": "@anyonce/core",
       "version": "0.0.0",
+      "devDependencies": {
+        "@anyonce/conformance": "workspace:*",
+        "@anyonce/fixture-hono": "workspace:*",
+      },
+    },
+    "packages/hono": {
+      "name": "@anyonce/hono",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@anyonce/conformance": "workspace:*",
+        "@anyonce/core": "workspace:*",
+        "@anyonce/fixture-hono": "workspace:*",
+        "hono": "^4.13.8",
+      },
+      "peerDependencies": {
+        "@anyonce/core": "workspace:*",
+        "hono": ">=4.0.0",
+      },
     },
   },
   "packages": {
@@ -46,6 +71,8 @@
     "@anyonce/core": ["@anyonce/core@workspace:packages/core"],
 
     "@anyonce/fixture-hono": ["@anyonce/fixture-hono@workspace:conformance/fixtures/hono"],
+
+    "@anyonce/hono": ["@anyonce/hono@workspace:packages/hono"],
 
     "@babel/helper-string-parser": ["@babel/helper-string-parser@7.29.7", "", {}, "sha512-Pb5ijPrZ89GDH8223L4UP8i6QApWxs04RbPQJTeWDV0/keR2E36MeKnyr6LYmUUvqRRI+Iv87SuF1W6ErINzYw=="],
 

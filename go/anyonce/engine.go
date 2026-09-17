@@ -119,7 +119,10 @@ func abandonQuietly(ctx context.Context, store Store, op Operation, fence int64,
 // (Result, nil) for executed, replayed, conflict and mismatch; (Result{Kind: ResultStoreError}, err wrapping
 // ErrStoreUnavailable) for a fail-closed store failure at begin; (Result{}, err wrapping the handler's error)
 // when run fails, after abandoning the claim.
-func Execute(ctx context.Context, store Store, op Operation, run func(ctx context.Context) (StoredResult, error), policy Policy) (Result, error) {
+//
+// run receives the fence of the claim it executes under: the acquired claim's fence, or 0 when there is no
+// claim, which is the fail-open path after a begin failure (REQ-CORE-1).
+func Execute(ctx context.Context, store Store, op Operation, run func(ctx context.Context, fence int64) (StoredResult, error), policy Policy) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
@@ -149,7 +152,7 @@ func Execute(ctx context.Context, store Store, op Operation, run func(ctx contex
 			wrapped := fmt.Errorf("%w: begin: %w", ErrStoreUnavailable, err)
 			return Result{Kind: ResultStoreError, Err: wrapped}, wrapped
 		}
-		result, runErr := run(ctx)
+		result, runErr := run(ctx, 0)
 		if runErr != nil {
 			return Result{}, fmt.Errorf("anyonce: handler failed: %w", runErr)
 		}
@@ -177,7 +180,7 @@ func Execute(ctx context.Context, store Store, op Operation, run func(ctx contex
 	if policy.Hooks.OnAcquired != nil {
 		policy.safely(func() { policy.Hooks.OnAcquired(op) })
 	}
-	result, runErr := run(ctx)
+	result, runErr := run(ctx, outcome.Fence)
 	if runErr != nil {
 		abandonQuietly(bookkeeping, store, op, outcome.Fence, policy)
 		return Result{}, fmt.Errorf("anyonce: handler failed: %w", runErr)

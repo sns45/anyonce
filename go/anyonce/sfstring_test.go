@@ -2,6 +2,7 @@ package anyonce_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/sns45/anyonce/go/anyonce"
@@ -32,4 +33,17 @@ func TestParseSfString(t *testing.T) {
 			}
 		})
 	}
+	t.Run("REQ-CORE-3: an invalid escape error carries the index and never the escaped character", func(t *testing.T) {
+		_, err := anyonce.ParseSfString(`"a\qb"`)
+		if err == nil {
+			t.Fatal("want an error")
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "index") {
+			t.Fatalf("want the message to contain index, got %q", msg)
+		}
+		if strings.Contains(msg, "q") {
+			t.Fatalf("want the message to never contain the escaped character, got %q", msg)
+		}
+	})
 }
