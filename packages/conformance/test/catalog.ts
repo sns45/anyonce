@@ -16,9 +16,11 @@ export const CORE_IDS = [
 export const PROFILE_IDS = [
   'profile/4xx-replayed',
   'profile/5xx-not-stored',
+  'profile/empty-key-rejected',
   'profile/key-too-long',
   'profile/omitted-body-replay',
   'profile/problem-code-member',
+  'profile/problem-content-type',
   'profile/replayed-header',
   'profile/retry-after-on-409',
 ];

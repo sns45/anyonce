@@ -34,8 +34,7 @@
       },
       "expect": {
         "status": 200,
-        "bodyJson": { "count": 1 },
-        "headers": { "Idempotency-Replayed": { "absent": true } }
+        "bodyJson": { "count": 1 }
       }
     }
   ]

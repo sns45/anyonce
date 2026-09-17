@@ -5,7 +5,7 @@ Executable vectors for `draft-ietf-httpapi-idempotency-key-header-07` (`docs/ref
 ## Tiers
 
 - `core`: behavior the draft states (MUST and SHOULD, header syntax, 400, 409, 422, replay of a completed result, single handler execution). Third-party implementations are graded on this tier only. Every core vector cites the draft section in `draftRef`.
-- `profile`: anyonce's documented choices where the draft is silent (`Idempotency-Replayed`, `Retry-After` on 409, 4xx replayed, 5xx not stored, omitted-body replay above 1 MiB, the problem `code` member, the 255-byte key limit). See `DRAFT-GAPS.md` for the proposed draft text behind each.
+- `profile`: anyonce's documented choices where the draft is silent (`Idempotency-Replayed`, `Retry-After` on 409, 4xx replayed, 5xx not stored, omitted-body replay above 1 MiB, the problem `code` member, the problem media type, the empty key rule, the 255-byte key limit). See `DRAFT-GAPS.md` for the proposed draft text behind each.
 
 ## Fixture contract (REQ-CONF-2)
 

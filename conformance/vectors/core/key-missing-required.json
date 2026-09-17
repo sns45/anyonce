@@ -1,9 +1,9 @@
 {
   "id": "core/key-missing-required",
   "tier": "core",
-  "title": "Missing Idempotency-Key on a documented idempotent operation yields 400 problem details",
+  "title": "Missing Idempotency-Key on a documented idempotent operation yields 400",
   "draftRef": "section-2.7",
-  "description": "The fixture's POST routes require the header. The resource replies 400 with an application/problem+json body and does not run the handler.",
+  "description": "The fixture's POST routes require the header. The resource replies 400 and does not run the handler.",
   "fixture": "echo",
   "steps": [
     {
@@ -16,7 +16,6 @@
       },
       "expect": {
         "status": 400,
-        "headers": { "Content-Type": { "regex": "^application/problem\\+json" } },
         "handlerInvocations": 0
       }
     }

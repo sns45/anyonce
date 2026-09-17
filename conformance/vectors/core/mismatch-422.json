@@ -1,7 +1,7 @@
 {
   "id": "core/mismatch-422",
   "tier": "core",
-  "title": "Reusing a key with a different payload yields 422 problem details",
+  "title": "Reusing a key with a different payload yields 422",
   "draftRef": "section-2.7",
   "description": "The idempotency key MUST NOT be reused with a different request payload; the resource replies 422 and does not run the handler again.",
   "fixture": "echo",
@@ -26,7 +26,6 @@
       },
       "expect": {
         "status": 422,
-        "headers": { "Content-Type": { "regex": "^application/problem\\+json" } },
         "handlerInvocations": 1
       }
     }

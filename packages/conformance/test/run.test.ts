@@ -199,7 +199,7 @@ describe('runVectors', () => {
 describe('loadVectors', () => {
   test('REQ-CONF-1: loadVectors reads the repo vectors sorted by id', () => {
     const vectors = loadVectors();
-    expect(vectors).toHaveLength(18);
+    expect(vectors).toHaveLength(20);
     const ids = vectors.map((v) => v.id);
     const sorted = [...ids].sort((a, b) => a.localeCompare(b));
     expect(ids).toEqual(sorted);

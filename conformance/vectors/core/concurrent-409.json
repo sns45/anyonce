@@ -1,7 +1,7 @@
 {
   "id": "core/concurrent-409",
   "tier": "core",
-  "title": "A duplicate sent while the original is in flight yields 409 problem details",
+  "title": "A duplicate sent while the original is in flight yields 409",
   "draftRef": "section-2.6",
   "description": "Concurrent Request: the request was retried before the original completed. The first request holds the handler for 1500 ms; the second is sent 300 ms later and must receive a resource conflict error. Only one handler invocation occurs.",
   "fixture": "slow",
@@ -28,7 +28,6 @@
       },
       "expect": {
         "status": 409,
-        "headers": { "Content-Type": { "regex": "^application/problem\\+json" } },
         "handlerInvocations": 1
       }
     }
