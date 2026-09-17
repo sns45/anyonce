@@ -63,6 +63,30 @@ await describeService('redis store', 6379, () => {
       expect(calls).toEqual(['evalsha']);
     });
 
+    test('REQ-ST-REDIS-1: node-redis takes the same EVAL fallback after SCRIPT FLUSH', async () => {
+      await nodeReady;
+      const calls: string[] = [];
+      const inner = fromNodeRedis(node);
+      const adapter: RedisAdapter = {
+        evalsha: (sha, keys, args) => {
+          calls.push('evalsha');
+          return inner.evalsha(sha, keys, args);
+        },
+        eval: (script, keys, args) => {
+          calls.push('eval');
+          return inner.eval(script, keys, args);
+        },
+        hgetall: (key) => inner.hgetall(key),
+        del: (key) => inner.del(key),
+      };
+      const store = new RedisStore({ adapter, prefix: `nf${Date.now()}:` });
+      const op = { scope: 's', key: 'k', fingerprint: 'a' };
+      await io.script('FLUSH');
+      const outcome = await store.begin(op, { leaseMs: LEASE_MS, ttlMs: TTL_MS, now: T0 });
+      expect(outcome.outcome).toBe('acquired');
+      expect(calls).toEqual(['evalsha', 'eval']);
+    });
+
     test('REQ-ST-REDIS-1: the hash carries a native PEXPIRE relative to the wall clock and purge is a no-op', async () => {
       const store = new RedisStore({
         adapter: fromIoredis(io),

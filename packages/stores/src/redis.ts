@@ -62,14 +62,29 @@ export function fromNodeRedis(client: NodeRedisLike): RedisAdapter {
   };
 }
 
+/**
+ * Upstash JSON parses every reply when `automaticDeserialization` is on, which is the client default, so a
+ * field the script wrote as JSON text (result_meta) comes back as an object. These wrappers put it back to
+ * text. Construct the client with `automaticDeserialization: false` to skip the round trip entirely.
+ */
+function upstashText(value: unknown): string {
+  return typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+}
+
+/** Only the top level is mapped: every script here returns a string or a flat array of strings and numbers. */
+function upstashReply(reply: unknown): unknown {
+  if (!Array.isArray(reply)) return reply;
+  return reply.map((v) => (typeof v === 'object' && v !== null ? JSON.stringify(v) : v));
+}
+
 export function fromUpstash(client: UpstashLike): RedisAdapter {
   return {
-    evalsha: (sha, keys, args) => client.evalsha(sha, keys, args),
-    eval: (script, keys, args) => client.eval(script, keys, args),
+    evalsha: async (sha, keys, args) => upstashReply(await client.evalsha(sha, keys, args)),
+    eval: async (script, keys, args) => upstashReply(await client.eval(script, keys, args)),
     hgetall: async (key) => {
       const out = await client.hgetall(key);
       const flat: Record<string, string> = {};
-      for (const [k, v] of Object.entries(out ?? {})) flat[k] = String(v);
+      for (const [k, v] of Object.entries(out ?? {})) flat[k] = upstashText(v);
       return flat;
     },
     del: (key) => client.del(key),
