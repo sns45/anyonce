@@ -1,6 +1,9 @@
 /**
  * Statements shared by the SQLite dialect stores (D1, Durable Objects) and, through pgSql, Postgres.
- * Parameters: begin ?1 scope, ?2 key, ?3 fingerprint, ?4 now, ?5 leaseMs, ?6 ttlMs.
+ * Parameters: begin ?1 scope, ?2 key, ?3 fingerprint, ?4 now, ?5 lease_until (precomputed now + leaseMs),
+ * ?6 expires_at (precomputed now + ttlMs). The caller precomputes ?5 and ?6 because after pgSql rewrites
+ * ?N to $N, an expression such as $4 + $5 is an ambiguous operator to Postgres; binding the final values
+ * keeps one statement working for both dialects.
  */
 export const SQLITE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS anyonce_records (
@@ -41,7 +44,7 @@ CREATE INDEX IF NOT EXISTS anyonce_records_expires_at ON anyonce_records (expire
 /** D4: the claim is this one statement. A refused write returns no row; SELECT_SQL then classifies it. */
 export const BEGIN_SQL = `
 INSERT INTO anyonce_records (scope, key, fingerprint, state, fence, lease_until, created_at, expires_at, result_meta, result_body, result_omitted)
-VALUES (?1, ?2, ?3, 'in_flight', 1, ?4 + ?5, ?4, ?4 + ?6, NULL, NULL, 0)
+VALUES (?1, ?2, ?3, 'in_flight', 1, ?5, ?4, ?6, NULL, NULL, 0)
 ON CONFLICT(scope, key) DO UPDATE SET
   fingerprint = excluded.fingerprint,
   state = 'in_flight',
