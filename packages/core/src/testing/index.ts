@@ -4,7 +4,15 @@ export interface StoreHarness {
   store: Store;
   /** Simulates a store's native TTL sweep removing the row. Stores without native TTL can omit it; purge is used instead. */
   physicallyRemove?: (op: Pick<Operation, 'scope' | 'key'>) => Promise<void>;
+  /** Q20: the largest body this backend stores whole. Defaults to MAX_RESULT_BYTES. */
+  maxResultBytes?: number;
   close?: () => Promise<void>;
+}
+
+/** Suite-level options. maxResultBytes must agree with the harness field; it is read before the factory runs so the test name can carry it. */
+export interface StoreSuiteOptions {
+  /** Q20: the largest body this backend stores whole. Defaults to MAX_RESULT_BYTES. */
+  maxResultBytes?: number;
 }
 
 export type StoreFactory = () => StoreHarness | Promise<StoreHarness>;
@@ -64,8 +72,10 @@ export function storeContractSuite(
   name: string,
   factory: StoreFactory,
   runner: StoreSuiteRunner,
+  options: StoreSuiteOptions = {},
 ): void {
   const { describe, test, expect } = runner;
+  const cap = options.maxResultBytes ?? MAX_RESULT_BYTES;
   const unique = crypto.randomUUID();
   const op = (tag: string, fingerprint = 'fp-a'): Operation => ({
     scope: `suite:${name}:${unique}:${tag}`,
@@ -345,10 +355,11 @@ export function storeContractSuite(
     );
 
     test(
-      'REQ-STORE-11: a body of exactly 1 MiB round trips byte-exact',
+      `REQ-STORE-11: a body of exactly maxResultBytes (${cap} bytes) round trips byte-exact`,
       withHarness(async (h) => {
+        expect(h.maxResultBytes ?? MAX_RESULT_BYTES).toBe(cap);
         const o = op('s11');
-        const body = new Uint8Array(MAX_RESULT_BYTES);
+        const body = new Uint8Array(cap);
         for (let i = 0; i < body.byteLength; i++) body[i] = (i * 31 + 7) & 0xff;
         await h.store.begin(o, opts(T0));
         expect(await h.store.complete(o, 1, { kind: 'http', status: 200, body }, T0 + 1)).toBe(
@@ -357,7 +368,7 @@ export function storeContractSuite(
         const out = await h.store.begin(o, opts(T0 + 2));
         expect(out.outcome).toBe('completed');
         const rec = recordOf(out);
-        expect(rec?.result?.body?.byteLength).toBe(MAX_RESULT_BYTES);
+        expect(rec?.result?.body?.byteLength).toBe(cap);
         expect(bytesEqual(rec?.result?.body, body)).toBe(true);
       }),
       30_000,

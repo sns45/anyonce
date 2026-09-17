@@ -28,6 +28,7 @@ benchmarks/
 
 - `bun install` at root (workspaces). `bun run build`, `bun run test`, `bun run test:workers` (vitest-pool-workers for DO, D1 and the P2 runtime matrix; run `bun run build` first, the workspace packages resolve through their `exports` to `dist`), `bun run test:node` (Node 22 runtime matrix, also needs `bun run build` first), `bun run test:deno` (Deno 2 runtime matrix, also needs `bun run build` first), `bun run test:reqs` (REQ coverage check), `bun run test:coverage` (vitest v8 branch coverage on the engine, the key validator and the sf-string parser; added in P1), `bun run lint` (Biome), `bun run conformance -- --url <base> [--tier core] [--report junit]`, `scripts/doctor.sh` (checks bun, go, docker and golangci-lint at the pinned versions).
 - `docker compose -f test/compose.yml up -d` starts DynamoDB Local, Redis 7, Postgres 16, Redpanda, ElasticMQ for integration tests. Tests skip with a clear message if a service is down; CI treats skips as failures.
+- `bun run test:services` needs that compose stack up: it runs the connectivity check plus the store suites under `packages/stores/services`. `bun run test:workers` runs the D1 and Durable Objects store suites alongside the P2 runtime matrix. The Go store tests read `ANYONCE_REQUIRE_SERVICES`: unset they skip a missing service, set to `1` (as CI does) they fail instead.
 - Go: `cd go && go build ./... && go vet ./... && go test -race ./... && golangci-lint run` (golangci-lint pinned to v2.13.2 locally and in CI).
 
 ## Code rules

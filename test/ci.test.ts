@@ -10,6 +10,8 @@ type Job = {
     run?: string;
     shell?: string;
     with?: Record<string, unknown>;
+    env?: Record<string, string>;
+    'working-directory'?: string;
   }>;
   strategy?: { matrix?: Record<string, unknown[]> };
 };
@@ -48,6 +50,15 @@ describe('ci workflow', () => {
     expect(runs(job)).toContain('bun run services:check');
     expect(runs(job)).toContain('bun run test:services');
     expect(runs(job)).toContain('scripts/no-skips.sh');
+  });
+
+  test('REQ-REL-4: the services job runs the Go store tests with services required', () => {
+    const job = ci.jobs.services as Job;
+    expect(uses(job).some((u) => u.startsWith('actions/setup-go@'))).toBe(true);
+    const step = job.steps.find((s) => s.run?.includes('go test -race -count=1 ./store/...'));
+    expect(step).toBeTruthy();
+    expect(step?.env?.ANYONCE_REQUIRE_SERVICES).toBe('1');
+    expect(step?.['working-directory']).toBe('go');
   });
 
   test('REQ-REL-4: the ts job does not run the compose service tests', () => {

@@ -27,6 +27,8 @@ type Harness struct {
 	Store            anyonce.Store
 	PhysicallyRemove func(ctx context.Context, scope, key string) error
 	Close            func() error
+	// MaxResultBytes is Q20: the largest body this backend stores whole. Zero means MaxResultBytes.
+	MaxResultBytes int
 }
 
 // Factory builds a fresh harness per test.
@@ -322,9 +324,13 @@ func Run(t *testing.T, name string, factory Factory) {
 		}
 	}))
 
-	t.Run("REQ-STORE-11: a body of exactly 1 MiB round trips byte-exact", with(func(t *testing.T, s anyonce.Store, _ Harness) {
+	t.Run("REQ-STORE-11: a body of exactly maxResultBytes round trips byte-exact", with(func(t *testing.T, s anyonce.Store, h Harness) {
+		limit := h.MaxResultBytes
+		if limit == 0 {
+			limit = MaxResultBytes
+		}
 		o := op("s11", "fp-a")
-		body := make([]byte, MaxResultBytes)
+		body := make([]byte, limit)
 		for i := range body {
 			body[i] = byte((i*31 + 7) & 0xff)
 		}
@@ -333,8 +339,8 @@ func Run(t *testing.T, name string, factory Factory) {
 			t.Fatalf("got %v", st)
 		}
 		rec := mustBegin(t, s, o, T0.Add(2*time.Millisecond)).Record
-		if rec == nil || rec.Result == nil || len(rec.Result.Body) != MaxResultBytes || !bytes.Equal(rec.Result.Body, body) {
-			t.Fatal("1 MiB body did not round trip")
+		if rec == nil || rec.Result == nil || len(rec.Result.Body) != limit || !bytes.Equal(rec.Result.Body, body) {
+			t.Fatalf("a %d byte body did not round trip", limit)
 		}
 	}))
 }
