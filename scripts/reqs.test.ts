@@ -100,6 +100,9 @@ describe('reqs script', () => {
     mkdirSync(join(root, 'pkg', 'test'), { recursive: true });
     mkdirSync(join(root, 'go', 'x'), { recursive: true });
     mkdirSync(join(root, 'node_modules', 'dep'), { recursive: true });
+    mkdirSync(join(root, 'pkg', 'src', 'testing'), { recursive: true });
+    mkdirSync(join(root, 'go', 'storetest'), { recursive: true });
+    mkdirSync(join(root, 'pkg', 'src', 'other'), { recursive: true });
     writeFileSync(
       join(root, 'pkg', 'test', 'a.test.ts'),
       'test(\'REQ-CONF-1: validates\', () => {});\nit("REQ-CONF-2: fixtures", () => {});\ntest(`NFR-6: prose`, () => {});\n',
@@ -112,9 +115,31 @@ describe('reqs script', () => {
       join(root, 'node_modules', 'dep', 'z.test.ts'),
       "test('REQ-CORE-1: ignored', () => {});\n",
     );
+    writeFileSync(
+      join(root, 'pkg', 'src', 'testing', 'index.ts'),
+      "test('REQ-STORE-9: scoped', () => {});\n",
+    );
+    writeFileSync(
+      join(root, 'go', 'storetest', 'storetest.go'),
+      'package storetest\n\nfunc TestREQ_STORE_8_race(t *testing.T) {\n\tt.Run("REQ-STORE-8: race", func(t *testing.T) {})\n}\n',
+    );
+    writeFileSync(
+      join(root, 'pkg', 'src', 'other', 'index.ts'),
+      "test('REQ-NOPE-1: not a suite', () => {});\n",
+    );
     const found = collectTestIds(root);
-    expect([...found.keys()].sort()).toEqual(['NFR-6', 'REQ-CONF-1', 'REQ-CONF-2', 'REQ-REL-4']);
+    expect([...found.keys()].sort()).toEqual([
+      'NFR-6',
+      'REQ-CONF-1',
+      'REQ-CONF-2',
+      'REQ-REL-4',
+      'REQ-STORE-8',
+      'REQ-STORE-9',
+    ]);
     expect(found.get('REQ-CONF-2')).toHaveLength(2);
+    expect(found.get('REQ-STORE-8')).toBeDefined();
+    expect(found.get('REQ-STORE-9')).toBeDefined();
+    expect(found.has('REQ-NOPE-1')).toBe(false);
   });
 
   test('reqs script: reports uncovered ids in scope and unknown ids in tests', () => {

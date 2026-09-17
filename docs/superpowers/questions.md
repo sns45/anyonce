@@ -152,3 +152,23 @@ CLAUDE.md
 prompt.md
 - Phase order and parallelism: P4a after P1 (parallel with P2), P4b after P2 (parallel with P3 and P5) (Q12)
 - Step 0 preflight: add "run `go version`; upgrade to current stable before P1" (Q13)
+
+---
+
+## Q15: what `execute` returns when the store fails at `complete`
+
+Requirements 3.3 gives `onStoreError: 'fail-closed' | 'fail-open'` for store failures but names only the `begin` call. A failure at `complete` happens after the handler has already run, so the two modes cannot mean there what they mean at `begin`, and the `ExecuteResult` union has to pick one shape. The same gap covers a `complete` that answers `stale_fence` or `not_found` instead of throwing, and an `abandon` aimed at a record another worker has already completed.
+
+Recommended resolution: a store error at `complete` returns `{ kind: 'executed', stored: false }` in both modes and fires `onStoreError`; `store_error` is returned only when `begin` fails under fail-closed, because by the time `complete` fails the handler has already run and hiding its result behind a 503 would make the client retry work that happened. `abandon` on a completed record returns `not_found`; a `complete` returning `stale_fence` or `not_found` yields `stored: false`.
+
+## Q16: the Go `Execute` has no discriminated union to return
+
+TypeScript's `ExecuteResult` is a five arm union that the HTTP and queue adapters switch on. Go has no union type, so the port needs a rule for which outcomes travel inside the `Result` value and which travel as an `error`, plus the sentinels adapters and stores compare against. Nothing in requirements 3.3 says this, and the Go engine will be written against whatever this file records. Documented only; no TypeScript code follows from it.
+
+Recommended resolution: the Go `Execute` returns `(Result, nil)` for executed, replayed, conflict and mismatch (the `Kind` field is the signal, matching the TS union); it returns `(Result{Kind: ResultStoreError}, err)` with `err` wrapping `ErrStoreUnavailable` for a fail-closed store failure at begin; and `(Result{}, err)` wrapping the handler's error when `run` fails (after abandoning). `ErrConflict`, `ErrMismatch` and `ErrStaleFence` are exported for adapters and stores to use as sentinels.
+
+## Q17: whether `maxResultBytes` measures headers as well as the body
+
+D12 caps a stored result at `maxResultBytes`, and `resultSize` is what decides when `execute` swaps the full result for the omitted form. A `StoredResult` carries a status, a header list and a body, so the cap could be measured over the whole serialized record or over the body alone, and the two answers differ by the header bytes right at the boundary.
+
+Recommended resolution: `resultSize` is the body byte length only; headers are allowlisted and small, and the cap exists to bound stored bodies (D12).

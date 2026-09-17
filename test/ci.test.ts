@@ -4,7 +4,13 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 
 type Job = {
-  steps: Array<{ uses?: string; run?: string; shell?: string; with?: Record<string, unknown> }>;
+  steps: Array<{
+    name?: string;
+    uses?: string;
+    run?: string;
+    shell?: string;
+    with?: Record<string, unknown>;
+  }>;
   strategy?: { matrix?: Record<string, unknown[]> };
 };
 const ci = parse(readFileSync(join(import.meta.dir, '../.github/workflows/ci.yml'), 'utf8')) as {
@@ -41,6 +47,11 @@ describe('ci workflow', () => {
     expect(runs(ci.jobs.ts as Job)).toContain('bun run typecheck');
   });
 
+  test('REQ-REL-4: the ts job runs the size budget and the coverage gate', () => {
+    expect(runs(ci.jobs.ts as Job)).toContain('bun run size');
+    expect(runs(ci.jobs.ts as Job)).toContain('bun run test:coverage');
+  });
+
   test('REQ-REL-4: tee pipelines use bash with pipefail', () => {
     for (const name of ['ts', 'services']) {
       const job = ci.jobs[name] as Job;
@@ -64,10 +75,40 @@ describe('ci workflow', () => {
     expect(golangci?.with?.version).toBe('v2.13.2');
   });
 
+  test('REQ-REL-4: the go job runs the engine coverage gate', () => {
+    expect(runs(ci.jobs.go as Job)).toContain('go-engine-coverage.sh');
+  });
+
   test('REQ-REL-4: the ts job runs the toolchain doctor right after install', () => {
     const runSteps = (ci.jobs.ts as Job).steps.filter((s) => typeof s.run === 'string');
     expect(runSteps[0]?.run).toBe('bun install --frozen-lockfile');
     expect(runSteps[1]?.run).toMatch(/^(scripts\/doctor\.sh|bun run doctor)$/);
+  });
+
+  test('REQ-REL-4: ts job runs the dash and key-log gates', () => {
+    const job = ci.jobs.ts as Job;
+    const names = job.steps.map((s) => s.name ?? '');
+    expect(names).toContain('dash gate');
+    expect(names).toContain('key-log gate');
+    const text = runs(job);
+    expect(text).toContain('rg -n "[\\x{2013}\\x{2014}]"');
+    expect(text).toContain("--glob '!docs/reference/**'");
+    expect(text).toContain("rg -n 'console\\.(log|info|warn|error)\\(.*key' packages go");
+    for (const step of job.steps) {
+      if (step.name === 'dash gate' || step.name === 'key-log gate') {
+        expect(step.shell).toBe('bash');
+        expect(step.run?.trim().startsWith('!')).toBe(true);
+      }
+    }
+    const lintAt = job.steps.findIndex((s) => s.run === 'bun run lint');
+    expect(names.indexOf('dash gate')).toBeGreaterThan(lintAt);
+    expect(names.indexOf('key-log gate')).toBeGreaterThan(lintAt);
+  });
+
+  test('REQ-REL-4: node-compat requires both core entries', () => {
+    const text = runs(ci.jobs['node-compat'] as Job);
+    expect(text).toContain("require('@anyonce/core')");
+    expect(text).toContain("require('@anyonce/core/testing')");
   });
 
   test('REQ-REL-4: every bun test job fails on skipped tests', () => {

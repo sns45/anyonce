@@ -20,11 +20,21 @@ jobs:
         env:
           DOCTOR_SKIP_GOLANGCI: '1'
       - run: bun run lint
+      - name: dash gate
+        shell: bash
+        run: |
+          ! rg -n "[\x{2013}\x{2014}]" --glob '!docs/reference/**' --glob '!node_modules' --glob '!*.lock' .
+      - name: key-log gate
+        shell: bash
+        run: |
+          ! rg -n 'console\.(log|info|warn|error)\(.*key' packages go
       - run: bun run typecheck
       - run: bun run build
+      - run: bun run size
       - shell: bash
         run: bun run test 2>&1 | tee test.log
       - run: scripts/no-skips.sh test.log
+      - run: bun run test:coverage
       - run: bun run test:reqs
 
   vectors-validate:
@@ -63,6 +73,7 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test -race ./...
+      - run: ../scripts/go-engine-coverage.sh
       - uses: golangci/golangci-lint-action@v7
         with:
           working-directory: go
@@ -98,3 +109,4 @@ jobs:
       - run: bun run build
       - run: node --input-type=module -e "const m = await import('./packages/conformance/dist/index.js'); if (typeof m.runVectors !== 'function') process.exit(1);"
       - run: node -e "const m = require('./packages/conformance/dist/index.cjs'); if (typeof m.runVectors !== 'function') process.exit(1);"
+      - run: node -e "require('@anyonce/core'); require('@anyonce/core/testing')"

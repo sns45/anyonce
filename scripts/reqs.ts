@@ -112,12 +112,21 @@ export function phaseScope(
   return out;
 }
 
-function walk(dir: string, out: string[]): void {
+function walk(dir: string, out: string[], root?: string): void {
+  if (!root) root = dir;
   for (const name of readdirSync(dir)) {
     if (SKIP_DIRS.has(name)) continue;
     const full = join(dir, name);
-    if (statSync(full).isDirectory()) walk(full, out);
-    else if (name.endsWith('.test.ts') || name.endsWith('_test.go')) out.push(full);
+    const rel = relative(root, full);
+    const pathSegments = rel.split('/');
+    if (statSync(full).isDirectory()) walk(full, out, root);
+    else if (
+      name.endsWith('.test.ts') ||
+      name.endsWith('_test.go') ||
+      // Contract suites register tests from library code in testing/ and storetest/ directories.
+      pathSegments.some((seg) => seg === 'testing' || seg === 'storetest')
+    )
+      out.push(full);
   }
 }
 
