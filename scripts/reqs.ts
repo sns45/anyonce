@@ -60,7 +60,7 @@ export function expandScope(spec: string, defined: string[]): string[] {
 export function parsePhaseScopes(text: string, defined: string[]): Map<string, string[]> {
   const scopes = new Map<string, string[]>();
   for (const line of text.split('\n')) {
-    const row = /^\|\s*(P\d)\b[^|]*\|[^|]*\|([^|]*)\|/.exec(line);
+    const row = /^\|\s*(P\d[a-z]?)\b[^|]*\|[^|]*\|([^|]*)\|/.exec(line);
     if (!row) continue;
     scopes.set((row[1] as string).toLowerCase(), expandScope(row[2] as string, defined));
   }

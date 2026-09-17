@@ -33,6 +33,8 @@ const sample = `
 | P0 Scaffold and vectors | Repo. | CONF-1..4, REL-4 |
 | P1 Core | Engine. | CORE-1..2 |
 | P3 Stores | Stores. | ST-* |
+| P4a Queue door | Queue. | CORE-2 |
+| P4b Webhook door | Webhook. | REL-4 |
 | P6 Docs | Docs. | NFR-* |
 | P7 Standards and launch | S1..S3 executed. | 0.4 |
 `;
@@ -70,8 +72,10 @@ describe('reqs script', () => {
 
   test('reqs script: maps phases from the section 6 table', () => {
     const scopes = parsePhaseScopes(sample, parseDefinedIds(sample));
-    expect([...scopes.keys()]).toEqual(['p0', 'p1', 'p3', 'p6', 'p7']);
+    expect([...scopes.keys()]).toEqual(['p0', 'p1', 'p3', 'p4a', 'p4b', 'p6', 'p7']);
     expect(scopes.get('p1')).toEqual(['REQ-CORE-1', 'REQ-CORE-2']);
+    expect(scopes.get('p4a')).toEqual(['REQ-CORE-2']);
+    expect(scopes.get('p4b')).toEqual(['REQ-REL-4']);
     expect(scopes.get('p7')).toEqual([]);
   });
 
