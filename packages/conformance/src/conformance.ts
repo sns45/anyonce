@@ -1,8 +1,9 @@
+import { type ConformanceResult, runConformanceWith } from './conformance-runtime';
 import { loadVectors } from './load';
-import { formatReport, type ReportFormat } from './report';
-import { type RunOptions, runVectors } from './run';
+import type { ReportFormat } from './report';
+import type { RunOptions } from './run';
 import type { Target } from './target';
-import type { RunSummary, Vector } from './types';
+import type { Vector } from './types';
 
 export interface ConformanceOptions extends RunOptions {
   target: Target;
@@ -12,21 +13,9 @@ export interface ConformanceOptions extends RunOptions {
   vectors?: Vector[];
 }
 
-export interface ConformanceResult {
-  summary: RunSummary;
-  report: string;
-}
+export type { ConformanceResult };
 
-/** REQ-CONF-5: one call for tests and the CLI. */
+/** REQ-CONF-5: one call for tests and the CLI; loads every vector under conformance/vectors when none are given. */
 export async function runConformance(options: ConformanceOptions): Promise<ConformanceResult> {
-  const { target, report, vectors, ...runOptions } = options;
-  const summary = await runVectors(target, vectors ?? loadVectors(), runOptions);
-  const label = typeof target === 'function' ? 'in-process fetch handler' : target.baseUrl;
-  return {
-    summary,
-    report: formatReport(summary, report ?? 'markdown', {
-      target: label,
-      generatedAt: new Date().toISOString(),
-    }),
-  };
+  return runConformanceWith({ ...options, vectors: options.vectors ?? loadVectors() });
 }
