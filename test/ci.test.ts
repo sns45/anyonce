@@ -129,6 +129,14 @@ describe('ci workflow', () => {
     }
   });
 
+  test('REQ-REL-4: the ts job builds before it typechecks because packages resolve each other through dist', () => {
+    const steps = (ci.jobs.ts as Job).steps.map((s) => s.run ?? '');
+    const buildAt = steps.indexOf('bun run build');
+    const typecheckAt = steps.indexOf('bun run typecheck');
+    expect(buildAt).toBeGreaterThan(-1);
+    expect(typecheckAt).toBeGreaterThan(buildAt);
+  });
+
   test('REQ-REL-4: every bun test job fails on skipped tests', () => {
     for (const name of ['ts', 'services']) {
       expect(runs(ci.jobs[name] as Job)).toContain('scripts/no-skips.sh');
