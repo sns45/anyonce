@@ -39,13 +39,15 @@ describe('withIdempotency', () => {
     await wrapped(get);
     await wrapped(get);
     expect(state.calls).toBe(2);
-    const patch = new Request('http://t.invalid/p', {
-      method: 'PATCH',
-      body: 'b',
-      headers: { 'Idempotency-Key': 'k' },
-    });
-    await wrapped(patch);
-    await wrapped(patch.clone());
+    // A fresh Request per call: newer Bun refuses to clone a Request whose body the handler already read.
+    const patch = () =>
+      new Request('http://t.invalid/p', {
+        method: 'PATCH',
+        body: 'b',
+        headers: { 'Idempotency-Key': 'k' },
+      });
+    await wrapped(patch());
+    await wrapped(patch());
     expect(state.calls).toBe(3);
   });
 
