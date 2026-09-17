@@ -30,7 +30,19 @@ func New(store anyonce.Store, opts Options) *Middleware {
 	if opts.RequirePrincipal && opts.Principal == nil {
 		panic("httpmw: Options.RequirePrincipal is true but Options.Principal is nil")
 	}
-	return &Middleware{store: store, opts: opts.resolve()}
+	m := &Middleware{store: store, opts: opts.resolve()}
+	// Q20: the policy cap never exceeds what the store says it can hold whole.
+	limit := m.opts.Policy.MaxResultBytes
+	if limit <= 0 {
+		limit = anyonce.DefaultPolicy().MaxResultBytes
+	}
+	if capper, ok := store.(anyonce.ResultCapper); ok {
+		if declared := capper.MaxResultBytes(); declared > 0 && declared < limit {
+			limit = declared
+		}
+	}
+	m.opts.Policy.MaxResultBytes = limit
+	return m
 }
 
 // fail renders a problem. When OnError is set, the extra headers and Cache-Control: no-store are applied to

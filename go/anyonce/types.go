@@ -158,3 +158,11 @@ type Store interface {
 	Get(ctx context.Context, scope, key string, now time.Time) (*Record, error)
 	Purge(ctx context.Context, now time.Time) (int, error)
 }
+
+// ResultCapper is the optional half of Store for a backend with a size limit of its own (Q20): a DynamoDB item
+// is capped at 400 KB. An adapter caps its own Policy.MaxResultBytes at what MaxResultBytes reports, so a
+// result too large for the backend is stored in the omitted form (status and headers replay, the body does
+// not) rather than reaching the store and failing there. A store that imposes no limit does not implement it.
+type ResultCapper interface {
+	MaxResultBytes() int
+}

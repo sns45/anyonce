@@ -137,7 +137,9 @@ func TestDynamoDBStore(t *testing.T) {
 
 	t.Run("REQ-ST-DDB-1: every core and profile vector passes through httpmw with the DynamoDB store", func(t *testing.T) {
 		f := fixture.New()
-		mw := httpmw.New(dynamodb.New(c, dynamodb.Options{Table: table}), httpmw.Options{Required: true, Policy: anyonce.Policy{TTL: 2 * time.Second, MaxResultBytes: dynamodb.MaxResultBytes}})
+		// No MaxResultBytes in the policy on purpose: the store implements anyonce.ResultCapper, so httpmw caps
+		// the policy at it and the run proves the automatic cap rather than an explicit override.
+		mw := httpmw.New(dynamodb.New(c, dynamodb.Options{Table: table}), httpmw.Options{Required: true, Policy: anyonce.Policy{TTL: 2 * time.Second}})
 		mux := http.NewServeMux()
 		mux.Handle("POST /reset", f.Handler())
 		mux.Handle("/", mw.Handler(f.Handler()))

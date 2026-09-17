@@ -16,11 +16,13 @@ await describeService('dynamodb conformance', 18000, () => {
     const table = `anyonce_conf_${Date.now()}`;
     await ensureTable(client, table);
     const store = new DynamoDbStore({ client, tableName: table });
+    // No maxResultBytes here on purpose: the store declares its own cap (Q20) and resolveHttpOptions caps the
+    // policy at it, so the conformance run proves the automatic cap rather than an explicit override.
+    expect(store.maxResultBytes).toBe(DYNAMODB_MAX_RESULT_BYTES);
     const handler = withIdempotency(createFixtureApp().fetch, {
       store,
       required: true,
       ttlMs: 2000,
-      maxResultBytes: DYNAMODB_MAX_RESULT_BYTES,
       skip: (req) => new URL(req.url).pathname === '/reset',
     });
     try {

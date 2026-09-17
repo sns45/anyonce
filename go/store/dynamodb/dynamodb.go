@@ -322,6 +322,11 @@ func (s *Store) Get(ctx context.Context, scope, k string, now time.Time) (*anyon
 	return &record, nil
 }
 
+// MaxResultBytes reports the largest body one item holds whole (Q20), which makes Store an
+// anyonce.ResultCapper: httpmw caps its own Policy.MaxResultBytes at it, so a larger result is stored in the
+// omitted form instead of reaching Complete and being refused there.
+func (s *Store) MaxResultBytes() int { return MaxResultBytes }
+
 // Purge is a no-op that returns 0: the native ttl attribute sweeps expired items (REQ-ST-DDB-1).
 func (s *Store) Purge(context.Context, time.Time) (int, error) {
 	return 0, nil

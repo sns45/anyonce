@@ -72,6 +72,8 @@ function itemToRow(item: Item): RecordRow {
  * back through ReturnValuesOnConditionCheckFailure, so no second read is needed to classify it.
  */
 export class DynamoDbStore implements Store {
+  /** Q20: an adapter caps its own maxResultBytes at this, so a larger result is stored in the omitted form. */
+  readonly maxResultBytes = DYNAMODB_MAX_RESULT_BYTES;
   private readonly client: DynamoDBClient;
   private readonly table: string;
   private readonly grace: number;

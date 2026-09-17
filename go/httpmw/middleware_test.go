@@ -19,6 +19,14 @@ import (
 	"github.com/sns45/anyonce/go/store/memory"
 )
 
+// capped is a store that declares its own result cap, the anyonce.ResultCapper half of the contract (Q20).
+type capped struct {
+	anyonce.Store
+	limit int
+}
+
+func (c capped) MaxResultBytes() int { return c.limit }
+
 type counting struct {
 	calls  atomic.Int64
 	status int
@@ -206,6 +214,28 @@ func TestMiddleware(t *testing.T) {
 		rec := post(h, "/p", "k", "b", nil)
 		if rec.Code != 201 || rec.Header().Get("Idempotency-Replay") != "omitted" || rec.Body.Len() != 0 {
 			t.Fatalf("%d %v %q", rec.Code, rec.Header(), rec.Body.String())
+		}
+	})
+	t.Run("REQ-HTTP-7: the policy cap never exceeds the store's declared cap", func(t *testing.T) {
+		// No MaxResultBytes in the policy: the cap comes from the store alone, so a one byte ceiling makes the
+		// replay take the omitted form.
+		h := httpmw.New(capped{Store: memory.New(), limit: 1}, httpmw.Options{}).Handler(&counting{status: 201})
+		post(h, "/p", "k", "b", nil)
+		rec := post(h, "/p", "k", "b", nil)
+		if rec.Code != 201 || rec.Header().Get("Idempotency-Replay") != "omitted" || rec.Body.Len() != 0 {
+			t.Fatalf("%d %v %q", rec.Code, rec.Header(), rec.Body.String())
+		}
+		// A smaller explicit policy still wins: the store declares a ceiling, not a floor.
+		big := httpmw.New(capped{Store: memory.New(), limit: 1 << 20}, httpmw.Options{Policy: anyonce.Policy{MaxResultBytes: 1}}).Handler(&counting{status: 201})
+		post(big, "/p", "k", "b", nil)
+		if rec := post(big, "/p", "k", "b", nil); rec.Header().Get("Idempotency-Replay") != "omitted" {
+			t.Fatalf("%v", rec.Header())
+		}
+		// A store with no declared cap leaves the default in place, so the same result replays in full.
+		plain := httpmw.New(memory.New(), httpmw.Options{}).Handler(&counting{status: 201})
+		post(plain, "/p", "k", "b", nil)
+		if rec := post(plain, "/p", "k", "b", nil); rec.Header().Get("Idempotency-Replayed") != "true" || rec.Header().Get("Idempotency-Replay") != "" || rec.Body.Len() == 0 {
+			t.Fatalf("%v %q", rec.Header(), rec.Body.String())
 		}
 	})
 	t.Run("REQ-HTTP-10: an in-flight duplicate is 409 conflict with Retry-After from the lease", func(t *testing.T) {
