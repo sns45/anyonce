@@ -13,6 +13,11 @@ export interface StoreHarness {
 export interface StoreSuiteOptions {
   /** Q20: the largest body this backend stores whole. Defaults to MAX_RESULT_BYTES. */
   maxResultBytes?: number;
+  /**
+   * The backend expires rows itself (DynamoDB TTL, Redis PEXPIREAT), so purge is a no-op that returns 0.
+   * Logical expiry on read is still required: an expired record stays absent to get and to begin.
+   */
+  nativePurge?: boolean;
 }
 
 export type StoreFactory = () => StoreHarness | Promise<StoreHarness>;
@@ -76,6 +81,7 @@ export function storeContractSuite(
 ): void {
   const { describe, test, expect } = runner;
   const cap = options.maxResultBytes ?? MAX_RESULT_BYTES;
+  const nativePurge = options.nativePurge ?? false;
   const unique = crypto.randomUUID();
   const op = (tag: string, fingerprint = 'fp-a'): Operation => ({
     scope: `suite:${name}:${unique}:${tag}`,
@@ -264,12 +270,15 @@ export function storeContractSuite(
     );
 
     test(
-      'REQ-STORE-7: purge removes expired records and returns how many',
+      nativePurge
+        ? 'REQ-STORE-7: purge is a no-op that returns 0 because the backend expires rows natively'
+        : 'REQ-STORE-7: purge removes expired records and returns how many',
       withHarness(async (h) => {
         await h.store.begin(op('s7c'), opts(T0));
         await h.store.begin(op('s7d'), opts(T0 + 1000));
         const removed = await h.store.purge(T0 + TTL_MS + 500);
-        expect(removed).toBeGreaterThan(0);
+        if (nativePurge) expect(removed).toBe(0);
+        else expect(removed).toBeGreaterThan(0);
         expect(await h.store.get(op('s7c'), T0 + TTL_MS + 500)).toBeNull();
         expect((await h.store.get(op('s7d'), T0 + TTL_MS + 500))?.state).toBe('in_flight');
       }),

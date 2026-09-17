@@ -11,7 +11,7 @@
     "lint:fix": "biome check --write .",
     "doctor": "scripts/doctor.sh",
     "build": "bun run --filter '@anyonce/*' build",
-    "test": "bun test packages/core packages/hono packages/conformance conformance scripts test/ci.test.ts packages/stores/test",
+    "test": "bun test packages/core packages/hono packages/conformance conformance/ scripts test/ci.test.ts packages/stores/test",
     "test:coverage": "vitest run --root packages/core --config vitest.config.ts --coverage",
     "test:services": "bun test test/compose.test.ts packages/stores/services",
     "test:reqs": "bun run scripts/reqs.ts --phase p2",

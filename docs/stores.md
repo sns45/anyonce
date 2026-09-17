@@ -5,6 +5,7 @@ Every store implements the same `Store` contract (requirements 4.2) and passes t
 | Store | Languages | Consistency | Atomicity of begin | Native TTL | Setup | Cost note | Max stored body |
 |---|---|---|---|---|---|---|---|
 | memory | TS, Go | single process | mutex or single event loop | no, purge | none | free | 1 MiB |
+| dynamodb | TS, Go | strongly consistent reads (ConsistentRead) | one conditional UpdateItem; refusal returns the old item | yes, ttl attribute (seconds, expires_at plus 60 s grace) | ensureTable(client) or create pk (S) and sk (S) with TTL on ttl | one write per request, one more per replay read; items capped at 400 KB so maxResultBytes must be at most 300 KiB (Q20) | 300 KiB |
 
 Rows for DynamoDB, Redis, Postgres, D1, Durable Objects and SQLite are added by their store PRs.
 

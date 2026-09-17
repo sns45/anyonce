@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 
@@ -146,6 +146,34 @@ describe('ci workflow', () => {
     const typecheckAt = steps.indexOf('bun run typecheck');
     expect(buildAt).toBeGreaterThan(-1);
     expect(typecheckAt).toBeGreaterThan(buildAt);
+  });
+
+  test('REQ-REL-4: no root test filter matches a service-backed suite, which only test:services may run', () => {
+    const pkg = JSON.parse(readFileSync(join(import.meta.dir, '../package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    const script = pkg.scripts.test ?? '';
+    const filters = script.replace('bun test ', '').split(/\s+/).filter(Boolean);
+    expect(filters.length).toBeGreaterThan(0);
+    const serviceDir = 'packages/stores/services';
+    const suites = readdirSync(join(import.meta.dir, '..', serviceDir))
+      .filter((name) => name.endsWith('.test.ts'))
+      .map((name) => `${serviceDir}/${name}`);
+    expect(suites.length).toBeGreaterThan(0);
+    // bun test treats a positional argument as a path substring, so a bare "conformance" would
+    // also collect packages/stores/services/dynamodb.conformance.test.ts.
+    const matched = suites.flatMap((suite) =>
+      filters.filter((filter) => suite.includes(filter)).map((filter) => `${suite} <- ${filter}`),
+    );
+    expect(matched).toEqual([]);
+  });
+
+  test('REQ-REL-4: the services job builds before it runs the store suites, which import @anyonce/core through dist', () => {
+    const steps = (ci.jobs.services as Job).steps.map((s) => s.run ?? '');
+    const buildAt = steps.indexOf('bun run build');
+    const testAt = steps.findIndex((s) => s.includes('bun run test:services'));
+    expect(buildAt).toBeGreaterThan(-1);
+    expect(testAt).toBeGreaterThan(buildAt);
   });
 
   test('REQ-REL-4: every bun test job fails on skipped tests', () => {
