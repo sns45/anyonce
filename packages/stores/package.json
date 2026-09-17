@@ -35,7 +35,8 @@
       "types": "./dist/durable-objects.d.ts",
       "import": "./dist/durable-objects.js",
       "require": "./dist/durable-objects.cjs"
-    }
+    },
+    "./migrations/*": "./migrations/*"
   },
   "files": [
     "dist",

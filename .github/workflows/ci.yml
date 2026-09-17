@@ -56,7 +56,9 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bun run build
-      - run: bun run test:workers
+      - shell: bash
+        run: bun run test:workers 2>&1 | tee workers.log
+      - run: scripts/no-skips.sh workers.log
 
   go:
     runs-on: ubuntu-latest

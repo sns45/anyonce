@@ -70,12 +70,12 @@ const purgeSQL = `DELETE FROM anyonce_records WHERE expires_at <= ?1`
 // removeSQL: ?1 scope, ?2 key: test-only physical removal.
 const removeSQL = `DELETE FROM anyonce_records WHERE scope = ?1 AND key = ?2`
 
-// render replaces ?N with the dialect placeholder. Positional reuse (?4 twice) is fine for both dialects when the
-// argument list is passed in order, because SQLite and pgx both support numbered parameters.
-// render rewrites the "?N" placeholders in a statement to the dialect's form. It is a plain text replacement
-// and is not quote aware, which is safe because the only statements it ever sees are the constants in this
-// file: their single-quoted literals are 'in_flight' and 'completed', neither of which contains a "?", and
-// nothing here is ever built from caller input. The loop counts down so "?1" cannot match inside "?10" and up.
+// render rewrites the "?N" placeholders in a statement to the dialect's form, and positional reuse (?4 twice)
+// is fine for both dialects when the argument list is passed in order, because SQLite and pgx both support
+// numbered parameters. It is a plain text replacement and is not quote aware, which is safe because the only
+// statements it ever sees are the constants in this file: their single-quoted literals are 'in_flight' and
+// 'completed', neither of which contains a "?", and nothing here is ever built from caller input. The loop
+// counts down so "?1" cannot match inside "?10" and up.
 func render(d Dialect, text string) string {
 	out := text
 	for n := 9; n >= 1; n-- {

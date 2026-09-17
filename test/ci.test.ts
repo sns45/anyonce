@@ -75,7 +75,7 @@ describe('ci workflow', () => {
   });
 
   test('REQ-REL-4: tee pipelines use bash with pipefail', () => {
-    for (const name of ['ts', 'services']) {
+    for (const name of ['ts', 'services', 'workers']) {
       const job = ci.jobs[name] as Job;
       for (const step of job.steps) {
         if (step.run?.includes('| tee')) {
@@ -184,9 +184,15 @@ describe('ci workflow', () => {
     expect(testAt).toBeGreaterThan(buildAt);
   });
 
-  test('REQ-REL-4: every bun test job fails on skipped tests', () => {
-    for (const name of ['ts', 'services']) {
+  test('REQ-REL-4: every test job fails on skipped tests, the workers job included', () => {
+    for (const name of ['ts', 'services', 'workers']) {
       expect(runs(ci.jobs[name] as Job)).toContain('scripts/no-skips.sh');
     }
+    const workers = ci.jobs.workers as Job;
+    expect(runs(workers)).toContain('bun run test:workers 2>&1 | tee workers.log');
+    expect(runs(workers)).toContain('scripts/no-skips.sh workers.log');
+    expect(runs(workers).indexOf('tee workers.log')).toBeLessThan(
+      runs(workers).indexOf('scripts/no-skips.sh workers.log'),
+    );
   });
 });
