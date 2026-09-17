@@ -10,8 +10,7 @@ Every store implements the same `Store` contract (requirements 4.2) and passes t
 | postgres | TS, Go | serializable enough: one statement per transition | INSERT ON CONFLICT DO UPDATE WHERE, refusal classified by one SELECT | no, purge(now) with the expires_at index | migrations/postgres/0001_anyonce.sql or ensureSchema(query) | one statement per transition, two on a refused claim; run purge on a schedule | 1 MiB |
 | d1 | TS | strongly consistent within the database | INSERT ON CONFLICT DO UPDATE WHERE, refusal classified by one SELECT | no, purge(now) with the expires_at index (a cron trigger is the usual scheduler) | migrations/d1/0001_anyonce.sql via wrangler d1 migrations, or ensureSchema(db) | one statement per transition; rows up to 2 MB | 1 MiB |
 | durable-objects | TS | strongly consistent per object | single writer per object, one SQLite statement per transition | alarm sweep by wall clock (expires_at plus 60 s grace) | bind IdempotencyObject with new_sqlite_classes; DurableObjectsStore({ namespace }) | one RPC per transition; per scope sharding serializes a scope's requests, per scope and key sharding spreads them | 1 MiB (2 MB row limit) |
-
-Rows for SQLite are added by its store PR.
+| sqlite | Go | single process, WAL | one connection (SetMaxOpenConns 1), one statement per transition | no, purge(now) with the expires_at index | Open(ctx, path), then EnsureSchema(ctx) applies schema.sql; modernc.org/sqlite, no cgo | one statement per transition; single writer by construction | 1 MiB |
 
 ## Cloudflare KV is not a store (REQ-ST-KV-1)
 
