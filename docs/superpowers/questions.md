@@ -2,11 +2,15 @@
 
 Each entry has a recommended resolution. Work proceeds on the recommendation until Shantanu says otherwise. Raised at the next checkpoint.
 
+**Review status:** all 14 answered on 17 September 2026. Decisions marked ACCEPT adopt the recommendation as written. MODIFY keeps the direction and changes a detail; the changed detail is the binding text. REJECT replaces the recommendation. Section 15 lists every edit these decisions require in requirements.md, CHECKLIST.md and prompt.md; apply those edits in the first task of the next plan so the spec files never disagree with this file.
+
 ## Q1: editor's copy date in requirements 0.2
 
 requirements.md 0.2 says the editor's copy of the draft was "last touched November 2025". The clone of `ietf-wg-httpapi/idempotency` shows the last commit on any branch is 26 February 2025 (`dab060c`, "draft 06"). The `-07` text (15 October 2025) was published without a corresponding commit.
 
 Recommended resolution: cite "editor's copy last committed February 2025; -07 published October 2025 without a repo commit" in the case study and S2 post. No code impact.
+
+**Decision: ACCEPT.** Also correct the requirements.md 0.2 table row to the same wording so the spec is not the source of a wrong date. Record the commit hash in `docs/reference/preflight.md`. This detail strengthens S2: the WG repo has been idle for 19 months, which is the case for running code.
 
 ## Q2: REQ-Q-2 and REQ-Q-4 assume a handler can reach anyq's delay and dead-letter primitives
 
@@ -14,11 +18,15 @@ In anyq 0.5.0 (both languages) dead-letter and delayed redelivery are protected 
 
 Recommended resolution: the queue adapter throws typed errors (`InFlightError` with `delayMs`, `FingerprintMismatchError` with the record) and ships a companion strategy, `idempotencyStrategy(inner?)` in TS and `anyqmw.Strategy(inner)` in Go, that maps them to `park(delayMs)` and `deadLetter('fingerprint-mismatch')` and delegates every other error to `inner` (default `retryThenDeadLetter()`). The README shows both pieces wired together. REQ-Q-4's "if the adapter cannot dead-letter, rethrow a typed error" is then the no-strategy path and needs no extra code. Tests cover: strategy present on memory and SQS (native park), strategy present on Kafka and Redis Streams (park downgrade to in-process retry, which re-enters `begin` after the lease), and no strategy (typed error reaches anyq's legacy path).
 
+**Decision: ACCEPT.** Two additions. First, the strategy is not optional in the documented wiring: the README and both examples show `idempotent(handler)` and `idempotencyStrategy()` together, and the adapter logs a one-time warning at first `InFlightError` if it can detect that no strategy translated it (if detection is impossible, the README states the requirement in the first paragraph). Second, add REQ-Q-8 for the companion strategy so it has its own test IDs; the three test cases listed above are its acceptance criteria. The Kafka and Redis Streams "park downgrade" path must assert that the in-process retry does not call the handler before the lease expires (that is the whole point of the lease).
+
 ## Q3: D9 queue fingerprint "SHA-256 over body bytes" is not possible in TS
 
 anyq's TS `IMessage` exposes `body: T` already deserialized and `raw` as a provider-specific object; the original bytes are not available. Go `Message.Body()` is raw bytes.
 
 Recommended resolution: Go uses SHA-256 over `Body()` exactly as D9 says. TS defaults to SHA-256 over the RFC 8785 (JCS) canonical serialization of `message.body` when it is JSON-serializable, so the same logical payload produces the same fingerprint regardless of key order or whitespace; a custom `fingerprint(message)` option remains. Documented in `docs/semantics.md` as a TS profile note. This means the TS and Go queue adapters do not produce cross-language equal fingerprints for the same bytes, which does not matter because a scope is bound to one consumer group in one language.
+
+**Decision: MODIFY.** Keep JCS as the TS default for objects, and define the other body types so the default is total: `string` hashes its UTF-8 bytes; `Uint8Array` or `ArrayBuffer` hashes the bytes directly; anything else goes through JCS; a body JCS cannot serialize (cyclic, BigInt, undefined at top level) throws a typed `FingerprintError` at wrap time in tests and at first message in production, never a silent fallback. Do not use `raw` for fingerprinting even when a provider exposes bytes there, because that would make the fingerprint provider-dependent within one language. The cross-language inequality is accepted and goes in `docs/semantics.md` with the sentence "a scope is bound to one consumer group in one language" verbatim.
 
 ## Q4: REQ-Q-1 default key order
 
@@ -26,11 +34,15 @@ anyq always populates `message.id` in both languages, so the documented order (m
 
 Recommended resolution: keep the documented order for callers who pass a custom message shape, add a test that the header path is used when `key: 'header'` is chosen explicitly, and note in the README that broker message ids are per delivery on some brokers (SQS redelivery keeps the same `MessageId`; Redis Streams entry ids are stable; Kafka has no id so anyq synthesizes `topic-partition-offset`, which is stable). The anyq adapter docs are the source for which ids are stable across redelivery; P4 verifies each of the three tested adapters.
 
+**Decision: ACCEPT.** The redelivery-stability table goes in `docs/stores.md`'s sibling, a new `docs/queue-ids.md`, one row per anyq adapter (all nine, not just the three tested), with the tested three marked verified and the rest marked "per anyq adapter docs, unverified". A producer-supplied `idempotency-key` header is the recommended default in the README for any broker whose id changes on redelivery or on producer retry (a producer retry creates a second message with a second id, which no consumer-side id can dedupe); the README says this plainly.
+
 ## Q5: `docs/reference/draft-07.txt` and the dash gate
 
 The CHECKLIST dash gate scans the whole tree. The fetched draft contains zero em or en dashes (checked with `rg`), so no exclusion is needed today. If a future draft revision introduces one, the gate should exclude `docs/reference/draft-*.txt` since it is verbatim normative text.
 
 Recommended resolution: no change now; noted so the gate is not "fixed" by editing the reference text.
+
+**Decision: MODIFY.** Add the exclusion now: the gate command becomes `rg -n "[\x{2013}\x{2014}]" --glob '!node_modules' --glob '!*.lock' --glob '!docs/reference/**' .`. `docs/reference/` holds verbatim third-party text by definition (the draft, anyq interfaces copied from source, anyhook signing routine), so none of it should ever be edited to satisfy a style gate. Cheaper to exclude the directory once than to rely on someone remembering this note.
 
 ## Q6: golangci-lint is not installed locally
 
@@ -38,11 +50,15 @@ The Go gate in CHECKLIST.md requires `golangci-lint run`. It is absent on this m
 
 Recommended resolution: install with `brew install golangci-lint` before the first Go code lands in P1; CI installs it via the official action. Not a spec question, recorded so the P1 gate does not fail for environmental reasons.
 
+**Decision: ACCEPT.** Pin the same version locally and in CI (the `golangci/golangci-lint-action` `version` input and a comment in `CLAUDE.md` naming it), and commit a `.golangci.yml` in the current config schema version so local and CI runs agree on the linter set. Add `golangci-lint`, `docker`, `bun`, and `go` to a `scripts/doctor.sh` that P0 ships and the every-phase gate runs first.
+
 ## Q7: `Store.complete` with `{ omitted: true }` loses status and headers (A1)
 
 D12 says an omitted-body replay returns the original status and headers, but the 3.1 signature passes only `{ omitted: true }`.
 
 Recommended resolution: the omitted variant is `{ omitted: true; kind: 'http' | 'message'; status?: number; headers?: [string, string][] }`. Stores persist `resultOmitted: true` and a `result` without `body`. REQ-STORE-10 checks "no body" and that status and headers survive.
+
+**Decision: ACCEPT.** Update the 3.1 signature in requirements.md to match, and add to REQ-STORE-11 that the cap test also verifies the boundary case at `maxResultBytes + 1` produces the omitted form with status and headers intact.
 
 ## Q8: precedence between TTL expiry, lease expiry, and fingerprint mismatch (A2)
 
@@ -50,11 +66,15 @@ Recommended resolution: the omitted variant is `{ omitted: true; kind: 'http' | 
 
 Recommended resolution: TTL-expired record is absent (D14) and yields `acquired` with fence 1 restarted; otherwise fingerprint mismatch wins over lease state, so a lease-expired record with a different fingerprint yields `mismatch`. Rationale: the draft's 422 rule is about key reuse with a different payload, and the first payload under a key is the truth for the key's lifetime. The contract suite adds two tests: `REQ-STORE-3: lease-expired record with different fingerprint yields mismatch` and `REQ-STORE-7: ttl-expired record with different fingerprint yields acquired`.
 
+**Decision: MODIFY.** The ordering is right: TTL expiry first, then fingerprint, then lease. The fence restart is the change. Do not restart the fence at 1 when the TTL-expired row is still physically present; continue it as `old.fence + 1`. Reason: a handler from the previous TTL epoch can, in principle, still be running (a 24 h TTL is long, a stuck handler is not impossible), and a restarted fence of 1 would let its late `complete` land on the new record. Stores whose native TTL has already deleted the row (DynamoDB, Redis) restart at 1 because there is nothing to continue from, which is safe because native deletion only happens after expiry plus the provider's sweep delay. The single-statement `begin` on D1, Postgres and SQLite computes `fence = COALESCE(existing.fence, 0) + 1` in the conflict branch, so this costs nothing. `REQ-STORE-7` becomes two assertions: ttl-expired row present yields `acquired` with `fence = old + 1`; ttl-expired row absent yields `acquired` with `fence = 1`. The memory store simulates both by exposing a test-only `physicallyRemove(op)`.
+
 ## Q9: the 255-byte key limit vector belongs in `profile`, not `core` (A3)
 
 The draft sets no maximum key length. Grading third parties on it contradicts D17.
 
 Recommended resolution: tier `profile`, id `profile/key-too-long`. Gap entry proposes the draft recommend a documented maximum. `core` still has eleven vectors because two draft-derived cases were added instead: `core/mismatch-does-not-poison` (section 2.7, a rejected 422 leaves the original record intact) and `core/header-name-case-insensitive` (section 2.1 via RFC 9110 field name rules). An empty quoted key was considered and rejected as a core vector because the draft does not forbid it.
+
+**Decision: ACCEPT.** Both added core vectors are good. The empty-key decision is also right for `core`; add `profile/empty-key-rejected` so anyonce's own 400 on `""` is still tested, and log it as a draft gap (the draft should say whether an empty key is a key). Move the 255-byte limit from REQ-CONF-3 to REQ-CONF-4 in requirements.md and mark D7's limit as a profile choice.
 
 ## Q10: branch coverage cannot come from `bun test --coverage` (A6)
 
@@ -62,11 +82,15 @@ Verified on bun 1.2.21: coverage output has `% Funcs` and `% Lines` columns only
 
 Recommended resolution: `bun run test:coverage` runs vitest with `@vitest/coverage-v8` over `packages/core/src/engine.ts` with `branches: 100` as a threshold; CHECKLIST P1 wording updated to cite that command. All other tests stay on `bun test`.
 
+**Decision: ACCEPT.** Extend the threshold file list to the sf-string parser and the key validator (`packages/core/src/key.ts` or wherever they land): those are the other two places where an untaken branch is a conformance bug. Everything else stays on `bun test`.
+
 ## Q11: `withIdempotency` and shared HTTP helpers live in `@anyonce/core/http` (B8)
 
 `@anyonce/webhooks` needs key parsing, problem details, response capture and replay headers but must not depend on `@anyonce/hono`.
 
 Recommended resolution: subpath export `@anyonce/core/http` (Web APIs only, zero deps) holds `withIdempotency` and the helpers; `@anyonce/hono` becomes a thin binding to Hono's context and typing. The 8 KB budget (REQ-REL-5) applies to the root entry; the `http` subpath gets its own 16 KB line. requirements 4.4's "`@anyonce/hono` plus framework-agnostic `withIdempotency`" still holds for users: `@anyonce/hono` re-exports it.
+
+**Decision: ACCEPT.** Update requirements 1.1, 4.4 and REQ-REL-5, and CLAUDE.md's layout block, to name the subpath. Import direction is enforced by a test: `@anyonce/core` root must not import from `./http` (so the queue door never pays for HTTP code), and `@anyonce/hono` and `@anyonce/webhooks` import only from `@anyonce/core` and `@anyonce/core/http`.
 
 ## Q12: P4 webhook adapter depends on P2 (C1)
 
@@ -74,14 +98,57 @@ The prompt says P4 depends on P1 only. The webhook receiver returns the same 409
 
 Recommended resolution: P4 starts after P2 merges, in parallel with P3 and P5; its first task is the queue adapter, which truly needs only P1.
 
+**Decision: ACCEPT.** Split P4 into P4a (queue adapter, TS and Go, starts after P1) and P4b (webhook receiver, TS and Go, starts after P2). P4a can run in parallel with P2. Update the phase table in requirements.md section 6 and the parallelism list in prompt.md.
+
 ## Q13: REQ-REL-4 "Go latest two minors" versus D19 "latest stable pinned in go.mod"
 
 With `go 1.25.3` pinned in `go.mod`, a Go 1.24 CI runner cannot build the module without toolchain auto-download, so a two-minor matrix is not meaningful until Go 1.26 ships.
 
-Recommended resolution: CI uses `go-version-file: go/go.mod` (one toolchain, the pinned one) in P0. When Go 1.26 is released, `go.mod` moves to `go 1.26` and the matrix gains `1.25.x` as the second entry. Recorded here so REQ-REL-4 is not marked complete on the Go axis until then.
+Recommended resolution: CI uses `go-version-file: go/go.mod` (one toolchain, the pinned one) in P0. When Go 1.26 is released, `go.mod` moves to `go 1.26` and the matrix gains `1.25.x` as the second entry. Recorded here so REQ-RELEASE-4 is not marked complete on the Go axis until then.
+
+**Decision: REJECT, the premise is stale.** Go 1.26 shipped in February 2026 and is at 1.26.7 as of 19 August 2026; Go 1.27 (generic methods, `encoding/json/v2`, post-quantum crypto) was scheduled for August 2026 and was at rc3 on 13 August. The local toolchain that reported `1.25.3` is two releases behind. Do this instead: run `go version`, upgrade the local toolchain to the current stable from go.dev/dl, and check whether 1.27 final has been tagged. `go.mod` says `go 1.26` (minor only, no patch, no `toolchain` line) so any 1.26+ toolchain builds it without auto-download. CI matrix uses actions/setup-go's `stable` and `oldstable` aliases rather than hard-coded versions, so REQ-REL-4 "latest two minors" is true today and stays true after each August and February release without a PR. D19's "latest stable pinned" is amended to "minimum supported minor pinned in go.mod, latest two tested in CI". Language features from 1.27 (generic methods, json/v2) are not used until 1.27 is `oldstable`, which keeps the module buildable on both matrix entries.
 
 ## Q14: core vectors assert application/problem+json, which the draft does not mandate
 
 `core/key-missing-required`, `core/mismatch-422` and `core/concurrent-409` require `Content-Type: application/problem+json`, and `core/get-ignored` asserts the absence of `Idempotency-Replayed`. Draft section 2.7 shows RFC 7807 bodies as one example and a `Link` header as an alternative for all three error cases, so a draft-conformant third party that answers with `Link` and a text body fails three of eleven core vectors, which contradicts D17. REQ-CONF-3 literally says "400 with application/problem+json", so the vectors follow it for now.
 
 Recommended resolution: before the P5 grading run, drop the `Content-Type` assertions from those three core vectors and the `Idempotency-Replayed` absence check from `core/get-ignored` (status plus `handlerInvocations` already prove the behavior; `profile/problem-code-member` covers the anyonce body shape), and keep the media type as a `profile` expectation. Recorded as draft gaps G1 and G2 so S3 can propose that the draft name the media type.
+
+**Decision: ACCEPT, but do it now, not before P5.** Core vectors must never encode a profile choice, even temporarily, because P2 will be built green against them and any later loosening looks like grading on a curve. Change the four vectors in the current P0 branch, fix REQ-CONF-3 to read "400 (status only; body shape is a profile expectation)", and keep `profile/problem-content-type` as the anyonce-only assertion. G1 and G2 stay in `DRAFT-GAPS.md`.
+
+---
+
+## 15. Spec amendments required by these decisions
+
+Apply as the first task of the next plan, one commit, message `docs(spec): apply questions.md decisions Q1-Q14`. Each line names the file and the exact place.
+
+requirements.md
+- 0.2 table, IETF row: "editor's copy last committed February 2025 (`dab060c`, draft 06); -07 published October 2025 without a repo commit" (Q1)
+- 1.1: add `@anyonce/core/http` subpath to the package list (Q11)
+- 2, D7: note "255-byte maximum is a profile choice; the draft sets none" (Q9)
+- 2, D9: TS queue default becomes the total definition from Q3 (Q3)
+- 2, D14: "Expired records are absent to `begin`; fence continues from the stale row when it is still present" (Q8)
+- 2, D19: Go line becomes "minimum supported minor pinned in go.mod (`go 1.26`), latest two minors tested in CI via `stable` and `oldstable`" (Q13)
+- 3.1: `complete` result parameter becomes `StoredResult | OmittedResult` with `OmittedResult = { omitted: true; kind; status?; headers? }` (Q7)
+- 3.2: add the precedence paragraph: TTL expiry, then fingerprint, then lease; fence continuation rule (Q8)
+- 4.2 REQ-STORE-7: split into present-row and absent-row assertions (Q8); REQ-STORE-10 and 11: status and headers survive omission, `maxResultBytes + 1` boundary (Q7)
+- 4.4 lead paragraph: `withIdempotency` lives in `@anyonce/core/http`; `@anyonce/hono` re-exports (Q11)
+- 4.5: add REQ-Q-8 companion strategy with the three acceptance cases and the lease-respecting retry assertion (Q2); REQ-Q-1 note pointing to `docs/queue-ids.md` (Q4)
+- 4.7 REQ-CONF-3: remove "with application/problem+json" and the 255-byte case; add `core/mismatch-does-not-poison` and `core/header-name-case-insensitive` (Q9, Q14); REQ-CONF-4: add `profile/key-too-long`, `profile/empty-key-rejected`, `profile/problem-content-type` (Q9, Q14)
+- 4.8: add REQ-DOC-9 `docs/queue-ids.md` (Q4)
+- 4.9 REQ-REL-4: Go axis wording per Q13; REQ-REL-5: root 8 KB, `http` subpath 16 KB (Q11)
+- 6 phase table: P4 splits into P4a and P4b with the dependencies from Q12
+
+CHECKLIST.md
+- Every phase: dash gate command gains `--glob '!docs/reference/**'` (Q5); add "`scripts/doctor.sh` passes" as the first item (Q6)
+- P1: branch coverage item cites `bun run test:coverage` (vitest, `@vitest/coverage-v8`, `branches: 100` on engine, key validator, sf-string parser) (Q10)
+- P4 splits into P4a and P4b (Q12)
+
+CLAUDE.md
+- Layout block: add `packages/core/src/http/` and the `docs/queue-ids.md` file (Q4, Q11)
+- Commands: add `bun run test:coverage` and `scripts/doctor.sh`; Go line names the pinned golangci-lint version (Q6, Q10)
+- Code rules: add the import-direction rule from Q11
+
+prompt.md
+- Phase order and parallelism: P4a after P1 (parallel with P2), P4b after P2 (parallel with P3 and P5) (Q12)
+- Step 0 preflight: add "run `go version`; upgrade to current stable before P1" (Q13)

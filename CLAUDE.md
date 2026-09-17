@@ -6,6 +6,7 @@ Read `requirements.md` before touching code. It is the design; this file is how 
 
 ```
 packages/core            @anyonce/core        engine, types, memory store, testing/ (store contract suite)
+  src/http/              @anyonce/core/http   withIdempotency and the shared HTTP helpers (subpath export)
 packages/hono            @anyonce/hono        Hono middleware + withIdempotency fetch wrapper
 packages/anyq            @anyonce/anyq        anyq consumer middleware
 packages/webhooks        @anyonce/webhooks    Standard Webhooks receiver + verify helper
@@ -19,20 +20,21 @@ go/                      Go module github.com/sns45/anyonce/go
   storetest/             store contract suite
   conformance/           Go runner
 examples/                six examples, each with a CI smoke test
-docs/                    semantics.md stores.md problems.md conformance.md security.md reference/ standards/ superpowers/
+docs/                    semantics.md stores.md queue-ids.md problems.md conformance.md security.md reference/ standards/ superpowers/
 benchmarks/
 ```
 
 ## Commands
 
-- `bun install` at root (workspaces). `bun run build`, `bun run test`, `bun run test:workers` (vitest-pool-workers for DO and D1), `bun run test:reqs` (REQ coverage check), `bun run lint` (Biome), `bun run conformance -- --url <base>`.
+- `bun install` at root (workspaces). `bun run build`, `bun run test`, `bun run test:workers` (vitest-pool-workers for DO and D1), `bun run test:reqs` (REQ coverage check), `bun run test:coverage` (vitest v8 branch coverage on the engine, the key validator and the sf-string parser), `bun run lint` (Biome), `bun run conformance -- --url <base>`, `scripts/doctor.sh` (checks bun, go, docker and golangci-lint at the pinned versions).
 - `docker compose -f test/compose.yml up -d` starts DynamoDB Local, Redis 7, Postgres 16, Redpanda, ElasticMQ for integration tests. Tests skip with a clear message if a service is down; CI treats skips as failures.
-- Go: `cd go && go build ./... && go vet ./... && go test -race ./... && golangci-lint run`.
+- Go: `cd go && go build ./... && go vet ./... && go test -race ./... && golangci-lint run` (golangci-lint pinned to v2.13.2 locally and in CI).
 
 ## Code rules
 
 - TypeScript: strict, `exactOptionalPropertyTypes`, no `any` outside test fakes, ESM source, tsup builds ESM+CJS+d.ts. Web APIs only in core, hono, webhooks (no `node:` imports). Peer dependencies for framework and client libraries.
 - Go: standard library first; the only third-party deps are the store clients and `modernc.org/sqlite`. No cgo. Errors wrapped with `%w`; sentinel errors exported from `anyonce` (`ErrConflict`, `ErrMismatch`, `ErrStaleFence`, `ErrStoreUnavailable`).
+- Import direction: `@anyonce/core` root never imports from `./http`; `@anyonce/hono` and `@anyonce/webhooks` import only from `@anyonce/core` and `@anyonce/core/http`. A test enforces this.
 - Store `begin` is one atomic operation per store. Get-then-lock is a bug even if the tests pass.
 - Never log a full idempotency key; use `redactKey()` (first 8 chars + `…`).
 - Public API changes require a changeset (`bunx changeset`).
@@ -52,7 +54,7 @@ benchmarks/
 
 ## Git
 
-- Branch per phase (`p0-scaffold-and-vectors`, `p1-core`, ...) via `using-git-worktrees`; store PRs branch from the P3 branch as `p3-store-<name>`.
+- Branch per phase (`p0-scaffold-and-vectors`, `p1-core`, `p4a-queue`, `p4b-webhooks`, ...) via `using-git-worktrees`; store PRs branch from the P3 branch as `p3-store-<name>`.
 - Conventional commits (`feat(core): ...`, `test(stores): REQ-STORE-8 ...`). Squash merge to `main`. PR body lists REQ ids covered and pastes the verification output.
 - CI must be green before requesting review.
 
