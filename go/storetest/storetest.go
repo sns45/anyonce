@@ -182,6 +182,26 @@ func Run(t *testing.T, name string, factory Factory) {
 		}
 	}))
 
+	t.Run("REQ-STORE-4: an empty body and an empty header list round trip as empty, not absent", with(func(t *testing.T, s anyonce.Store, _ Harness) {
+		o := op("s4d", "fp-a")
+		mustBegin(t, s, o, T0)
+		empty := anyonce.StoredResult{Kind: anyonce.KindHTTP, Status: 204, Headers: [][2]string{}, Body: []byte{}}
+		if st, err := s.Complete(ctx, o, 1, empty, T0.Add(time.Millisecond)); err != nil || st != anyonce.CompleteOK {
+			t.Fatalf("complete: %v %v", st, err)
+		}
+		out := mustBegin(t, s, o, T0.Add(2*time.Millisecond))
+		if out.Kind != anyonce.BeginCompleted || out.Record == nil || out.Record.Result == nil {
+			t.Fatalf("got %+v", out)
+		}
+		stored := out.Record.Result
+		if stored.Headers == nil || len(stored.Headers) != 0 {
+			t.Fatalf("an empty header list came back as %#v, want an empty non-nil slice", stored.Headers)
+		}
+		if stored.Body == nil || len(stored.Body) != 0 {
+			t.Fatalf("an empty body came back as %#v, want an empty non-nil slice", stored.Body)
+		}
+	}))
+
 	t.Run("REQ-STORE-5: lease takeover yields fence 2 and a complete with fence 1 is stale and leaves the record unchanged", with(func(t *testing.T, s anyonce.Store, _ Harness) {
 		o := op("s5", "fp-a")
 		expectAcquired(t, mustBegin(t, s, o, T0), 1)

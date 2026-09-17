@@ -127,11 +127,30 @@ func (s *Store) EnsureSchema(ctx context.Context) error {
 
 func ms(t time.Time) int64 { return t.UnixMilli() }
 
+// scanRow reads result_body into an any rather than a []byte: modernc.org/sqlite hands back a nil []byte for a
+// zero length blob, which a []byte destination cannot tell apart from SQL NULL. Inside an interface the two do
+// differ, a typed nil slice against an untyped nil, and that is what keeps a stored empty body from reading
+// back as an absent one (REQ-STORE-4).
 func scanRow(rows *sql.Rows) (rowcodec.Row, error) {
 	var r rowcodec.Row
 	var meta sql.NullString
-	if err := rows.Scan(&r.Scope, &r.Key, &r.Fingerprint, &r.State, &r.Fence, &r.LeaseUntil, &r.CreatedAt, &r.ExpiresAt, &meta, &r.ResultBody, &r.ResultOmitted); err != nil {
+	var body any
+	if err := rows.Scan(&r.Scope, &r.Key, &r.Fingerprint, &r.State, &r.Fence, &r.LeaseUntil, &r.CreatedAt, &r.ExpiresAt, &meta, &body, &r.ResultOmitted); err != nil {
 		return r, fmt.Errorf("sqlstore: scan: %w", err)
+	}
+	switch v := body.(type) {
+	case nil:
+		r.ResultBody = nil
+	case []byte:
+		if v == nil {
+			v = []byte{}
+		}
+		r.ResultBody = v
+	case string:
+		r.ResultBody = make([]byte, len(v))
+		copy(r.ResultBody, v)
+	default:
+		return r, fmt.Errorf("sqlstore: scan: result_body came back as %T, want bytes or NULL", body)
 	}
 	if meta.Valid {
 		r.ResultMeta = &meta.String

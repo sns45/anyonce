@@ -218,6 +218,29 @@ export function storeContractSuite(
     );
 
     test(
+      'REQ-STORE-4: an empty body and an empty header list round trip as empty, not absent',
+      withHarness(async (h) => {
+        const o = op('s4d');
+        await h.store.begin(o, opts(T0));
+        expect(
+          await h.store.complete(
+            o,
+            1,
+            { kind: 'http', status: 204, headers: [], body: new Uint8Array(0) },
+            T0 + 1,
+          ),
+        ).toBe('ok');
+        const out = await h.store.begin(o, opts(T0 + 2));
+        expect(out.outcome).toBe('completed');
+        const stored = recordOf(out)?.result;
+        expect(stored?.headers === undefined).toBe(false);
+        expect(stored?.headers).toEqual([]);
+        expect(stored?.body === undefined).toBe(false);
+        expect(stored?.body?.byteLength).toBe(0);
+      }),
+    );
+
+    test(
       'REQ-STORE-5: lease takeover yields fence 2 and a complete with fence 1 is stale and leaves the record unchanged',
       withHarness(async (h) => {
         const o = op('s5');

@@ -31,17 +31,24 @@ type messageError struct {
 	Message string `json:"message"`
 }
 
+// Headers is a pointer so the encoded key follows the same rule as the TypeScript codec: present whenever the
+// value is non-nil, absent only when it is nil. With a plain slice, omitempty would drop a non-nil empty list
+// (TypeScript writes "headers": []) and dropping omitempty would write null for a nil one.
 type meta struct {
 	Kind    anyonce.Kind     `json:"kind"`
 	Status  *int             `json:"status,omitempty"`
-	Headers [][2]string      `json:"headers,omitempty"`
+	Headers *[][2]string     `json:"headers,omitempty"`
 	Outcome *anyonce.Outcome `json:"outcome,omitempty"`
 	Error   *messageError    `json:"error,omitempty"`
 }
 
 // EncodeMeta serializes everything but the body; the omitted form encodes the same way.
 func EncodeMeta(r anyonce.StoredResult) (string, error) {
-	m := meta{Kind: r.Kind, Headers: r.Headers}
+	m := meta{Kind: r.Kind}
+	if r.Headers != nil {
+		headers := r.Headers
+		m.Headers = &headers
+	}
 	if r.Status != 0 {
 		s := r.Status
 		m.Status = &s
@@ -66,7 +73,10 @@ func DecodeMeta(text string) (anyonce.StoredResult, error) {
 	if err := json.Unmarshal([]byte(text), &m); err != nil {
 		return anyonce.StoredResult{}, fmt.Errorf("rowcodec: decode meta: %w", err)
 	}
-	out := anyonce.StoredResult{Kind: m.Kind, Headers: m.Headers}
+	out := anyonce.StoredResult{Kind: m.Kind}
+	if m.Headers != nil {
+		out.Headers = *m.Headers
+	}
 	if m.Status != nil {
 		out.Status = *m.Status
 	}
@@ -90,7 +100,9 @@ func ToRecord(row Row) anyonce.Record {
 	if row.ResultMeta != nil {
 		if res, err := DecodeMeta(*row.ResultMeta); err == nil {
 			if row.ResultBody != nil {
-				res.Body = append([]byte(nil), row.ResultBody...)
+				// make plus copy, not append to a nil slice, which would turn a stored empty body into nil.
+				res.Body = make([]byte, len(row.ResultBody))
+				copy(res.Body, row.ResultBody)
 			}
 			res.Omitted = rec.ResultOmitted
 			rec.Result = &res

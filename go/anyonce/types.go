@@ -63,7 +63,9 @@ func (r StoredResult) Clone() StoredResult {
 		copy(out.Headers, r.Headers)
 	}
 	if r.Body != nil {
-		out.Body = append([]byte(nil), r.Body...)
+		// make plus copy, not append to a nil slice, which would turn an empty body into an absent one.
+		out.Body = make([]byte, len(r.Body))
+		copy(out.Body, r.Body)
 	}
 	if r.Error != nil {
 		e := *r.Error
