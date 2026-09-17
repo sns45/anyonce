@@ -84,6 +84,26 @@ export function rowToRecord(row: RecordRow): IdempotencyRecord {
   return record;
 }
 
+/**
+ * One SQLite-dialect row as the drivers hand it back. D1 and Durable Object storage both return a BLOB as an
+ * ArrayBuffer and every integer column as a number, so both stores decode a row through here.
+ */
+export function sqlRowToRecordRow(r: Record<string, unknown>): RecordRow {
+  return {
+    scope: String(r.scope),
+    key: String(r.key),
+    fingerprint: String(r.fingerprint),
+    state: r.state as RecordRow['state'],
+    fence: Number(r.fence),
+    lease_until: Number(r.lease_until),
+    created_at: Number(r.created_at),
+    expires_at: Number(r.expires_at),
+    result_meta: r.result_meta === null ? null : String(r.result_meta),
+    result_body: r.result_body === null ? null : new Uint8Array(r.result_body as ArrayBuffer),
+    result_omitted: Number(r.result_omitted),
+  };
+}
+
 /** Web-API base64, for the stores that persist a body as text (Redis hashes, the Upstash REST client). */
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';

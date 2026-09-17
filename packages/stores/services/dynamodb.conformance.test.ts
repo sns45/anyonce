@@ -23,16 +23,20 @@ await describeService('dynamodb conformance', 18000, () => {
       maxResultBytes: DYNAMODB_MAX_RESULT_BYTES,
       skip: (req) => new URL(req.url).pathname === '/reset',
     });
-    const { summary, report } = await runConformance({
-      target: handler,
-      capabilities: ['short-ttl'],
-      report: 'markdown',
-    });
-    const notPassing = summary.results
-      .filter((r) => r.status !== 'pass')
-      .map((r) => `${r.id}: ${r.status}`);
-    expect(notPassing, report).toEqual([]);
-    expect(summary.passed).toBe(20);
-    client.destroy();
+    try {
+      const { summary, report } = await runConformance({
+        target: handler,
+        capabilities: ['short-ttl'],
+        report: 'markdown',
+      });
+      const notPassing = summary.results
+        .filter((r) => r.status !== 'pass')
+        .map((r) => `${r.id}: ${r.status}`);
+      expect(notPassing, report).toEqual([]);
+      expect(summary.passed).toBe(20);
+    } finally {
+      // A failed run must still release the socket, otherwise bun hangs on the open handle.
+      client.destroy();
+    }
   }, 60_000);
 });

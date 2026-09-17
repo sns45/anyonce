@@ -9,7 +9,7 @@ import type {
   StoredResult,
 } from '@anyonce/core';
 import { isOmitted } from '@anyonce/core';
-import { encodeResultMeta, type RecordRow, rowToRecord } from './codec';
+import { sqlRowToRecordRow as asRow, encodeResultMeta, rowToRecord } from './codec';
 import {
   ABANDON_SQL,
   BEGIN_SQL,
@@ -31,22 +31,6 @@ export async function ensureSchema(db: D1Database): Promise<void> {
   for (const statement of MIGRATION_SQL.split(';')) {
     if (statement.trim()) await db.prepare(statement).run();
   }
-}
-
-function asRow(r: Record<string, unknown>): RecordRow {
-  return {
-    scope: String(r.scope),
-    key: String(r.key),
-    fingerprint: String(r.fingerprint),
-    state: r.state as RecordRow['state'],
-    fence: Number(r.fence),
-    lease_until: Number(r.lease_until),
-    created_at: Number(r.created_at),
-    expires_at: Number(r.expires_at),
-    result_meta: r.result_meta === null ? null : String(r.result_meta),
-    result_body: r.result_body === null ? null : new Uint8Array(r.result_body as ArrayBuffer),
-    result_omitted: Number(r.result_omitted),
-  };
 }
 
 /** REQ-ST-D1-1: one INSERT ON CONFLICT DO UPDATE per claim; D1 returns BLOBs as ArrayBuffer. */

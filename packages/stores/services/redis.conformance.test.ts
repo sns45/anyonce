@@ -19,16 +19,20 @@ await describeService('redis conformance', 6379, () => {
       ttlMs: 2000,
       skip: (req) => new URL(req.url).pathname === '/reset',
     });
-    const { summary, report } = await runConformance({
-      target: handler,
-      capabilities: ['short-ttl'],
-      report: 'markdown',
-    });
-    const notPassing = summary.results
-      .filter((r) => r.status !== 'pass')
-      .map((r) => `${r.id}: ${r.status}`);
-    expect(notPassing, report).toEqual([]);
-    expect(summary.passed).toBe(20);
-    await client.quit();
+    try {
+      const { summary, report } = await runConformance({
+        target: handler,
+        capabilities: ['short-ttl'],
+        report: 'markdown',
+      });
+      const notPassing = summary.results
+        .filter((r) => r.status !== 'pass')
+        .map((r) => `${r.id}: ${r.status}`);
+      expect(notPassing, report).toEqual([]);
+      expect(summary.passed).toBe(20);
+    } finally {
+      // A failed run must still release the connection, otherwise bun hangs on the open handle.
+      await client.quit();
+    }
   }, 60_000);
 });

@@ -113,7 +113,9 @@ export class PostgresStore implements Store {
       const record = rowToRecord(row);
       if (row.fingerprint !== op.fingerprint) return { outcome: 'mismatch', record };
       if (row.state === 'completed') return { outcome: 'completed', record };
-      if (row.lease_until > opts.now) return { outcome: 'in_flight', leaseUntil: row.lease_until };
+      // The lease lapsed between the refused claim and this read, so retry rather than fall out of the loop.
+      if (row.lease_until <= opts.now) continue;
+      return { outcome: 'in_flight', leaseUntil: row.lease_until };
     }
     throw new Error('anyonce: postgres begin could not settle after three attempts');
   }

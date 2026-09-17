@@ -10,7 +10,7 @@ import type {
   StoredResult,
 } from '@anyonce/core';
 import { isOmitted } from '@anyonce/core';
-import { encodeResultMeta, type RecordRow, rowToRecord } from './codec';
+import { sqlRowToRecordRow as asRow, encodeResultMeta, rowToRecord } from './codec';
 import {
   ABANDON_SQL,
   BEGIN_SQL,
@@ -58,22 +58,6 @@ const SHARD_SEPARATOR = String.fromCharCode(31);
 
 const DEFAULT_GRACE_MS = 60_000;
 
-function asRow(r: Record<string, unknown>): RecordRow {
-  return {
-    scope: String(r.scope),
-    key: String(r.key),
-    fingerprint: String(r.fingerprint),
-    state: r.state as RecordRow['state'],
-    fence: Number(r.fence),
-    lease_until: Number(r.lease_until),
-    created_at: Number(r.created_at),
-    expires_at: Number(r.expires_at),
-    result_meta: r.result_meta === null ? null : String(r.result_meta),
-    result_body: r.result_body === null ? null : new Uint8Array(r.result_body as ArrayBuffer),
-    result_omitted: Number(r.result_omitted),
-  };
-}
-
 /** SqlStorageValue covers ArrayBuffer but not Uint8Array, so bodies are copied into their own buffer. */
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const out = new ArrayBuffer(bytes.byteLength);
@@ -82,11 +66,31 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 }
 
 /**
+ * The shape the Worker side calls the object through. `DurableObjectStub<IdempotencyObject>` cannot be used
+ * directly because the RPC types widen tuples: `headers` comes back as `string[][]` rather than
+ * `[string, string][]`, which does not satisfy `Store`. The wire values are unchanged, since RPC arguments and
+ * returns are structured-clone data (plain objects and Uint8Array), never class instances.
+ */
+interface IdempotencyObjectRpc {
+  begin(op: Operation, opts: BeginOptions, graceMs?: number): Promise<BeginOutcome>;
+  complete(
+    op: Operation,
+    fence: number,
+    result: StoredResult | OmittedResult,
+    now: number,
+  ): Promise<CompleteStatus>;
+  abandon(op: Operation, fence: number): Promise<CompleteStatus>;
+  get(op: Pick<Operation, 'scope' | 'key'>, now: number): Promise<IdempotencyRecord | null>;
+  purge(now: number): Promise<number>;
+  physicallyRemove(op: Pick<Operation, 'scope' | 'key'>): Promise<void>;
+}
+
+/**
  * REQ-ST-DO-1: one object is one writer, so each statement runs alone; RPC methods take and return plain data.
  * The alarm deletes rows by wall-clock expiry (expires_wall), which is the logical expiry converted to a duration
  * at write time plus the grace, so the injected clock never makes the alarm sweep live rows.
  */
-export class IdempotencyObject extends DurableObject {
+export class IdempotencyObject extends DurableObject implements IdempotencyObjectRpc {
   private ready = false;
 
   private init(): void {
@@ -228,26 +232,6 @@ export interface DurableObjectsStoreOptions {
   nativeTtlGraceMs?: number;
 }
 
-/**
- * The shape the Worker side calls the object through. `DurableObjectStub<IdempotencyObject>` cannot be used
- * directly because the RPC types widen tuples: `headers` comes back as `string[][]` rather than
- * `[string, string][]`, which does not satisfy `Store`. The wire values are unchanged, since RPC arguments and
- * returns are structured-clone data (plain objects and Uint8Array), never class instances.
- */
-interface IdempotencyObjectRpc {
-  begin(op: Operation, opts: BeginOptions, graceMs?: number): Promise<BeginOutcome>;
-  complete(
-    op: Operation,
-    fence: number,
-    result: StoredResult | OmittedResult,
-    now: number,
-  ): Promise<CompleteStatus>;
-  abandon(op: Operation, fence: number): Promise<CompleteStatus>;
-  get(op: Pick<Operation, 'scope' | 'key'>, now: number): Promise<IdempotencyRecord | null>;
-  purge(now: number): Promise<number>;
-  physicallyRemove(op: Pick<Operation, 'scope' | 'key'>): Promise<void>;
-}
-
 /** REQ-ST-DO-1: the Worker-side Store; every call is one RPC to the object that owns the scope (or the key). */
 export class DurableObjectsStore implements Store {
   private readonly namespace: DurableObjectNamespace<IdempotencyObject>;
@@ -296,6 +280,8 @@ export class DurableObjectsStore implements Store {
   async purge(now: number): Promise<number> {
     let removed = 0;
     for (const name of this.touched) removed += await this.byName(name).purge(now);
+    // A full pass leaves nothing owed; the set is rebuilt by the next call that touches an object.
+    this.touched.clear();
     return removed;
   }
 
