@@ -29,6 +29,9 @@ type Harness struct {
 	Close            func() error
 	// MaxResultBytes is Q20: the largest body this backend stores whole. Zero means MaxResultBytes.
 	MaxResultBytes int
+	// NativePurge is Q21: the backend sweeps expired rows itself, purge returns 0, the suite drops the
+	// removed-count assertion but still requires logical expiry on read.
+	NativePurge bool
 }
 
 // Factory builds a fresh harness per test.
@@ -231,12 +234,17 @@ func Run(t *testing.T, name string, factory Factory) {
 		expectAcquired(t, mustBegin(t, s, op("s7b", "fp-b"), T0.Add(TTL)), 2)
 	}))
 
-	t.Run("REQ-STORE-7: purge returns the number of expired records removed", with(func(t *testing.T, s anyonce.Store, _ Harness) {
+	t.Run("REQ-STORE-7: purge returns the number of expired records removed, or 0 when the backend expires rows natively", with(func(t *testing.T, s anyonce.Store, h Harness) {
 		mustBegin(t, s, op("s7c", "fp-a"), T0)
 		mustBegin(t, s, op("s7d", "fp-a"), T0.Add(time.Second))
 		removed, err := s.Purge(ctx, T0.Add(TTL+500*time.Millisecond))
-		if err != nil || removed < 1 {
-			t.Fatalf("removed %d %v", removed, err)
+		switch {
+		case err != nil:
+			t.Fatalf("purge: %v", err)
+		case h.NativePurge && removed != 0:
+			t.Fatalf("a native-purge store must report 0 removed, got %d", removed)
+		case !h.NativePurge && removed < 1:
+			t.Fatalf("removed %d", removed)
 		}
 		if rec, _ := s.Get(ctx, op("s7c", "fp-a").Scope, "key-s7c", T0.Add(TTL+500*time.Millisecond)); rec != nil {
 			t.Fatal("s7c still visible")
