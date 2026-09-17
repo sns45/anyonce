@@ -88,6 +88,7 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
+      - run: bun run build
       - run: docker compose -f test/compose.yml up -d --wait
       - run: bun run services:check
       - uses: actions/setup-go@v5
