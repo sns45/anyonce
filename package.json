@@ -9,6 +9,7 @@
   "scripts": {
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
+    "doctor": "scripts/doctor.sh",
     "build": "bun run --filter '@anyonce/*' build",
     "test": "bun test packages conformance scripts test/ci.test.ts",
     "test:services": "bun test test/compose.test.ts",

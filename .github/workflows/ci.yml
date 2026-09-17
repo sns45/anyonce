@@ -14,8 +14,11 @@ jobs:
           bun-version: latest
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go/go.mod
+          go-version: stable
       - run: bun install --frozen-lockfile
+      - run: bun run doctor
+        env:
+          DOCTOR_SKIP_GOLANGCI: '1'
       - run: bun run lint
       - run: bun run typecheck
       - run: bun run build
@@ -49,17 +52,21 @@ jobs:
     defaults:
       run:
         working-directory: go
+    strategy:
+      matrix:
+        go: [stable, oldstable]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go/go.mod
+          go-version: ${{ matrix.go }}
       - run: go build ./...
       - run: go vet ./...
       - run: go test -race ./...
       - uses: golangci/golangci-lint-action@v7
         with:
           working-directory: go
+          version: v2.13.2
 
   services:
     runs-on: ubuntu-latest

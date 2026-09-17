@@ -52,14 +52,22 @@ describe('ci workflow', () => {
     }
   });
 
-  test('REQ-REL-4: node-compat runs the built output on Node 22 and go uses the go.mod toolchain', () => {
+  test('REQ-REL-4: node-compat runs the built output on Node 22 and go tests stable and oldstable', () => {
     const node = ci.jobs['node-compat'] as Job;
     expect(uses(node).some((u) => u.startsWith('actions/setup-node@'))).toBe(true);
     expect(JSON.stringify(node.steps)).toContain('"node-version":22');
     const go = ci.jobs.go as Job;
-    expect(JSON.stringify(go.steps)).toContain('go-version-file');
+    expect(go.strategy?.matrix?.go).toEqual(['stable', 'oldstable']);
     expect(runs(go)).toContain('go test -race ./...');
     expect(uses(go).some((u) => u.startsWith('golangci/golangci-lint-action@'))).toBe(true);
+    const golangci = go.steps.find((s) => s.uses?.startsWith('golangci/golangci-lint-action@'));
+    expect(golangci?.with?.version).toBe('v2.13.2');
+  });
+
+  test('REQ-REL-4: the ts job runs the toolchain doctor right after install', () => {
+    const runSteps = (ci.jobs.ts as Job).steps.filter((s) => typeof s.run === 'string');
+    expect(runSteps[0]?.run).toBe('bun install --frozen-lockfile');
+    expect(runSteps[1]?.run).toMatch(/^(scripts\/doctor\.sh|bun run doctor)$/);
   });
 
   test('REQ-REL-4: every bun test job fails on skipped tests', () => {
