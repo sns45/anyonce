@@ -196,3 +196,11 @@ REQ-STORE-11 asks every store to round trip a body of exactly `maxResultBytes` (
 Recommended resolution: the contract suite reads the cap from the harness (`StoreHarness.maxResultBytes`, Go `Harness.MaxResultBytes`, default 1 MiB) and the DynamoDB harness declares 300 KiB. `docs/stores.md` records the DynamoDB cap, and the adapter option `maxResultBytes` must be set to at most 300 KiB when the DynamoDB store is used; larger results are stored in the omitted form (status and headers replay, body does not), which is the D12 degradation, not a failure. Chunking bodies across items was considered and rejected: it makes the replay read non atomic across items, multiplies write cost, and serves a case the omitted form already handles honestly.
 
 **Decision: pending.** P3 proceeds on the recommendation.
+
+## Q21: `purge` on stores with native TTL
+
+REQ-STORE-7 says `purge(now)` returns the count removed and the contract suite asserted a count above zero, while REQ-ST-DDB-1 and REQ-ST-REDIS-1 say `purge` is a no-op that returns 0 because the backend sweeps expired rows itself. Both cannot hold for the same store.
+
+Recommended resolution: the contract suite takes `nativePurge: true` in its options (Go `Harness.NativePurge`) for DynamoDB and Redis. Under that option the suite still requires logical expiry on read (`get` returns null and `begin` acquires after `expires_at`) and only drops the removed-count assertion; `purge` returns 0 and `docs/stores.md` says so in the native TTL column. Stores without native TTL (Postgres, D1, SQLite, memory, Durable Objects from the Worker side) keep the count assertion. REQ-STORE-7's wording is read as "returns the count this call removed", which is 0 when the backend already did the work.
+
+**Decision: pending.** P3 proceeds on the recommendation.
