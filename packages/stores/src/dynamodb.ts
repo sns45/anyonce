@@ -26,9 +26,17 @@ import { encodeResultMeta, type RecordRow, rowToRecord } from './codec';
 /** Q20: a DynamoDB item is capped at 400 KB, so bodies above this are stored in the omitted form. */
 export const DYNAMODB_MAX_RESULT_BYTES = 307_200;
 
+/** Unit separator: the scope and key are joined with it so one composed partition key stays unambiguous. */
+const KEY_SEPARATOR = String.fromCharCode(31);
+
+/** Q22: the item key is the single partition key pk, the scope and the key joined by the unit separator. */
+export function itemKey(op: Pick<Operation, 'scope' | 'key'>): string {
+  return `${op.scope}${KEY_SEPARATOR}${op.key}`;
+}
+
 export interface DynamoDbStoreOptions {
   client: DynamoDBClient;
-  /** Default anyonce_records. Keys pk (scope) and sk (key). */
+  /** Default anyonce_records. One partition key, pk, holding the scope and the key (Q22). No sort key. */
   tableName?: string;
   /** Added to the native ttl attribute so a late complete from the previous fence holder still finds its row. Default 60000. */
   nativeTtlGraceMs?: number;
@@ -41,9 +49,12 @@ function n(value: number): AttributeValue {
 }
 
 function itemToRow(item: Item): RecordRow {
+  const pk = item.pk?.S ?? '';
+  // Split on the first separator: a scope never contains one, a key may.
+  const at = pk.indexOf(KEY_SEPARATOR);
   return {
-    scope: item.pk?.S ?? '',
-    key: item.sk?.S ?? '',
+    scope: at === -1 ? pk : pk.slice(0, at),
+    key: at === -1 ? '' : pk.slice(at + 1),
     fingerprint: item.fingerprint?.S ?? '',
     state: (item.state?.S as RecordRow['state']) ?? 'in_flight',
     fence: Number(item.fence?.N ?? 0),
@@ -72,7 +83,7 @@ export class DynamoDbStore implements Store {
   }
 
   private key(op: Pick<Operation, 'scope' | 'key'>): Item {
-    return { pk: { S: op.scope }, sk: { S: op.key } };
+    return { pk: { S: itemKey(op) } };
   }
 
   async begin(op: Operation, opts: BeginOptions): Promise<BeginOutcome> {
@@ -216,7 +227,10 @@ export class DynamoDbStore implements Store {
   }
 }
 
-/** Creates the table with pk and sk string keys, on-demand billing and TTL on the ttl attribute. Idempotent. */
+/**
+ * Creates the table with the single pk string partition key, on-demand billing and TTL on the ttl attribute.
+ * Idempotent. Meant for tests and local development; a production table comes from infrastructure code.
+ */
 export async function ensureTable(
   client: DynamoDBClient,
   tableName = 'anyonce_records',
@@ -226,14 +240,8 @@ export async function ensureTable(
       new CreateTableCommand({
         TableName: tableName,
         BillingMode: 'PAY_PER_REQUEST',
-        AttributeDefinitions: [
-          { AttributeName: 'pk', AttributeType: 'S' },
-          { AttributeName: 'sk', AttributeType: 'S' },
-        ],
-        KeySchema: [
-          { AttributeName: 'pk', KeyType: 'HASH' },
-          { AttributeName: 'sk', KeyType: 'RANGE' },
-        ],
+        AttributeDefinitions: [{ AttributeName: 'pk', AttributeType: 'S' }],
+        KeySchema: [{ AttributeName: 'pk', KeyType: 'HASH' }],
       }),
     );
   } catch (error) {

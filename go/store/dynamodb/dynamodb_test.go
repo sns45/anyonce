@@ -79,7 +79,7 @@ func TestDynamoDBStore(t *testing.T) {
 		}
 		item, err := c.GetItem(ctx, &awsdynamodb.GetItemInput{
 			TableName:      aws.String(table),
-			Key:            map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: op.Scope}, "sk": &types.AttributeValueMemberS{Value: op.Key}},
+			Key:            map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: dynamodb.ItemKey(op.Scope, op.Key)}},
 			ConsistentRead: aws.Bool(true),
 		})
 		if err != nil {
@@ -101,6 +101,37 @@ func TestDynamoDBStore(t *testing.T) {
 		expires, ok := item.Item["expires_at"].(*types.AttributeValueMemberN)
 		if !ok || expires.Value != fmt.Sprint(storetest.T0.Add(time.Hour).UnixMilli()) {
 			t.Fatalf("expires_at %+v", item.Item["expires_at"])
+		}
+	})
+
+	t.Run("REQ-ST-DDB-1: the item lives under the single partition key pk, the scope and key joined (Q22)", func(t *testing.T) {
+		s := dynamodb.New(c, dynamodb.Options{Table: table})
+		op := anyonce.Operation{Scope: fmt.Sprintf("q22-%d", time.Now().UnixNano()), Key: "k/with/slashes", Fingerprint: "a"}
+		if _, err := s.Begin(ctx, op, anyonce.BeginOptions{Lease: storetest.Lease, TTL: storetest.TTL, Now: storetest.T0}); err != nil {
+			t.Fatal(err)
+		}
+		composite := op.Scope + string(rune(31)) + op.Key
+		if dynamodb.ItemKey(op.Scope, op.Key) != composite {
+			t.Fatalf("ItemKey is %q", dynamodb.ItemKey(op.Scope, op.Key))
+		}
+		item, err := c.GetItem(ctx, &awsdynamodb.GetItemInput{
+			TableName:      aws.String(table),
+			Key:            map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: composite}},
+			ConsistentRead: aws.Bool(true),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pk, ok := item.Item["pk"].(*types.AttributeValueMemberS)
+		if !ok || pk.Value != composite {
+			t.Fatalf("pk %+v", item.Item["pk"])
+		}
+		if _, hasSort := item.Item["sk"]; hasSort {
+			t.Fatal("the item still carries a sort key")
+		}
+		rec, err := s.Get(ctx, op.Scope, op.Key, storetest.T0.Add(time.Millisecond))
+		if err != nil || rec == nil || rec.Scope != op.Scope || rec.Key != op.Key {
+			t.Fatalf("%+v %v", rec, err)
 		}
 	})
 

@@ -32,7 +32,15 @@ const (
 	completed = string(anyonce.StateCompleted)
 )
 
-// Options configure the store. Table defaults to DefaultTable, whose keys are pk (scope) and sk (key).
+// KeySeparator is the unit separator: the scope and the key are joined with it into the single partition key
+// pk, so one composed key stays unambiguous (Q22).
+const KeySeparator = string(rune(31))
+
+// ItemKey is the item key an operation maps to: the scope and the key joined by KeySeparator (Q22).
+func ItemKey(scope, k string) string { return scope + KeySeparator + k }
+
+// Options configure the store. Table defaults to DefaultTable, whose single partition key pk holds the scope
+// and the key (Q22); there is no sort key.
 // NativeTTLGrace is added to the native ttl attribute so a late complete from the previous fence holder still
 // finds its row; it defaults to DefaultNativeTTLGrace.
 type Options struct {
@@ -61,9 +69,17 @@ func New(client *awsdynamodb.Client, opts Options) *Store {
 
 func key(scope, k string) map[string]types.AttributeValue {
 	return map[string]types.AttributeValue{
-		"pk": &types.AttributeValueMemberS{Value: scope},
-		"sk": &types.AttributeValueMemberS{Value: k},
+		"pk": &types.AttributeValueMemberS{Value: ItemKey(scope, k)},
 	}
+}
+
+// splitKey undoes ItemKey, splitting on the first separator: a scope never contains one, a key may.
+func splitKey(pk string) (scope, k string) {
+	at := strings.Index(pk, KeySeparator)
+	if at < 0 {
+		return pk, ""
+	}
+	return pk[:at], pk[at+len(KeySeparator):]
 }
 
 func num(value int64) types.AttributeValue {
@@ -91,9 +107,10 @@ func readStr(item map[string]types.AttributeValue, name string) string {
 }
 
 func itemToRow(item map[string]types.AttributeValue) rowcodec.Row {
+	scope, k := splitKey(readStr(item, "pk"))
 	row := rowcodec.Row{
-		Scope:         readStr(item, "pk"),
-		Key:           readStr(item, "sk"),
+		Scope:         scope,
+		Key:           k,
 		Fingerprint:   readStr(item, "fingerprint"),
 		State:         readStr(item, "state"),
 		Fence:         readNum(item, "fence"),
@@ -318,8 +335,9 @@ func (s *Store) PhysicallyRemove(ctx context.Context, scope, k string) error {
 	return nil
 }
 
-// EnsureTable creates the table with pk and sk string keys and on-demand billing, waits for it to become active,
-// then enables TTL on the ttl attribute. It is idempotent.
+// EnsureTable creates the table with the single pk string partition key and on-demand billing, waits for it to
+// become active, then enables TTL on the ttl attribute. It is idempotent. Meant for tests and local
+// development; a production table comes from infrastructure code.
 func EnsureTable(ctx context.Context, client *awsdynamodb.Client, table string) error {
 	if table == "" {
 		table = DefaultTable
@@ -329,11 +347,9 @@ func EnsureTable(ctx context.Context, client *awsdynamodb.Client, table string) 
 		BillingMode: types.BillingModePayPerRequest,
 		AttributeDefinitions: []types.AttributeDefinition{
 			{AttributeName: aws.String("pk"), AttributeType: types.ScalarAttributeTypeS},
-			{AttributeName: aws.String("sk"), AttributeType: types.ScalarAttributeTypeS},
 		},
 		KeySchema: []types.KeySchemaElement{
 			{AttributeName: aws.String("pk"), KeyType: types.KeyTypeHash},
-			{AttributeName: aws.String("sk"), KeyType: types.KeyTypeRange},
 		},
 	})
 	if err != nil {

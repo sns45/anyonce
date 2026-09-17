@@ -206,3 +206,11 @@ Recommended resolution: the contract suite takes `nativePurge: true` in its opti
 **Decision: pending.** P3 proceeds on the recommendation.
 
 Amendment recorded in P3: REQ-ST-REDIS-1 said `PEXPIREAT`, but both Redis stores set a relative `PEXPIRE` of the TTL plus the grace because the logical clock is injected and an absolute wall-clock deadline cannot be derived from it, so the requirement text and the `nativePurge` doc comment now say `PEXPIRE` (relative to the write, plus a grace).
+
+## Q22: the DynamoDB item key put a whole route on one partition
+
+The first P3 DynamoDB store keyed an item by `pk = scope`, `sk = key`. D8's default scope is the method plus the route pattern, so every claim for one HTTP route shares a partition key, and DynamoDB caps a single partition at roughly 1000 writes per second however large the table is. A busy endpoint would throttle on the partition rather than on the table's capacity. The sort key bought nothing in return: the stores only ever address one item at a time, by scope and key, and never `Query` a scope.
+
+Recommended resolution: one partition key, `pk = scope + <unit separator> + key`, and no sort key. `ensureTable` and `EnsureTable` create `pk` (S) as the only key; `itemKey`/`ItemKey` compose it and the row decoder splits on the first separator, which a scope never contains. Every claim is then a point write on its own partition and the table spreads across partitions the way DynamoDB expects. `docs/stores.md` records it in the Setup and Cost cells.
+
+**Decision: pending.** P3 proceeds on the recommendation.
