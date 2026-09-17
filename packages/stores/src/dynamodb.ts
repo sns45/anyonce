@@ -104,8 +104,12 @@ export class DynamoDbStore implements Store {
         );
         return { outcome: 'acquired', fence: Number(out.Attributes?.fence?.N) };
       } catch (error) {
-        if (!(error instanceof ConditionalCheckFailedException) || error.Item === undefined)
-          throw error;
+        if (!(error instanceof ConditionalCheckFailedException)) throw error;
+        if (error.Item === undefined)
+          throw new Error(
+            'anyonce: dynamodb refused the begin write without returning the old item, so the refusal cannot be classified; the endpoint must honour ReturnValuesOnConditionCheckFailure (DynamoDB Local 2.x or later, or a live table)',
+            { cause: error },
+          );
         const row = itemToRow(error.Item as Item);
         if (row.expires_at <= opts.now) continue;
         const record = rowToRecord(row);
@@ -115,7 +119,9 @@ export class DynamoDbStore implements Store {
           return { outcome: 'in_flight', leaseUntil: row.lease_until };
       }
     }
-    throw new Error('anyonce: dynamodb begin could not settle after three attempts');
+    throw new Error(
+      'anyonce: dynamodb begin could not settle after three attempts; the row for this scope and key expired or was rewritten between every conditional write and its classification, or the stored row is malformed (expires_at not a number)',
+    );
   }
 
   async complete(
@@ -126,6 +132,10 @@ export class DynamoDbStore implements Store {
   ): Promise<CompleteStatus> {
     const omitted = isOmitted(result);
     const body = omitted ? undefined : result.body;
+    if (body !== undefined && body.byteLength > DYNAMODB_MAX_RESULT_BYTES)
+      throw new Error(
+        `anyonce: dynamodb cannot store a ${body.byteLength} byte body because an item is capped at 400 KB (Q20); set maxResultBytes to at most ${DYNAMODB_MAX_RESULT_BYTES} so a larger result is stored in the omitted form instead`,
+      );
     const values: Item = {
       ':fence': n(fence),
       ':now': n(now),
@@ -229,11 +239,19 @@ export async function ensureTable(
   } catch (error) {
     if (!(error instanceof ResourceInUseException)) throw error;
   }
+  let active = false;
   for (let i = 0; i < 50; i++) {
     const described = await client.send(new DescribeTableCommand({ TableName: tableName }));
-    if (described.Table?.TableStatus === 'ACTIVE') break;
+    if (described.Table?.TableStatus === 'ACTIVE') {
+      active = true;
+      break;
+    }
     await new Promise((r) => setTimeout(r, 200));
   }
+  if (!active)
+    throw new Error(
+      `anyonce: dynamodb table ${tableName} did not become ACTIVE within 10 seconds; create it out of band or retry once the table finishes provisioning`,
+    );
   try {
     await client.send(
       new UpdateTimeToLiveCommand({
