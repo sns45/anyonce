@@ -1,3 +1,4 @@
+
 CREATE TABLE IF NOT EXISTS anyonce_records (
   scope TEXT NOT NULL,
   key TEXT NOT NULL,
