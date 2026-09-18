@@ -112,11 +112,13 @@ A receiver may override any title with `problemTitles` so it names the header it
 ```json
 {
   "type": "https://in8.sh/anyonce/problems/signature-invalid",
-  "title": "The webhook signature could not be verified",
+  "title": "The request signature could not be verified",
   "status": 401,
   "code": "signature-invalid"
 }
 ```
+
+The title is the catalogue default, which stays generic because `@anyonce/core/http` serves every door. The webhook receiver overrides it through `problemTitles` so a sender reads "The webhook signature could not be verified".
 
 ## Overriding
 
