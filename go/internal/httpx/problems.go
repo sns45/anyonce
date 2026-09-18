@@ -20,6 +20,8 @@ const (
 	CodePayloadTooLarge     Code = "payload-too-large"
 	CodeStoreUnavailable    Code = "store-unavailable"
 	CodeMissingPrincipal    Code = "missing-principal"
+	CodeConfigurationError  Code = "configuration-error"
+	CodeSignatureInvalid    Code = "signature-invalid"
 )
 
 var problemStatus = map[Code]int{
@@ -30,6 +32,8 @@ var problemStatus = map[Code]int{
 	CodePayloadTooLarge:     http.StatusRequestEntityTooLarge,
 	CodeStoreUnavailable:    http.StatusServiceUnavailable,
 	CodeMissingPrincipal:    http.StatusInternalServerError,
+	CodeConfigurationError:  http.StatusInternalServerError,
+	CodeSignatureInvalid:    http.StatusUnauthorized,
 }
 
 var problemTitle = map[Code]string{
@@ -40,6 +44,8 @@ var problemTitle = map[Code]string{
 	CodePayloadTooLarge:     "The request body exceeds the size this idempotent endpoint accepts",
 	CodeStoreUnavailable:    "The idempotency store is unavailable",
 	CodeMissingPrincipal:    "The idempotency scope requires a principal and none was found",
+	CodeConfigurationError:  "This endpoint is not configured correctly and cannot accept the request",
+	CodeSignatureInvalid:    "The request signature could not be verified",
 }
 
 // ProblemStatus returns the D11 status for code. The status is fixed by D11 and is not overridable.

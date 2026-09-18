@@ -21,6 +21,8 @@ const (
 	CodePayloadTooLarge     = httpx.CodePayloadTooLarge
 	CodeStoreUnavailable    = httpx.CodeStoreUnavailable
 	CodeMissingPrincipal    = httpx.CodeMissingPrincipal
+	CodeConfigurationError  = httpx.CodeConfigurationError
+	CodeSignatureInvalid    = httpx.CodeSignatureInvalid
 )
 
 // NewProblem builds the problem for a code. detail may be empty and never carries the key value.

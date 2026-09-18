@@ -30,7 +30,7 @@ func New(store anyonce.Store, opts Options) *Middleware {
 		panic("httpmw: Options.RequirePrincipal is true but Options.Principal is nil")
 	}
 	m := &Middleware{store: store, opts: opts.resolve()}
-	m.problems = httpx.ProblemWriter{BaseURI: m.opts.ProblemBaseURI, OnError: m.opts.OnError}
+	m.problems = httpx.ProblemWriter{BaseURI: m.opts.ProblemBaseURI, Titles: m.opts.ProblemTitles, OnError: m.opts.OnError}
 	// Q20: the policy cap never exceeds what the store says it can hold whole.
 	limit := m.opts.Policy.MaxResultBytes
 	if limit <= 0 {

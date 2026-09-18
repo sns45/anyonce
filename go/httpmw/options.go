@@ -65,6 +65,9 @@ type Options struct {
 	DocsURL        string
 	// OnError renders a problem differently (REQ-HTTP-13). Status and code must not change.
 	OnError func(w http.ResponseWriter, r *http.Request, p Problem)
+	// ProblemTitles overrides the title of one or more problem codes (Q23). The status and the code member are
+	// fixed by D11 and are not overridable. A nil map keeps the defaults.
+	ProblemTitles map[Code]string
 	// Skip opts a request out (REQ-HTTP-15).
 	Skip func(*http.Request) bool
 }
