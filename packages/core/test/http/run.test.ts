@@ -522,9 +522,14 @@ describe('RunContext injection', () => {
     const store = new MemoryStore();
     const options = resolveHttpOptions({ store, required: true });
     const req = new Request('https://example.test/hook', { method: 'POST', body: 'payload' });
-    const res = await runIdempotent(req, async () => new Response('ran', { status: 200 }), options, {
-      keyLookup: { kind: 'ok', key: 'msg_injected' },
-    });
+    const res = await runIdempotent(
+      req,
+      async () => new Response('ran', { status: 200 }),
+      options,
+      {
+        keyLookup: { kind: 'ok', key: 'msg_injected' },
+      },
+    );
     expect(res.status).toBe(200);
     // The capture pump is pull driven (packages/core/src/http/capture.ts), so the record settles once the
     // client has read the streamed body, as every other test in this file that checks store state also does.
@@ -556,8 +561,10 @@ describe('RunContext injection', () => {
       { keyLookup: { kind: 'missing' } },
     );
     expect(res.status).toBe(400);
-    expect((await res.json() as { code: string }).code).toBe('missing-key');
-    expect(res.headers.get('Link')).toBe('<https://in8.sh/anyonce/problems/missing-key>; rel="describedby"');
+    expect(((await res.json()) as { code: string }).code).toBe('missing-key');
+    expect(res.headers.get('Link')).toBe(
+      '<https://in8.sh/anyonce/problems/missing-key>; rel="describedby"',
+    );
   });
 
   test('REQ-WH-1: caller supplied body bytes are used for the fingerprint and the request body is left unread', async () => {

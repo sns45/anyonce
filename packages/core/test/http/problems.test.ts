@@ -60,7 +60,12 @@ describe('problem details', () => {
   });
 
   test('REQ-WH-2: a title override replaces the title and leaves the status and the code alone', () => {
-    const p = problem('conflict', DEFAULT_PROBLEM_BASE_URI, undefined, 'A delivery with this webhook-id is still in progress');
+    const p = problem(
+      'conflict',
+      DEFAULT_PROBLEM_BASE_URI,
+      undefined,
+      'A delivery with this webhook-id is still in progress',
+    );
     expect(p.title).toBe('A delivery with this webhook-id is still in progress');
     expect(p.status).toBe(409);
     expect(p.code).toBe('conflict');
