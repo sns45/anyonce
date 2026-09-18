@@ -23,7 +23,7 @@ import (
 // REQ-Q-6 and REQ-Q-8 against two real brokers: SQS through the ElasticMQ container and Kafka through the
 // Redpanda container. Both suites prove the same four cases, so the cases are written once here and each
 // broker contributes only its own setup and the identity source that survives its park (Q40). The harness they
-// run on, and the memory suite that shares it, live in memory_test.go.
+// run on lives in harness_test.go, shared with the memory suite.
 //
 // The pair is what REQ-Q-8 asks for: SQS has native delayed redelivery, so its park is the real thing, while
 // Kafka has none, so its park downgrades to an in-process wait plus a re-invocation of the same delivery, and
@@ -94,10 +94,19 @@ type broker struct {
 	// alone and loses the message attributes, so only the body fingerprint follows a parked message; Kafka
 	// re-invokes the same delivery in process, so its headers are still there.
 	parkKey anyqmw.KeySource
-	// parkDeliveries is how many deliveries one parked message costs on this adapter, which is the visible
-	// difference between the two park paths: a native park sends the message through the broker a second
-	// time, while the downgrade re-invokes the handler inside the delivery it already has.
-	parkDeliveries int
+	// parkIsNative says which of anyq's two park paths this adapter takes: a native park republishes the
+	// message and the broker delivers it again with an id of its own, while the downgrade sleeps and
+	// re-invokes the handler on the delivery it already has. casePark asserts whichever one applies.
+	parkIsNative bool
+}
+
+// parkDeliveries is how many deliveries one parked message costs: two for a native park, because the message
+// goes through the broker a second time, and one for the downgrade, which never leaves the first delivery.
+func (b broker) parkDeliveries() int {
+	if b.parkIsNative {
+		return 2
+	}
+	return 1
 }
 
 // sqsProbe widens the SQS consumer so a test can see the dead letters it routes. Bind re-points the embedded
@@ -128,10 +137,10 @@ func (p *kafkaProbe) DeadLetterMessage(ctx context.Context, msg core.Message, re
 // sqsBroker creates one ElasticMQ queue per case and drops it afterwards.
 func sqsBroker() broker {
 	return broker{
-		name:           "sqs",
-		parkName:       "REQ-Q-8: with the strategy configured, an in-flight duplicate parks natively and the handler waits for the lease",
-		parkKey:        anyqmw.KeySourceBody,
-		parkDeliveries: 2,
+		name:         "sqs",
+		parkName:     "REQ-Q-8: with the strategy configured, an in-flight duplicate parks natively and the handler waits for the lease",
+		parkKey:      anyqmw.KeySourceBody,
+		parkIsNative: true,
 		open: func(t *testing.T, label string, strategy core.Strategy) opened {
 			t.Helper()
 			name := unique("sqs-" + label)
@@ -171,10 +180,10 @@ func sqsBroker() broker {
 // anyq's Go kafka adapter deletes one, and the unique name means no run ever sees another run's records.
 func kafkaBroker() broker {
 	return broker{
-		name:           "kafka",
-		parkName:       "REQ-Q-8: with the strategy configured, an in-flight duplicate downgrades to a park and the handler waits for the lease",
-		parkKey:        anyqmw.KeySourceHeader,
-		parkDeliveries: 1,
+		name:         "kafka",
+		parkName:     "REQ-Q-8: with the strategy configured, an in-flight duplicate downgrades to a park and the handler waits for the lease",
+		parkKey:      anyqmw.KeySourceHeader,
+		parkIsNative: false,
 		open: func(t *testing.T, label string, strategy core.Strategy) opened {
 			t.Helper()
 			topic := unique("kafka-" + label)
@@ -317,14 +326,35 @@ func casePark(t *testing.T, b broker) {
 	publish(t, env.producer, body, header)
 	// Waiting on the deliveries rather than on the handler call means the park is fully resolved before
 	// anything is read back: a delivery is recorded only once its strategy has finished with it.
-	settled.wait(t, 1+b.parkDeliveries, "deliveries")
+	settled.wait(t, 1+b.parkDeliveries(), "deliveries")
 	st := run.stop(t)
 
-	if len(st.ids) != 1+b.parkDeliveries {
-		t.Fatalf("the park cost %d deliveries after the warm-up, want %d", len(st.ids)-1, b.parkDeliveries)
+	if len(st.ids) != 1+b.parkDeliveries() {
+		t.Fatalf("the park cost %d deliveries after the warm-up, want %d", len(st.ids)-1, b.parkDeliveries())
 	}
 	wantParked(t, st, in, leaseUntil, 2)
 	wantNoDeadLetters(t, env.dead)
+
+	// Which park path ran, asserted on the identity of the redelivery rather than on its timing. Without
+	// this, a park that silently failed would still pass everything above: anyq's SQS ParkMessage falls back
+	// to nack(true) when SendMessage fails, logs it at Error, which these quiet consumers never print, and
+	// returns nil, which ApplyStrategy would swallow anyway. That fallback costs the same two deliveries and
+	// can satisfy the same ordering. It differs in exactly one visible way: a native park republishes the
+	// message and the broker mints a fresh id for it, while a nack keeps the id it had.
+	if b.parkIsNative {
+		if st.ids[2] == st.ids[1] {
+			t.Fatalf("the parked message came back with its original id %q, so the park did not republish it", st.ids[1])
+		}
+		if len(st.reinvokes) != 0 {
+			t.Fatalf("a native park re-invoked the handler in process on %v, want no re-invocation", st.reinvokes)
+		}
+		return
+	}
+	// The mirror property: the downgrade never leaves the delivery it has, so the handler is re-invoked once
+	// on that same id.
+	if len(st.reinvokes) != 1 || st.reinvokes[0] != st.ids[1] {
+		t.Fatalf("the downgrade re-invoked %v, want one re-invocation of %q", st.reinvokes, st.ids[1])
+	}
 }
 
 // caseMismatch is REQ-Q-8's dead letter. The identity has to come from somewhere other than the payload for a

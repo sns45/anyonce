@@ -9,8 +9,8 @@
 // (REQ-Q-5).
 //
 // Strategy turns those two typed errors into anyq decisions, park and dead-letter (REQ-Q-8), and is exercised
-// against the memory, Redis Streams, SQS and Kafka adapters (REQ-Q-6). Without it the typed error reaches anyq's
-// legacy path and Wrap warns once through Options.Warn.
+// against the memory, SQS and Kafka adapters (REQ-Q-6). Without it the typed error reaches anyq's legacy path
+// and Wrap warns once through Options.Warn.
 //
 // Which key source to choose per broker, and what each one survives, belongs in docs/queue-ids.md (REQ-DOC-9).
 package anyqmw
