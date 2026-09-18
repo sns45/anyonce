@@ -329,7 +329,7 @@ Claude Code MUST read the real anyq consumer handler signature from `github.com/
 - **REQ-DOC-6** `docs/security.md`: key entropy, scope/principal composition, log redaction of keys (only first 8 chars logged), replay isolation, stored-body considerations.
 - **REQ-DOC-7** Examples under `examples/`: `worker-hono-do`, `lambda-fetch-dynamodb`, `go-net-http-postgres`, `anyq-consumer-ts`, `anyq-consumer-go`, `webhook-receiver-standard-webhooks`. Each has a README and a smoke test run in CI.
 - **REQ-DOC-8** `llms.txt` at repo root summarizing packages and semantics (same pattern as in8.sh).
-- **REQ-DOC-9** `docs/queue-ids.md`: one row per anyq consumer adapter with the message id's stability across redelivery and producer retry; the three adapters tested in P4a marked verified, the rest marked per anyq docs, unverified; recommends a producer-supplied `idempotency-key` header where the id is not stable.
+- **REQ-DOC-9** `docs/queue-ids.md`: one row per anyq consumer adapter with the message id's stability across redelivery and producer retry; the adapters tested in P4a marked verified, per language, the rest marked per anyq docs, unverified; recommends a producer-supplied `idempotency-key` header where the id is not stable.
 
 ### 4.9 Release and supply chain
 

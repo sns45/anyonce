@@ -27,6 +27,8 @@ function policyFor<T>(options: ResolvedOptions<T>): ExecutePolicy {
   const overrides: Partial<ExecutePolicy> = { clock: options.clock };
   if (options.leaseMs !== undefined) overrides.leaseMs = options.leaseMs;
   if (options.ttlMs !== undefined) overrides.ttlMs = options.ttlMs;
+  if (options.onStoreError !== undefined) overrides.onStoreError = options.onStoreError;
+  if (options.hooks !== undefined) overrides.hooks = options.hooks;
   return defaultPolicy(overrides);
 }
 

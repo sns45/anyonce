@@ -36,8 +36,6 @@ export class InFlightError extends AnyonceQueueError {
 /** D15: the same identity arrived with a different payload. The companion strategy dead-letters it. */
 export class FingerprintMismatchError extends AnyonceQueueError {
   readonly record: IdempotencyRecord;
-  /** Set by idempotencyStrategy when it turns this error into a dead-letter decision (REQ-Q-8). */
-  translated = false;
 
   constructor(record: IdempotencyRecord) {
     super(

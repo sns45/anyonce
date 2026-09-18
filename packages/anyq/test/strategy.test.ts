@@ -37,7 +37,7 @@ describe('idempotencyStrategy', () => {
       action: 'deadLetter',
       reason: 'fingerprint-mismatch',
     });
-    expect(error.translated).toBe(true);
+    expect(error.retryable).toBe(false);
   });
 
   test('REQ-Q-8: every other error is delegated to the inner strategy', async () => {

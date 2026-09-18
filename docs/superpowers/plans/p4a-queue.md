@@ -20,7 +20,7 @@
 - Stored result for a queue operation is exactly `{ kind: 'message', outcome: 'ok' }`: no `body`, no `status`, no `headers` (D15, REQ-Q-5). A handler error abandons the claim and rethrows (REQ-Q-3), so nothing is stored for a failure.
 - Never log a full key. `redactKey` from `@anyonce/core` is the only form a key may take in any message (NFR-2). No warning text in this package contains a key value or the word key inside a `console.*` call, so the key-log gate `rg -n 'console\.(log|info|warn|error)\(.*key' packages go` stays empty.
 - Go: standard library plus `github.com/sns45/anyq/go` only in `go/anyqmw`; no cgo; errors wrapped with `%w`; sentinels compared with `errors.Is`; doc comments on every exported identifier; `go vet`, `go test -race`, `golangci-lint run` clean. Run Go as `GOROOT= /opt/homebrew/bin/go <verb> -C go ./...`; golangci-lint as `GOROOT= sh -c 'cd go && golangci-lint run'`; the engine coverage gate as `GOROOT= GO=/opt/homebrew/bin/go scripts/go-engine-coverage.sh` (still 100 percent; this phase does not touch `engine.go`).
-- Service-backed suites skip with a clear message when the service is down and fail under `ANYONCE_REQUIRE_SERVICES=1`: TypeScript uses the existing pattern in `packages/stores/services`, Go uses `go/store/internal/servicetest.Require`. They live outside the root `bun run test` filter and run only under `bun run test:services`.
+- Service-backed suites skip with a clear message when the service is down and fail under `ANYONCE_REQUIRE_SERVICES=1`: TypeScript uses the existing pattern in `packages/stores/services`, Go uses `go/internal/servicetest.Require`. They live outside the root `bun run test` filter and run only under `bun run test:services`.
 - No test sleeps to make an assertion pass. Where a lease must expire, the lease is short and the assertion is an ordering assertion on recorded timestamps, never a duration. Concurrency uses a start gate and `Promise.all` (TypeScript) or `sync.WaitGroup` plus a channel gate (Go).
 - Conventional commits: `feat(anyq): ...`, `feat(go): ...`, `test(anyq): ...`, `docs(...)`. Commit after every task. Git only as plain single commands from the worktree root (no `cd`, no `&&` between git commands, no `-C`).
 - Never write a `\uXXXX` escape inside a tool parameter; the editing tools decode it into the raw character. Use `\x` escapes or named escapes.
@@ -1877,7 +1877,7 @@ git commit -m "feat(go): REQ-Q-1 to REQ-Q-7 anyqmw wraps an anyq handler on the 
 - Modify: `.github/workflows/ci.yml` (the services job's Go step)
 
 **Interfaces:**
-- Consumes: everything from Task 7; `core.Strategy`, `core.Decision`, `core.Park`, `core.DeadLetter`, `core.RetryThenDeadLetter`, `core.BaseConsumer` from `github.com/sns45/anyq/go/core`; `github.com/sns45/anyq/go/memory`, `/sqs`, `/kafka`; `go/store/internal/servicetest`.
+- Consumes: everything from Task 7; `core.Strategy`, `core.Decision`, `core.Park`, `core.DeadLetter`, `core.RetryThenDeadLetter`, `core.BaseConsumer` from `github.com/sns45/anyq/go/core`; `github.com/sns45/anyq/go/memory`, `/sqs`, `/kafka`; `go/internal/servicetest`.
 - Produces: `Strategy(inner core.Strategy) core.Strategy`, `StrategyName`.
 
 - [ ] **Step 1: Write the failing strategy test**

@@ -51,7 +51,7 @@ Each gate is run with `verification-before-completion`. Paste the raw command ou
 - [ ] Stored queue record contains no payload bytes (REQ-Q-5)
 - [ ] Companion strategy (REQ-Q-8) tested with and without a strategy; the park downgrade never calls the handler before the lease expires
 - [ ] Mismatch paths route to dead-letter with reason `fingerprint-mismatch`
-- [ ] `docs/queue-ids.md` covers all nine anyq adapters with redelivery id stability (REQ-DOC-9)
+- [ ] `docs/queue-ids.md` covers every anyq consumer adapter with redelivery id stability (REQ-DOC-9)
 
 ## P4b webhook door
 

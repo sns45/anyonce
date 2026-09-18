@@ -30,7 +30,6 @@ export function idempotencyStrategy<T = unknown>(inner?: RetryStrategy<T>): Retr
         return { action: 'park', delayMs: error.delayMs };
       }
       if (isFingerprintMismatchError(error)) {
-        error.translated = true;
         return { action: 'deadLetter', reason: 'fingerprint-mismatch' };
       }
       return delegate.decide(ctx);

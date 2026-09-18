@@ -153,6 +153,41 @@ describe('idempotent handler', () => {
     const handler = idempotent(async () => {}, { store: failing });
     await expect(handler(fakeMessage({ id: 'msg-1', body: {} }))).rejects.toThrow('store down');
   });
+
+  test('REQ-Q-1: onStoreError fail-open runs the handler and returns when the store is down', async () => {
+    const failing = {
+      ...new MemoryStore(),
+      begin: async () => {
+        throw new Error('store down');
+      },
+    } as unknown as MemoryStore;
+    let ran = 0;
+    const handler = idempotent(
+      async () => {
+        ran += 1;
+      },
+      { store: failing, onStoreError: 'fail-open' },
+    );
+    await handler(fakeMessage({ id: 'msg-1', body: {} }));
+    expect(ran).toBe(1);
+  });
+
+  test('REQ-Q-1: a supplied hook fires on the outcome it names', async () => {
+    const store = new MemoryStore();
+    const acquired: string[] = [];
+    const replayed: string[] = [];
+    const handler = idempotent(async () => {}, {
+      store,
+      hooks: {
+        onAcquired: (op) => acquired.push(op.key),
+        onReplayed: (op) => replayed.push(op.key),
+      },
+    });
+    await handler(fakeMessage({ id: 'msg-1', body: { a: 1 } }));
+    await handler(fakeMessage({ id: 'msg-1', body: { a: 1 } }));
+    expect(acquired).toEqual(['msg-1']);
+    expect(replayed).toEqual(['msg-1']);
+  });
 });
 
 async function fingerprintOf(body: unknown): Promise<string> {

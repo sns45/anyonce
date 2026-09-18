@@ -66,7 +66,7 @@ type Options struct {
 	// anyonce.DefaultPolicy values, except Clock, which Wrap needs and defaults to time.Now.
 	Policy anyonce.Policy
 	// Warn receives the single one-time warning Wrap emits when no strategy translated an *InFlightError
-	// (REQ-Q-8). Default log.Printf, the only logging in the module.
+	// (REQ-Q-8). Default log.Print, the only logging in the module.
 	Warn func(string)
 }
 
@@ -97,9 +97,12 @@ func (o Options) withDefaults() Options {
 }
 
 // operation builds the engine Operation for one delivery: the derived scope, the resolved identity and the
-// payload fingerprint. Every failure reaches the caller unchanged, so a configuration mistake is never silently
-// turned into a different identity.
+// payload fingerprint. It first rejects an unknown in-flight mode. Every failure reaches the caller unchanged,
+// so a configuration mistake is never silently turned into a different identity or a different outcome.
 func (o Options) operation(msg core.Message) (anyonce.Operation, error) {
+	if err := o.validateInFlight(); err != nil {
+		return anyonce.Operation{}, err
+	}
 	scope, err := o.resolveScope(msg)
 	if err != nil {
 		return anyonce.Operation{}, err
@@ -113,6 +116,18 @@ func (o Options) operation(msg core.Message) (anyonce.Operation, error) {
 		return anyonce.Operation{}, err
 	}
 	return anyonce.Operation{Scope: scope, Key: key, Fingerprint: fingerprint}, nil
+}
+
+// validateInFlight rejects an unknown in-flight mode the same way resolveKey rejects an unknown key source
+// (D15). withDefaults only fills an empty mode, so without this a typo would be silently treated as
+// InFlightRetry and a caller who asked to ack duplicates away would get parks instead.
+func (o Options) validateInFlight() error {
+	switch o.OnInFlight {
+	case InFlightRetry, InFlightAck:
+		return nil
+	default:
+		return fmt.Errorf("%w: unknown in-flight mode %q", ErrConfiguration, o.OnInFlight)
+	}
 }
 
 // resolveKey applies REQ-Q-1 and validates the result with anyonce.ValidateKey. A key the store cannot hold is

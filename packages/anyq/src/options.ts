@@ -1,4 +1,4 @@
-import { type Store, validateKey } from '@anyonce/core';
+import { type ExecuteHooks, type Store, validateKey } from '@anyonce/core';
 import type { IMessage, MessageHeaders, ProviderMetadata } from '@anyq/core';
 import { QueueConfigurationError } from './errors';
 import { messageFingerprint } from './fingerprint';
@@ -18,8 +18,19 @@ export interface IdempotentOptions<T = unknown> {
   fingerprint?: (message: IMessage<T>) => string | Promise<string>;
   leaseMs?: number;
   ttlMs?: number;
-  /** D15: 'retry' throws InFlightError for the strategy to park; 'ack' treats the duplicate as handled. */
+  /**
+   * D15: 'retry' throws InFlightError for the strategy to park; 'ack' treats the duplicate as handled. That is
+   * an at-most-once-per-lease trade-off: the first claim may still fail after this delivery was acked away.
+   */
   onInFlight?: 'retry' | 'ack';
+  /**
+   * D13: 'fail-closed' (the default) surfaces a store failure to anyq so the delivery takes the normal retry
+   * path; 'fail-open' runs the handler without a claim, which keeps the consumer draining while the store is
+   * down at the cost of the at-most-once guarantee for those deliveries.
+   */
+  onStoreError?: 'fail-closed' | 'fail-open';
+  /** The engine hooks, the observability path for acquired, replayed, conflict, mismatch and store error. */
+  hooks?: ExecuteHooks;
   clock?: () => number;
   logger?: { warn(message: string): void };
 }
@@ -34,6 +45,8 @@ export interface ResolvedOptions<T = unknown> {
   leaseMs: number | undefined;
   ttlMs: number | undefined;
   onInFlight: 'retry' | 'ack';
+  onStoreError: 'fail-closed' | 'fail-open' | undefined;
+  hooks: ExecuteHooks | undefined;
   clock: () => number;
   logger: { warn(message: string): void };
 }
@@ -55,6 +68,8 @@ export function resolveOptions<T = unknown>(options: IdempotentOptions<T>): Reso
     leaseMs: options.leaseMs,
     ttlMs: options.ttlMs,
     onInFlight: options.onInFlight ?? 'retry',
+    onStoreError: options.onStoreError,
+    hooks: options.hooks,
     clock: options.clock ?? Date.now,
     logger: options.logger ?? defaultLogger,
   };

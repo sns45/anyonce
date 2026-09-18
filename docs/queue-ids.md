@@ -61,7 +61,7 @@ Per adapter:
 
 - `memory`, `rabbitmq`, `google-pubsub`, `nats`, `pgmq`: `key: 'header'`. Add `scope` on `rabbitmq`, which names no queue on the message.
 - `redis-streams`, `kafka`: `key: 'header'`, or `key: 'id'` when the producer provably never retries a publish. The scope derives itself; pass `consumerGroup` on `kafka` if two groups on one topic must not share claims.
-- `sqs`: `key: 'body'`. The park drops the message attributes, so no header reaches the parked copy. The scope derives itself from the queue URL. Because `body` deduplicates on the payload bytes alone, give the payload a producer chosen id field, or two separate units of work that hash the same collapse into one and the second is silently swallowed.
+- `sqs`: `key: 'body'`. The park drops the message attributes, so no header reaches the parked copy. The scope derives itself from the queue URL. Because `body` deduplicates on the payload bytes alone, give the payload a producer chosen id field. Otherwise, two separate units of work that hash the same collapse into one and the second is silently swallowed.
 - `azure-servicebus`: `key: 'body'` and an explicit `scope`. The two languages' parks preserve different fields, so `body` is the only source that works in both. The same payload collision caveat applies.
 - `cloudflare-queues`: `key: 'id'`. This adapter carries no headers, so deduplicating a producer retry here means putting the identity inside the payload and passing a `key` function that reads it.
 

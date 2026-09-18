@@ -271,6 +271,20 @@ func TestOperation(t *testing.T) {
 		}
 	})
 
+	t.Run("REQ-Q-2: an unknown in-flight mode is a configuration error, not a silent retry", func(t *testing.T) {
+		o := Options{OnInFlight: InFlightMode("ackk")}.withDefaults()
+		if o.OnInFlight != InFlightMode("ackk") {
+			t.Fatalf("withDefaults rewrote the mode to %q", o.OnInFlight)
+		}
+		_, err := o.operation(msg("m-1", []byte(`{}`), nil, memoryMeta("orders")))
+		if !errors.Is(err, ErrConfiguration) {
+			t.Fatalf("want ErrConfiguration, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "in-flight mode") {
+			t.Fatalf("the error does not name the offending option: %v", err)
+		}
+	})
+
 	t.Run("REQ-Q-1: a Fingerprint failure is returned to the caller", func(t *testing.T) {
 		boom := errors.New("cannot canonicalize")
 		o := Options{Fingerprint: func(core.Message) (string, error) { return "", boom }}.withDefaults()
