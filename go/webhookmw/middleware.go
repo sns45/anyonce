@@ -5,10 +5,18 @@ import (
 	"errors"
 	"net/http"
 	"sync"
+	"sync/atomic"
 
 	"github.com/sns45/anyonce/go/anyonce"
 	"github.com/sns45/anyonce/go/internal/httpx"
 )
+
+// errHijacked marks a handler that took the connection, which disables idempotency for the delivery.
+var errHijacked = errors.New("webhookmw: connection hijacked")
+
+// errPanicked marks a handler panic recovered inside the run callback so the engine abandons the claim before
+// Handler re-panics (REQ-WH-7).
+var errPanicked = errors.New("webhookmw: handler panicked")
 
 // The two lines the receiver ever logs, one per cause of a 500 configuration-error (Q26, ruling 12). Both are
 // fixed strings: no request data, no header value, no delivery id and, for the second, no part of the
@@ -115,13 +123,67 @@ func (m *Middleware) verified(r *http.Request, body []byte) (ok bool, decided bo
 	return IsVerified(r.Context(), m.opts.VerifiedMarker), true
 }
 
+// lookupID resolves the delivery id: the Key function when given, otherwise the IDHeader. Q25: the id becomes the
+// store key, so it is length and charset checked with the lenient parser and never sf-string parsed.
+func lookupID(r *http.Request, body []byte, o resolved) (string, httpx.KeyStatus, string) {
+	if o.Key != nil {
+		raw, ok := o.Key(r, body)
+		if !ok || raw == "" {
+			return "", httpx.KeyMissing, ""
+		}
+		parsed, err := anyonce.ParseKey(raw, anyonce.SyntaxLenient)
+		if err != nil {
+			return "", httpx.KeyInvalid, err.Error()
+		}
+		return parsed, httpx.KeyOK, ""
+	}
+	return httpx.LookupKey(r.Header, o.IDHeader, anyonce.SyntaxLenient)
+}
+
+// scope is D8 and Q24: the route pattern, plus a slash and the sender identity when SourceID yields one.
+func (m *Middleware) scope(r *http.Request, body []byte) string {
+	route := m.opts.RoutePattern
+	if route == "" {
+		route = r.URL.EscapedPath()
+	}
+	if m.opts.SourceID == nil {
+		return route
+	}
+	source := m.opts.SourceID(r, body)
+	if source == "" {
+		return route
+	}
+	return route + "/" + source
+}
+
+// fingerprint is D9: SHA-256 over the body bytes alone for this door, so the same delivery replayed against a
+// second path still matches. Options.Fingerprint overrides it.
+func (m *Middleware) fingerprint(r *http.Request, body []byte) (string, error) {
+	if m.opts.Fingerprint != nil {
+		return m.opts.Fingerprint(r, body)
+	}
+	return anyonce.SHA256Hex(body), nil
+}
+
+// onSuspicious fires REQ-WH-5's hook. A hook never reaches the caller, matching the engine's rule for its own
+// hooks, so a panicking hook cannot turn a 422 into a dropped connection.
+func (m *Middleware) onSuspicious(r *http.Request, rec *anyonce.Record) {
+	if m.opts.OnSuspicious == nil {
+		return
+	}
+	defer func() { _ = recover() }()
+	m.opts.OnSuspicious(r, rec)
+}
+
 // Handler wraps next (REQ-WH-7). The order here is load bearing (D16): the configuration check runs on every
 // request before the method filter, then the bounded body read, then verification, and only a verified delivery
 // goes any further. Nothing before that point touches the store, so an unverified delivery can never poison the
 // dedupe table with a forged id and suppress a real one.
 //
-// This is the gate only. Key resolution, the scope, the fingerprint, replay, conflict, mismatch and
-// OnSuspicious arrive in the next change; until then a verified delivery is passed straight to next.
+// Past the gate the receiver is the HTTP door with a webhook shaped key, scope and fingerprint: the id is
+// resolved (Q25), the scope is the route plus the sender (D8 and Q24), the body is fingerprinted (D9), and the
+// engine decides between running the handler, replaying (REQ-WH-3), reporting a delivery still in flight
+// (REQ-WH-4) and reporting the same id with a different body (REQ-WH-5).
 func (m *Middleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !m.configured() {
@@ -154,6 +216,94 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 			m.fail(w, r, CodeSignatureInvalid, "", nil)
 			return
 		}
-		next.ServeHTTP(w, r)
+
+		key, status, reason := lookupID(r, body, m.opts)
+		switch status {
+		case httpx.KeyMissing:
+			if !m.opts.required {
+				next.ServeHTTP(w, r)
+				return
+			}
+			m.fail(w, r, CodeMissingKey, "", http.Header{"Link": {"<" + m.opts.DocsURL + ">; rel=\"describedby\""}})
+			return
+		case httpx.KeyInvalid:
+			m.fail(w, r, CodeInvalidKey, reason, nil)
+			return
+		case httpx.KeyOK:
+			// handled below
+		}
+		fp, err := m.fingerprint(r, body)
+		if err != nil {
+			http.Error(w, "webhookmw: fingerprint failed", http.StatusInternalServerError)
+			return
+		}
+		op := anyonce.Operation{Scope: m.scope(r, body), Key: key, Fingerprint: fp}
+
+		// A store failure before the handler runs (fail-open) must show on the response, so the hook flips a
+		// flag that run reads before the handler writes anything.
+		var degraded atomic.Bool
+		policy := m.opts.Policy
+		userHook := policy.Hooks.OnStoreError
+		policy.Hooks.OnStoreError = func(op anyonce.Operation, err error) {
+			degraded.Store(true)
+			if userHook != nil {
+				userHook(op, err)
+			}
+		}
+		limit := policy.MaxResultBytes
+		if limit <= 0 {
+			limit = anyonce.DefaultPolicy().MaxResultBytes
+		}
+		cw := httpx.NewCaptureWriter(w, limit)
+
+		// A handler panic is recovered here, inside run, so the engine sees a failing handler and abandons the
+		// claim exactly as it does for a returned error; the panic value is replayed after Execute returns so
+		// net/http's own recovery still applies (REQ-WH-7).
+		var panicValue any
+		res, err := anyonce.Execute(r.Context(), m.store, op, func(ctx context.Context, fence int64) (result anyonce.StoredResult, runErr error) {
+			defer func() {
+				if p := recover(); p != nil {
+					panicValue = p
+					runErr = errPanicked
+				}
+			}()
+			if degraded.Load() {
+				w.Header().Set("Idempotency-Degraded", "true")
+			}
+			next.ServeHTTP(cw, r.WithContext(httpx.WithInfo(ctx, key, fence)))
+			if cw.Hijacked() {
+				return anyonce.StoredResult{}, errHijacked
+			}
+			return cw.Result(m.opts.storeHeaders), nil
+		}, policy)
+		if panicValue != nil {
+			panic(panicValue)
+		}
+		if err != nil {
+			switch {
+			case errors.Is(err, errHijacked):
+				// The handler took over the connection; nothing left to write.
+			case res.Kind == anyonce.ResultStoreError:
+				m.fail(w, r, CodeStoreUnavailable, "", http.Header{"Retry-After": {"1"}})
+			case !cw.WroteHeader():
+				http.Error(w, "webhookmw: idempotency failed", http.StatusInternalServerError)
+			}
+			return
+		}
+		switch res.Kind {
+		case anyonce.ResultExecuted:
+			// The handler already wrote the response through cw.
+		case anyonce.ResultReplayed:
+			httpx.WriteReplay(w, res.Record)
+		case anyonce.ResultConflict:
+			m.fail(w, r, CodeConflict, "", http.Header{"Retry-After": {httpx.RetryAfter(res.LeaseUntil, policy)}})
+		case anyonce.ResultMismatch:
+			// REQ-WH-5: the security signal fires before the problem is rendered, and it fires whatever a user
+			// supplied Policy.Hooks.OnMismatch did, because the engine recovers that hook's panics itself.
+			m.onSuspicious(r, res.Record)
+			m.fail(w, r, CodeFingerprintMismatch, "", nil)
+		case anyonce.ResultStoreError:
+			m.fail(w, r, CodeStoreUnavailable, "", http.Header{"Retry-After": {"1"}})
+		}
 	})
 }
