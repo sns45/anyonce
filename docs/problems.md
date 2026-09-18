@@ -11,7 +11,7 @@ Every error anyonce returns over HTTP is an RFC 9457 problem details document wi
 | `payload-too-large` | 413 | The request body exceeds `maxRequestBytes` (default 1 MiB) | none |
 | `store-unavailable` | 503 | The store failed and the adapter runs fail-closed (D13) | `Retry-After: 1` |
 | `missing-principal` | 500 | `requirePrincipal` is set and the principal function returned nothing for this request (Q18) | none |
-| `configuration-error` | 500 | The webhook receiver was built with neither a `verify` callback nor a `verifiedMarker`, so it can never establish that a delivery is genuine (REQ-WH-2, D16) | none |
+| `configuration-error` | 500 | The webhook receiver could not establish that a delivery is genuine, for either of two causes: it was built with neither a `verify` callback nor a `verifiedMarker`, or its `verify` callback itself failed and so could not decide. The `detail` member says which, `no verify callback or verifiedMarker is configured` or `the verify callback failed`, and each cause logs once per receiver instance (REQ-WH-2, D16) | none |
 | `signature-invalid` | 401 | The webhook signature did not verify, or the upstream verified marker was absent (D16) | none |
 
 A receiver may override any title with `problemTitles` so it names the header its senders actually send; the status and the `code` member never change.
