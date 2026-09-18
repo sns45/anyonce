@@ -69,6 +69,14 @@ const VERIFIER_FAILED_MESSAGE =
  * Ruling 13: the RFC 9457 detail member is what tells the two causes of a 500 configuration-error apart. They
  * share one code because they are one class of failure. Both strings are byte identical to the Go twin's.
  */
+/**
+ * Ruling 20 and Q29: RFC 9110 section 15.5.2 makes at least one challenge a MUST on a 401, and only the
+ * signature-invalid problem is a 401. The scheme token is Signature because the credential the receiver is
+ * challenging for is a Standard Webhooks signature. It carries no parameters: a realm would name nothing a
+ * sender could act on, and the sender has no way to present a different credential interactively.
+ */
+const SIGNATURE_CHALLENGE: [string, string] = ['WWW-Authenticate', 'Signature'];
+
 const DETAIL_UNCONFIGURED = 'no verify callback or verifiedMarker is configured';
 const DETAIL_VERIFIER_FAILED = 'the verify callback failed';
 
@@ -195,7 +203,9 @@ export function webhookReceiver(options: WebhookReceiverOptions) {
         }
         return fail('configuration-error', DETAIL_VERIFIER_FAILED);
       }
-      if (!verified) return fail('signature-invalid');
+      // Ruling 20 and Q29: RFC 9110 section 15.5.2 makes a challenge a MUST on a 401. The scheme token is
+      // Signature, because the credential being challenged is a Standard Webhooks signature.
+      if (!verified) return fail('signature-invalid', undefined, [SIGNATURE_CHALLENGE]);
 
       const keyLookup = resolveKey(req, read.body, idHeader, options.key);
       const routeScope = webhookScope(req, read.body, options);
