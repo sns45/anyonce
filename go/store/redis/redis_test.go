@@ -13,7 +13,7 @@ import (
 	"github.com/sns45/anyonce/go/conformance"
 	"github.com/sns45/anyonce/go/conformance/fixture"
 	"github.com/sns45/anyonce/go/httpmw"
-	"github.com/sns45/anyonce/go/store/internal/servicetest"
+	"github.com/sns45/anyonce/go/internal/servicetest"
 	"github.com/sns45/anyonce/go/store/redis"
 	"github.com/sns45/anyonce/go/storetest"
 )
