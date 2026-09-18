@@ -163,10 +163,12 @@ describe('ci workflow', () => {
     const script = pkg.scripts.test ?? '';
     const filters = script.replace('bun test ', '').split(/\s+/).filter(Boolean);
     expect(filters.length).toBeGreaterThan(0);
-    const serviceDir = 'packages/stores/services';
-    const suites = readdirSync(join(import.meta.dir, '..', serviceDir))
-      .filter((name) => name.endsWith('.test.ts'))
-      .map((name) => `${serviceDir}/${name}`);
+    const serviceDirs = ['packages/stores/services', 'packages/anyq/services'];
+    const suites = serviceDirs.flatMap((serviceDir) =>
+      readdirSync(join(import.meta.dir, '..', serviceDir))
+        .filter((name) => name.endsWith('.test.ts'))
+        .map((name) => `${serviceDir}/${name}`),
+    );
     expect(suites.length).toBeGreaterThan(0);
     // bun test treats a positional argument as a path substring, so a bare "conformance" would
     // also collect packages/stores/services/dynamodb.conformance.test.ts.

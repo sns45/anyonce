@@ -251,3 +251,28 @@ D15 says the stored result for a queue operation is `{ outcome: 'ok' } | { outco
 Recommended resolution: the queue door stores only `{ kind: 'message', outcome: 'ok' }` and REQ-Q-5's test asserts exactly that record shape. The error arm stays in the `StoredResult` type from P1 for a future opt in. It is deliberately not made reachable now: replaying a stored failure for the whole 24 hour TTL takes the message out of anyq's retry and dead-letter policy, which is the behaviour REQ-Q-3 exists to preserve. If dedupe of permanent failures is wanted later it belongs behind an explicit option with its own REQ id.
 
 **Decision: pending.** P4a proceeds on the recommendation.
+
+## Q44: anyq's SQS park does not work against the ElasticMQ container
+
+REQ-Q-8's acceptance criteria name "strategy present on memory and SQS (native park)". Both adapters do
+declare `supportsNativeDelay` true, but the published `@anyq/sqs` 0.5.0 park path fails against the
+ElasticMQ 1.6.12 container that `test/compose.yml` provides. `parkMessage` sends a fresh `SendMessage`
+with `DelaySeconds`, ElasticMQ answers 400, and the AWS SDK bundled inside the adapter throws while
+decorating that response (`undefined is not an object (evaluating 'error.Error.Type')`). The adapter's own
+catch logs "Failed to park SQS message; returning to queue" and falls back to `nack(true)`, but the SDK's
+throw escapes as an unhandled rejection. A probe with a current `@aws-sdk/client-sqs` shows ElasticMQ
+accepts `SendMessage` with `DelaySeconds` normally, so this is the bundled SDK's error path against
+ElasticMQ rather than a missing ElasticMQ feature. Whether real AWS SQS behaves the same is not known from
+here, and this repository does not test against real cloud accounts (D20).
+
+Recommended resolution: keep REQ-Q-8's three acceptance cases and move the native park assertion entirely
+onto the memory adapter, which has a working native park. Kafka keeps the downgrade assertion, that the
+in-process retry does not call the handler before the lease expires, which is the case the lease exists
+for. The SQS suite asserts every outcome that does not involve park (a completed duplicate does not run
+the handler, an in-flight duplicate produces the typed error, a mismatch dead-letters with reason
+`fingerprint-mismatch`, the stored record has no payload bytes) plus the companion strategy's decision for
+an in-flight error, which is `{ action: 'park', delayMs }`. Asserting a successful SQS park end to end
+would be flaky by construction and would be testing anyq's SQS adapter rather than anyonce's door.
+`docs/queue-ids.md` records the limitation in the SQS row's notes.
+
+**Decision: pending.** P4a proceeds on the recommendation.
