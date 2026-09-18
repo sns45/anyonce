@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { idempotencyOf, withIdempotency } from '../../src/http';
+import { httpFingerprint } from '../../src/fingerprint';
+import { idempotencyOf, resolveHttpOptions, runIdempotent, withIdempotency } from '../../src/http';
 import { MemoryStore } from '../../src/memory';
 import type { Store } from '../../src/types';
 
@@ -496,5 +497,99 @@ describe('withIdempotency', () => {
     expect(retry.headers.get('Idempotency-Replayed')).toBeNull();
     expect(await retry.text()).toBe('r2');
     expect(state.calls).toBe(2);
+  });
+
+  test('REQ-WH-2: problemTitles reaches the problem the bridge renders', async () => {
+    const options = resolveHttpOptions({
+      store: new MemoryStore(),
+      required: true,
+      problemTitles: { 'missing-key': 'The webhook-id header is required for this request' },
+    });
+    const res = await runIdempotent(
+      new Request('https://example.test/hook', { method: 'POST', body: 'x' }),
+      async () => new Response('never'),
+      options,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { title: string; code: string };
+    expect(body.title).toBe('The webhook-id header is required for this request');
+    expect(body.code).toBe('missing-key');
+  });
+});
+
+describe('RunContext injection', () => {
+  test('REQ-WH-1: a caller supplied key lookup replaces the header lookup', async () => {
+    const store = new MemoryStore();
+    const options = resolveHttpOptions({ store, required: true });
+    const req = new Request('https://example.test/hook', { method: 'POST', body: 'payload' });
+    const res = await runIdempotent(
+      req,
+      async () => new Response('ran', { status: 200 }),
+      options,
+      {
+        keyLookup: { kind: 'ok', key: 'msg_injected' },
+      },
+    );
+    expect(res.status).toBe(200);
+    // The capture pump is pull driven (packages/core/src/http/capture.ts), so the record settles once the
+    // client has read the streamed body, as every other test in this file that checks store state also does.
+    await res.text();
+    const record = await store.get({ scope: 'POST /hook', key: 'msg_injected' }, Date.now());
+    expect(record?.state).toBe('completed');
+  });
+
+  test('REQ-WH-1: an invalid caller supplied key lookup is 400 invalid-key with its reason', async () => {
+    const options = resolveHttpOptions({ store: new MemoryStore() });
+    const res = await runIdempotent(
+      new Request('https://example.test/hook', { method: 'POST', body: 'payload' }),
+      async () => new Response('never'),
+      options,
+      { keyLookup: { kind: 'invalid', reason: 'key exceeds 255 bytes' } },
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string; detail: string };
+    expect(body.code).toBe('invalid-key');
+    expect(body.detail).toBe('key exceeds 255 bytes');
+  });
+
+  test('REQ-WH-1: a missing caller supplied key lookup follows the required flag', async () => {
+    const options = resolveHttpOptions({ store: new MemoryStore(), required: true });
+    const res = await runIdempotent(
+      new Request('https://example.test/hook', { method: 'POST', body: 'payload' }),
+      async () => new Response('never'),
+      options,
+      { keyLookup: { kind: 'missing' } },
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe('missing-key');
+    expect(res.headers.get('Link')).toBe(
+      '<https://in8.sh/anyonce/problems/missing-key>; rel="describedby"',
+    );
+  });
+
+  test('REQ-WH-1: caller supplied body bytes are used for the fingerprint and the request body is left unread', async () => {
+    const store = new MemoryStore();
+    const options = resolveHttpOptions({ store });
+    const seen: string[] = [];
+    const req = new Request('https://example.test/hook', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'k-injected-body' },
+      body: 'on the wire',
+    });
+    const res = await runIdempotent(
+      req,
+      async (r) => {
+        seen.push(await r.text());
+        return new Response('ok');
+      },
+      options,
+      { body: new TextEncoder().encode('injected') },
+    );
+    expect(res.status).toBe(200);
+    expect(seen).toEqual(['on the wire']);
+    const record = await store.get({ scope: 'POST /hook', key: 'k-injected-body' }, Date.now());
+    expect(record?.fingerprint).toBe(
+      await httpFingerprint('POST', '/hook', new TextEncoder().encode('injected')),
+    );
   });
 });

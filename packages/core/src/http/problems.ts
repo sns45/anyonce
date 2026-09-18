@@ -1,4 +1,4 @@
-/** D11 problem codes. missing-principal is the Q18 addition for REQ-HTTP-5. */
+/** D11 problem codes. missing-principal is the Q18 addition for REQ-HTTP-5; the last two are the Q23 additions for the webhook door. */
 export type ProblemCode =
   | 'missing-key'
   | 'invalid-key'
@@ -6,7 +6,12 @@ export type ProblemCode =
   | 'fingerprint-mismatch'
   | 'payload-too-large'
   | 'store-unavailable'
-  | 'missing-principal';
+  | 'missing-principal'
+  | 'configuration-error'
+  | 'signature-invalid';
+
+/** Q23: a per code title override. The status and the code member are fixed by D11 and are not overridable. */
+export type ProblemTitles = Partial<Record<ProblemCode, string>>;
 
 /** RFC 9457 problem details with the anyonce code member (D10). */
 export interface Problem {
@@ -27,6 +32,8 @@ export const PROBLEM_STATUS: Record<ProblemCode, number> = {
   'payload-too-large': 413,
   'store-unavailable': 503,
   'missing-principal': 500,
+  'configuration-error': 500,
+  'signature-invalid': 401,
 };
 
 export const PROBLEM_TITLE: Record<ProblemCode, string> = {
@@ -37,12 +44,19 @@ export const PROBLEM_TITLE: Record<ProblemCode, string> = {
   'payload-too-large': 'The request body exceeds the size this idempotent endpoint accepts',
   'store-unavailable': 'The idempotency store is unavailable',
   'missing-principal': 'The idempotency scope requires a principal and none was found',
+  'configuration-error': 'This endpoint is not configured correctly and cannot accept the request',
+  'signature-invalid': 'The request signature could not be verified',
 };
 
-export function problem(code: ProblemCode, baseUri: string, detail?: string): Problem {
+export function problem(
+  code: ProblemCode,
+  baseUri: string,
+  detail?: string,
+  title?: string,
+): Problem {
   const out: Problem = {
     type: `${baseUri}${code}`,
-    title: PROBLEM_TITLE[code],
+    title: title ?? PROBLEM_TITLE[code],
     status: PROBLEM_STATUS[code],
     code,
   };

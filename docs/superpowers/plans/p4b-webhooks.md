@@ -265,11 +265,13 @@ and two example bodies in the "Example bodies" section:
 ```json
 {
   "type": "https://in8.sh/anyonce/problems/signature-invalid",
-  "title": "The webhook signature could not be verified",
+  "title": "The request signature could not be verified",
   "status": 401,
   "code": "signature-invalid"
 }
 ```
+
+The title is the catalogue default, which stays generic because `@anyonce/core/http` serves every door. The webhook receiver overrides it through `problemTitles` so a sender reads "The webhook signature could not be verified".
 ```
 
 Add a sentence under the table: "A receiver may override any title with `problemTitles` so it names the header its senders actually send; the status and the `code` member never change."
@@ -508,18 +510,21 @@ func (c *CaptureWriter) Hijacked() bool { return c.hijacked }
 func (pw ProblemWriter) Fail(w http.ResponseWriter, r *http.Request, code Code, detail string, extra http.Header) {
 	p := NewProblemWithTitle(code, pw.BaseURI, detail, pw.Titles[code])
 	if pw.OnError != nil {
+		h := w.Header()
 		for name, values := range extra {
-			for _, v := range values {
-				w.Header().Add(name, v)
-			}
+			h[http.CanonicalHeaderKey(name)] = values
 		}
-		w.Header().Set("Cache-Control", "no-store")
+		h.Set("Cache-Control", "no-store")
 		pw.OnError(w, r, p)
 		return
 	}
 	WriteProblem(w, p, extra)
 }
 ```
+
+This body is the current `(*Middleware).fail` verbatim except for the title lookup, including the header assignment form (`h[http.CanonicalHeaderKey(name)] = values`, a replace, not an `Add`). Do not change it: the extraction must preserve `httpmw` behaviour byte for byte.
+
+Also move `DefaultProblemBaseURI` and `DefaultMaxRequestBytes` from `go/httpmw/options.go` into `httpx` and leave aliases behind in `httpmw`, because the webhook door needs the same defaults and must not import `httpmw`. `DefaultHeaderName`, `DefaultMethods` and `DefaultStoreHeaders` stay in `httpmw`: they are HTTP door policy, not shared machinery.
 
 Move the helper unit tests: `go/httpmw/problems_test.go`, `request_test.go`, `writer_test.go` and `context_test.go` move to `go/internal/httpx/` in package `httpx_test`, with their `REQ-HTTP-*` subtest names unchanged and their calls updated to the exported names. Any assertion in those files that reaches into `httpmw.Options` or `resolved` stays behind in `httpmw` instead of moving.
 
