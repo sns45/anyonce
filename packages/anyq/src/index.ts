@@ -9,3 +9,5 @@ export {
   QueueConfigurationError,
 } from './errors';
 export { messageFingerprint } from './fingerprint';
+export type { IdempotentOptions, KeySource, ResolvedOptions } from './options';
+export { DEFAULT_KEY_HEADER } from './options';
