@@ -142,6 +142,12 @@ func lookupID(r *http.Request, body []byte, o resolved) (string, httpx.KeyStatus
 		}
 		return parsed, httpx.KeyOK, ""
 	}
+	// Ruling 19: a header that is present but empty is a missing id, not an invalid one, which is what the
+	// TypeScript receiver answers. httpx.LookupKey would hand "" to ParseKey and call it 400 invalid-key, so
+	// the empty case is settled here; the HTTP door's own behaviour is deliberately left alone.
+	if values := r.Header.Values(o.IDHeader); len(values) == 1 && values[0] == "" {
+		return "", httpx.KeyMissing, ""
+	}
 	return httpx.LookupKey(r.Header, o.IDHeader, anyonce.SyntaxLenient)
 }
 

@@ -118,6 +118,33 @@ func TestReceiver(t *testing.T) {
 		}
 	})
 
+	t.Run("REQ-WH-1: an empty webhook-id header is treated as missing, the same as no header at all", func(t *testing.T) {
+		store := newCountingStore()
+		mw := webhookmw.New(store, webhookmw.Options{Verify: alwaysVerify})
+		rec := httptest.NewRecorder()
+		r := delivery("", `{"a":1}`)
+		r.Header.Set("webhook-id", "")
+		mw.Handler(handled()).ServeHTTP(rec, r)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", rec.Code)
+		}
+		var p webhookmw.Problem
+		if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+			t.Fatal(err)
+		}
+		// Ruling 19: byte for byte what the TypeScript receiver answers, down to the Link header a
+		// missing-key carries and an invalid-key does not.
+		if p.Code != webhookmw.CodeMissingKey {
+			t.Fatalf("code = %q, want missing-key", p.Code)
+		}
+		if link := rec.Header().Get("Link"); !strings.Contains(link, "rel=\"describedby\"") {
+			t.Fatalf("Link = %q", link)
+		}
+		if store.count() != 0 {
+			t.Fatalf("Begin was called %d times", store.count())
+		}
+	})
+
 	t.Run("REQ-WH-1: an id longer than 255 bytes is 400 invalid-key", func(t *testing.T) {
 		store := newCountingStore()
 		mw := webhookmw.New(store, webhookmw.Options{Verify: alwaysVerify})
