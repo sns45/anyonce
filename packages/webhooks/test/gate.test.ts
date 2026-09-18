@@ -36,9 +36,18 @@ describe('verification gate', () => {
     const res = await handler(delivery());
     expect(res.status).toBe(500);
     expect(res.headers.get('Content-Type')).toBe('application/problem+json');
-    const body = (await res.json()) as { code: string; status: number };
+    const body = (await res.json()) as {
+      code: string;
+      status: number;
+      title: string;
+      detail: string;
+    };
     expect(body.code).toBe('configuration-error');
     expect(body.status).toBe(500);
+    expect(body.title).toBe(
+      'The webhook endpoint could not establish that this delivery is genuine',
+    );
+    expect(body.detail).toBe('no verify callback or verifiedMarker is configured');
     expect(begins).toEqual([]);
     expect(messages).toHaveLength(1);
   });
@@ -69,16 +78,55 @@ describe('verification gate', () => {
 
   test('REQ-WH-2: a verify callback that throws is 500 configuration-error and never calls begin', async () => {
     const { store, begins } = countingStore();
+    const messages: string[] = [];
     const handler = webhookReceiver({
       store,
+      logger: (m) => messages.push(m),
       verify: () => {
-        throw new Error('verifier exploded');
+        throw new Error('verifier exploded on key msg_1');
       },
     })(async () => new Response('handled'));
     const res = await handler(delivery());
     expect(res.status).toBe(500);
-    expect(((await res.json()) as { code: string }).code).toBe('configuration-error');
+    const body = (await res.json()) as { code: string; detail: string };
+    expect(body.code).toBe('configuration-error');
+    expect(body.detail).toBe('the verify callback failed');
     expect(begins).toEqual([]);
+    // Ruling 12: the malfunction is not silent, and the line carries neither the thrown error nor the id.
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).not.toContain('msg_1');
+    expect(messages[0]).not.toContain('exploded');
+  });
+
+  test('REQ-WH-2: the two configuration-error causes log independently and carry different details', async () => {
+    const run = async (
+      options: Parameters<typeof webhookReceiver>[0],
+    ): Promise<{ detail: string; messages: string[] }> => {
+      const messages: string[] = [];
+      const handler = webhookReceiver({ ...options, logger: (m) => messages.push(m) })(
+        async () => new Response('handled'),
+      );
+      let detail = '';
+      for (let i = 0; i < 3; i += 1) {
+        const res = await handler(delivery());
+        expect(res.status).toBe(500);
+        detail = ((await res.json()) as { detail: string }).detail;
+      }
+      return { detail, messages };
+    };
+
+    const unconfigured = await run({ store: countingStore().store });
+    const failed = await run({
+      store: countingStore().store,
+      verify: () => {
+        throw new Error('down');
+      },
+    });
+    expect(unconfigured.detail).not.toBe(failed.detail);
+    // Each cause has its own latch, so neither suppresses the other, and each still logs exactly once.
+    expect(unconfigured.messages).toHaveLength(1);
+    expect(failed.messages).toHaveLength(1);
+    expect(unconfigured.messages[0]).not.toBe(failed.messages[0]);
   });
 
   test('REQ-WH-2: verify sees the raw body bytes and the request', async () => {
@@ -119,7 +167,10 @@ describe('verification gate', () => {
 
   test('REQ-WH-2: a GET to a receiver with no verification still gets 500 configuration-error', async () => {
     const { store, begins } = countingStore();
-    const handler = webhookReceiver({ store })(async () => new Response('handled'));
+    // The logger is injected purely so the one configuration line does not reach stderr and muddy the run.
+    const handler = webhookReceiver({ store, logger: () => {} })(
+      async () => new Response('handled'),
+    );
     const res = await handler(new Request('https://example.test/hooks/stripe', { method: 'GET' }));
     expect(res.status).toBe(500);
     expect(((await res.json()) as { code: string }).code).toBe('configuration-error');
