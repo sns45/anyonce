@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 
@@ -10,6 +10,8 @@ type Job = {
     run?: string;
     shell?: string;
     with?: Record<string, unknown>;
+    env?: Record<string, string>;
+    'working-directory'?: string;
   }>;
   strategy?: { matrix?: Record<string, unknown[]> };
 };
@@ -50,6 +52,15 @@ describe('ci workflow', () => {
     expect(runs(job)).toContain('scripts/no-skips.sh');
   });
 
+  test('REQ-REL-4: the services job runs the Go store tests with services required', () => {
+    const job = ci.jobs.services as Job;
+    expect(uses(job).some((u) => u.startsWith('actions/setup-go@'))).toBe(true);
+    const step = job.steps.find((s) => s.run?.includes('go test -race -count=1 ./store/...'));
+    expect(step).toBeTruthy();
+    expect(step?.env?.ANYONCE_REQUIRE_SERVICES).toBe('1');
+    expect(step?.['working-directory']).toBe('go');
+  });
+
   test('REQ-REL-4: the ts job does not run the compose service tests', () => {
     expect(runs(ci.jobs.ts as Job)).not.toContain('compose.test');
   });
@@ -64,7 +75,7 @@ describe('ci workflow', () => {
   });
 
   test('REQ-REL-4: tee pipelines use bash with pipefail', () => {
-    for (const name of ['ts', 'services']) {
+    for (const name of ['ts', 'services', 'workers']) {
       const job = ci.jobs[name] as Job;
       for (const step of job.steps) {
         if (step.run?.includes('| tee')) {
@@ -84,6 +95,14 @@ describe('ci workflow', () => {
     expect(uses(go).some((u) => u.startsWith('golangci/golangci-lint-action@'))).toBe(true);
     const golangci = go.steps.find((s) => s.uses?.startsWith('golangci/golangci-lint-action@'));
     expect(golangci?.with?.version).toBe('v2.13.2');
+  });
+
+  test('REQ-REL-4: the go job builds with cgo disabled', () => {
+    const job = ci.jobs.go as Job;
+    const steps = job.steps.map((s) => s.run ?? '');
+    const cgoAt = steps.indexOf('CGO_ENABLED=0 go build ./...');
+    expect(cgoAt).toBeGreaterThan(-1);
+    expect(steps.indexOf('go vet ./...')).toBeGreaterThan(cgoAt);
   });
 
   test('REQ-REL-4: the go job runs the engine coverage gate', () => {
@@ -137,9 +156,43 @@ describe('ci workflow', () => {
     expect(typecheckAt).toBeGreaterThan(buildAt);
   });
 
-  test('REQ-REL-4: every bun test job fails on skipped tests', () => {
-    for (const name of ['ts', 'services']) {
+  test('REQ-REL-4: no root test filter matches a service-backed suite, which only test:services may run', () => {
+    const pkg = JSON.parse(readFileSync(join(import.meta.dir, '../package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    const script = pkg.scripts.test ?? '';
+    const filters = script.replace('bun test ', '').split(/\s+/).filter(Boolean);
+    expect(filters.length).toBeGreaterThan(0);
+    const serviceDir = 'packages/stores/services';
+    const suites = readdirSync(join(import.meta.dir, '..', serviceDir))
+      .filter((name) => name.endsWith('.test.ts'))
+      .map((name) => `${serviceDir}/${name}`);
+    expect(suites.length).toBeGreaterThan(0);
+    // bun test treats a positional argument as a path substring, so a bare "conformance" would
+    // also collect packages/stores/services/dynamodb.conformance.test.ts.
+    const matched = suites.flatMap((suite) =>
+      filters.filter((filter) => suite.includes(filter)).map((filter) => `${suite} <- ${filter}`),
+    );
+    expect(matched).toEqual([]);
+  });
+
+  test('REQ-REL-4: the services job builds before it runs the store suites, which import @anyonce/core through dist', () => {
+    const steps = (ci.jobs.services as Job).steps.map((s) => s.run ?? '');
+    const buildAt = steps.indexOf('bun run build');
+    const testAt = steps.findIndex((s) => s.includes('bun run test:services'));
+    expect(buildAt).toBeGreaterThan(-1);
+    expect(testAt).toBeGreaterThan(buildAt);
+  });
+
+  test('REQ-REL-4: every test job fails on skipped tests, the workers job included', () => {
+    for (const name of ['ts', 'services', 'workers']) {
       expect(runs(ci.jobs[name] as Job)).toContain('scripts/no-skips.sh');
     }
+    const workers = ci.jobs.workers as Job;
+    expect(runs(workers)).toContain('bun run test:workers 2>&1 | tee workers.log');
+    expect(runs(workers)).toContain('scripts/no-skips.sh workers.log');
+    expect(runs(workers).indexOf('tee workers.log')).toBeLessThan(
+      runs(workers).indexOf('scripts/no-skips.sh workers.log'),
+    );
   });
 });

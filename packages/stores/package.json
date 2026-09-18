@@ -1,0 +1,95 @@
+{
+  "name": "@anyonce/stores",
+  "version": "0.0.0",
+  "description": "anyonce idempotency stores: DynamoDB, Redis, Postgres, D1 and Durable Objects",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./dynamodb": {
+      "types": "./dist/dynamodb.d.ts",
+      "import": "./dist/dynamodb.js",
+      "require": "./dist/dynamodb.cjs"
+    },
+    "./redis": {
+      "types": "./dist/redis.d.ts",
+      "import": "./dist/redis.js",
+      "require": "./dist/redis.cjs"
+    },
+    "./postgres": {
+      "types": "./dist/postgres.d.ts",
+      "import": "./dist/postgres.js",
+      "require": "./dist/postgres.cjs"
+    },
+    "./d1": {
+      "types": "./dist/d1.d.ts",
+      "import": "./dist/d1.js",
+      "require": "./dist/d1.cjs"
+    },
+    "./durable-objects": {
+      "types": "./dist/durable-objects.d.ts",
+      "import": "./dist/durable-objects.js",
+      "require": "./dist/durable-objects.cjs"
+    },
+    "./migrations/*": "./migrations/*"
+  },
+  "files": [
+    "dist",
+    "migrations"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@anyonce/core": "workspace:*",
+    "@aws-sdk/client-dynamodb": ">=3.600.0",
+    "@cloudflare/workers-types": ">=4.20240925.0",
+    "@upstash/redis": ">=1.30.0",
+    "ioredis": ">=5.0.0",
+    "pg": ">=8.11.0",
+    "postgres": ">=3.4.0",
+    "redis": ">=4.6.0"
+  },
+  "peerDependenciesMeta": {
+    "@aws-sdk/client-dynamodb": {
+      "optional": true
+    },
+    "@cloudflare/workers-types": {
+      "optional": true
+    },
+    "@upstash/redis": {
+      "optional": true
+    },
+    "ioredis": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
+    "postgres": {
+      "optional": true
+    },
+    "redis": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@anyonce/conformance": "workspace:*",
+    "@anyonce/core": "workspace:*",
+    "@anyonce/fixture-hono": "workspace:*",
+    "@aws-sdk/client-dynamodb": "^3.1134.0",
+    "@cloudflare/workers-types": "^5.20260916.1",
+    "@types/pg": "^8.15.0",
+    "@upstash/redis": "^1.38.4",
+    "ioredis": "^6.0.0",
+    "pg": "^8.23.0",
+    "postgres": "^3.4.9",
+    "redis": "^6.2.1"
+  }
+}

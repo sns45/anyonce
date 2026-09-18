@@ -84,6 +84,13 @@ export interface Store {
   abandon(op: Operation, fence: number): Promise<CompleteStatus>;
   get(op: Pick<Operation, 'scope' | 'key'>, now: number): Promise<IdempotencyRecord | null>;
   purge(now: number): Promise<number>;
+  /**
+   * Q20: the largest body this backend stores whole, when the backend has a limit of its own (a DynamoDB item
+   * is capped at 400 KB). An adapter caps its own maxResultBytes policy at this value, so a result too large
+   * for the backend is stored in the omitted form (status and headers replay, the body does not) instead of
+   * reaching the store and failing there. Left undefined, the backend imposes no limit of its own.
+   */
+  readonly maxResultBytes?: number;
   close?(): Promise<void>;
 }
 

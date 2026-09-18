@@ -7,6 +7,7 @@ import {
   resolveHttpOptions,
 } from '../../src/http/options';
 import { MemoryStore } from '../../src/memory';
+import type { Store } from '../../src/types';
 
 describe('resolveHttpOptions', () => {
   const store = new MemoryStore();
@@ -47,6 +48,21 @@ describe('resolveHttpOptions', () => {
     const resolved = resolveHttpOptions({ store });
     expect(resolved.fingerprint).toBe('body');
     expect(resolved.maxRequestBytes).toBe(1_048_576);
+  });
+
+  test("REQ-HTTP-7: the policy cap never exceeds the store's declared cap", () => {
+    const capped: Store = { ...(store as Store), maxResultBytes: 1000 };
+    expect(resolveHttpOptions({ store }).policy.maxResultBytes).toBe(1_048_576);
+    expect(resolveHttpOptions({ store, maxResultBytes: 42 }).policy.maxResultBytes).toBe(42);
+    // The store's cap wins over the default and over a larger explicit option.
+    expect(resolveHttpOptions({ store: capped }).policy.maxResultBytes).toBe(1000);
+    expect(
+      resolveHttpOptions({ store: capped, maxResultBytes: 2_000_000 }).policy.maxResultBytes,
+    ).toBe(1000);
+    // A smaller explicit option still wins: the store declares a ceiling, not a floor.
+    expect(resolveHttpOptions({ store: capped, maxResultBytes: 10 }).policy.maxResultBytes).toBe(
+      10,
+    );
   });
 
   test('REQ-HTTP-8: the stored header allowlist defaults to five headers, lowercased', () => {

@@ -1,4 +1,9 @@
-import { defaultPolicy, type ExecuteHooks, type ExecutePolicy } from '../engine';
+import {
+  DEFAULT_MAX_RESULT_BYTES,
+  defaultPolicy,
+  type ExecuteHooks,
+  type ExecutePolicy,
+} from '../engine';
 import type { KeySyntax } from '../key';
 import type { Store, StoredResult } from '../types';
 import { DEFAULT_PROBLEM_BASE_URI, type Problem } from './problems';
@@ -42,6 +47,10 @@ export interface HttpIdempotencyOptions {
   storeHeaders?: string[];
   leaseMs?: number;
   ttlMs?: number;
+  /**
+   * D12: larger results are stored in the omitted form. Default 1 MiB, and never more than the store's own
+   * `maxResultBytes` when it declares one (Q20), so a store that cannot hold a result is never asked to.
+   */
   maxResultBytes?: number;
   storeResult?: (result: StoredResult) => boolean;
   onStoreError?: 'fail-closed' | 'fail-open';
@@ -84,7 +93,11 @@ export function resolveHttpOptions(options: HttpIdempotencyOptions): ResolvedHtt
   const policyOverrides: Partial<ExecutePolicy> = {};
   if (options.leaseMs !== undefined) policyOverrides.leaseMs = options.leaseMs;
   if (options.ttlMs !== undefined) policyOverrides.ttlMs = options.ttlMs;
-  if (options.maxResultBytes !== undefined) policyOverrides.maxResultBytes = options.maxResultBytes;
+  // Q20: the policy cap never exceeds what the store says it can hold whole.
+  policyOverrides.maxResultBytes = Math.min(
+    options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES,
+    options.store.maxResultBytes ?? Number.POSITIVE_INFINITY,
+  );
   if (options.storeResult !== undefined) policyOverrides.storeResult = options.storeResult;
   if (options.onStoreError !== undefined) policyOverrides.onStoreError = options.onStoreError;
   if (options.clock !== undefined) policyOverrides.clock = options.clock;

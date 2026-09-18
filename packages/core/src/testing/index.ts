@@ -4,7 +4,21 @@ export interface StoreHarness {
   store: Store;
   /** Simulates a store's native TTL sweep removing the row. Stores without native TTL can omit it; purge is used instead. */
   physicallyRemove?: (op: Pick<Operation, 'scope' | 'key'>) => Promise<void>;
+  /** Q20: the largest body this backend stores whole. Defaults to MAX_RESULT_BYTES. */
+  maxResultBytes?: number;
   close?: () => Promise<void>;
+}
+
+/** Suite-level options. maxResultBytes must agree with the harness field; it is read before the factory runs so the test name can carry it. */
+export interface StoreSuiteOptions {
+  /** Q20: the largest body this backend stores whole. Defaults to MAX_RESULT_BYTES. */
+  maxResultBytes?: number;
+  /**
+   * The backend expires rows itself (DynamoDB TTL, Redis PEXPIRE relative to the write plus a grace), so
+   * purge is a no-op that returns 0.
+   * Logical expiry on read is still required: an expired record stays absent to get and to begin.
+   */
+  nativePurge?: boolean;
 }
 
 export type StoreFactory = () => StoreHarness | Promise<StoreHarness>;
@@ -64,8 +78,11 @@ export function storeContractSuite(
   name: string,
   factory: StoreFactory,
   runner: StoreSuiteRunner,
+  options: StoreSuiteOptions = {},
 ): void {
   const { describe, test, expect } = runner;
+  const cap = options.maxResultBytes ?? MAX_RESULT_BYTES;
+  const nativePurge = options.nativePurge ?? false;
   const unique = crypto.randomUUID();
   const op = (tag: string, fingerprint = 'fp-a'): Operation => ({
     scope: `suite:${name}:${unique}:${tag}`,
@@ -201,6 +218,29 @@ export function storeContractSuite(
     );
 
     test(
+      'REQ-STORE-4: an empty body and an empty header list round trip as empty, not absent',
+      withHarness(async (h) => {
+        const o = op('s4d');
+        await h.store.begin(o, opts(T0));
+        expect(
+          await h.store.complete(
+            o,
+            1,
+            { kind: 'http', status: 204, headers: [], body: new Uint8Array(0) },
+            T0 + 1,
+          ),
+        ).toBe('ok');
+        const out = await h.store.begin(o, opts(T0 + 2));
+        expect(out.outcome).toBe('completed');
+        const stored = recordOf(out)?.result;
+        expect(stored?.headers === undefined).toBe(false);
+        expect(stored?.headers).toEqual([]);
+        expect(stored?.body === undefined).toBe(false);
+        expect(stored?.body?.byteLength).toBe(0);
+      }),
+    );
+
+    test(
       'REQ-STORE-5: lease takeover yields fence 2 and a complete with fence 1 is stale and leaves the record unchanged',
       withHarness(async (h) => {
         const o = op('s5');
@@ -254,12 +294,15 @@ export function storeContractSuite(
     );
 
     test(
-      'REQ-STORE-7: purge removes expired records and returns how many',
+      nativePurge
+        ? 'REQ-STORE-7: purge is a no-op that returns 0 because the backend expires rows natively'
+        : 'REQ-STORE-7: purge removes expired records and returns how many',
       withHarness(async (h) => {
         await h.store.begin(op('s7c'), opts(T0));
         await h.store.begin(op('s7d'), opts(T0 + 1000));
         const removed = await h.store.purge(T0 + TTL_MS + 500);
-        expect(removed).toBeGreaterThan(0);
+        if (nativePurge) expect(removed).toBe(0);
+        else expect(removed).toBeGreaterThan(0);
         expect(await h.store.get(op('s7c'), T0 + TTL_MS + 500)).toBeNull();
         expect((await h.store.get(op('s7d'), T0 + TTL_MS + 500))?.state).toBe('in_flight');
       }),
@@ -345,10 +388,11 @@ export function storeContractSuite(
     );
 
     test(
-      'REQ-STORE-11: a body of exactly 1 MiB round trips byte-exact',
+      `REQ-STORE-11: a body of exactly maxResultBytes (${cap} bytes) round trips byte-exact`,
       withHarness(async (h) => {
+        expect(h.maxResultBytes ?? MAX_RESULT_BYTES).toBe(cap);
         const o = op('s11');
-        const body = new Uint8Array(MAX_RESULT_BYTES);
+        const body = new Uint8Array(cap);
         for (let i = 0; i < body.byteLength; i++) body[i] = (i * 31 + 7) & 0xff;
         await h.store.begin(o, opts(T0));
         expect(await h.store.complete(o, 1, { kind: 'http', status: 200, body }, T0 + 1)).toBe(
@@ -357,7 +401,7 @@ export function storeContractSuite(
         const out = await h.store.begin(o, opts(T0 + 2));
         expect(out.outcome).toBe('completed');
         const rec = recordOf(out);
-        expect(rec?.result?.body?.byteLength).toBe(MAX_RESULT_BYTES);
+        expect(rec?.result?.body?.byteLength).toBe(cap);
         expect(bytesEqual(rec?.result?.body, body)).toBe(true);
       }),
       30_000,

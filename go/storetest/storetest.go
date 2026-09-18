@@ -27,6 +27,11 @@ type Harness struct {
 	Store            anyonce.Store
 	PhysicallyRemove func(ctx context.Context, scope, key string) error
 	Close            func() error
+	// MaxResultBytes is Q20: the largest body this backend stores whole. Zero means MaxResultBytes.
+	MaxResultBytes int
+	// NativePurge is Q21: the backend sweeps expired rows itself, purge returns 0, the suite drops the
+	// removed-count assertion but still requires logical expiry on read.
+	NativePurge bool
 }
 
 // Factory builds a fresh harness per test.
@@ -177,6 +182,26 @@ func Run(t *testing.T, name string, factory Factory) {
 		}
 	}))
 
+	t.Run("REQ-STORE-4: an empty body and an empty header list round trip as empty, not absent", with(func(t *testing.T, s anyonce.Store, _ Harness) {
+		o := op("s4d", "fp-a")
+		mustBegin(t, s, o, T0)
+		empty := anyonce.StoredResult{Kind: anyonce.KindHTTP, Status: 204, Headers: [][2]string{}, Body: []byte{}}
+		if st, err := s.Complete(ctx, o, 1, empty, T0.Add(time.Millisecond)); err != nil || st != anyonce.CompleteOK {
+			t.Fatalf("complete: %v %v", st, err)
+		}
+		out := mustBegin(t, s, o, T0.Add(2*time.Millisecond))
+		if out.Kind != anyonce.BeginCompleted || out.Record == nil || out.Record.Result == nil {
+			t.Fatalf("got %+v", out)
+		}
+		stored := out.Record.Result
+		if stored.Headers == nil || len(stored.Headers) != 0 {
+			t.Fatalf("an empty header list came back as %#v, want an empty non-nil slice", stored.Headers)
+		}
+		if stored.Body == nil || len(stored.Body) != 0 {
+			t.Fatalf("an empty body came back as %#v, want an empty non-nil slice", stored.Body)
+		}
+	}))
+
 	t.Run("REQ-STORE-5: lease takeover yields fence 2 and a complete with fence 1 is stale and leaves the record unchanged", with(func(t *testing.T, s anyonce.Store, _ Harness) {
 		o := op("s5", "fp-a")
 		expectAcquired(t, mustBegin(t, s, o, T0), 1)
@@ -229,12 +254,17 @@ func Run(t *testing.T, name string, factory Factory) {
 		expectAcquired(t, mustBegin(t, s, op("s7b", "fp-b"), T0.Add(TTL)), 2)
 	}))
 
-	t.Run("REQ-STORE-7: purge returns the number of expired records removed", with(func(t *testing.T, s anyonce.Store, _ Harness) {
+	t.Run("REQ-STORE-7: purge returns the number of expired records removed, or 0 when the backend expires rows natively", with(func(t *testing.T, s anyonce.Store, h Harness) {
 		mustBegin(t, s, op("s7c", "fp-a"), T0)
 		mustBegin(t, s, op("s7d", "fp-a"), T0.Add(time.Second))
 		removed, err := s.Purge(ctx, T0.Add(TTL+500*time.Millisecond))
-		if err != nil || removed < 1 {
-			t.Fatalf("removed %d %v", removed, err)
+		switch {
+		case err != nil:
+			t.Fatalf("purge: %v", err)
+		case h.NativePurge && removed != 0:
+			t.Fatalf("a native-purge store must report 0 removed, got %d", removed)
+		case !h.NativePurge && removed < 1:
+			t.Fatalf("removed %d", removed)
 		}
 		if rec, _ := s.Get(ctx, op("s7c", "fp-a").Scope, "key-s7c", T0.Add(TTL+500*time.Millisecond)); rec != nil {
 			t.Fatal("s7c still visible")
@@ -322,9 +352,13 @@ func Run(t *testing.T, name string, factory Factory) {
 		}
 	}))
 
-	t.Run("REQ-STORE-11: a body of exactly 1 MiB round trips byte-exact", with(func(t *testing.T, s anyonce.Store, _ Harness) {
+	t.Run("REQ-STORE-11: a body of exactly maxResultBytes round trips byte-exact", with(func(t *testing.T, s anyonce.Store, h Harness) {
+		limit := h.MaxResultBytes
+		if limit == 0 {
+			limit = MaxResultBytes
+		}
 		o := op("s11", "fp-a")
-		body := make([]byte, MaxResultBytes)
+		body := make([]byte, limit)
 		for i := range body {
 			body[i] = byte((i*31 + 7) & 0xff)
 		}
@@ -333,8 +367,8 @@ func Run(t *testing.T, name string, factory Factory) {
 			t.Fatalf("got %v", st)
 		}
 		rec := mustBegin(t, s, o, T0.Add(2*time.Millisecond)).Record
-		if rec == nil || rec.Result == nil || len(rec.Result.Body) != MaxResultBytes || !bytes.Equal(rec.Result.Body, body) {
-			t.Fatal("1 MiB body did not round trip")
+		if rec == nil || rec.Result == nil || len(rec.Result.Body) != limit || !bytes.Equal(rec.Result.Body, body) {
+			t.Fatalf("a %d byte body did not round trip", limit)
 		}
 	}))
 }

@@ -63,7 +63,9 @@ func (r StoredResult) Clone() StoredResult {
 		copy(out.Headers, r.Headers)
 	}
 	if r.Body != nil {
-		out.Body = append([]byte(nil), r.Body...)
+		// make plus copy, not append to a nil slice, which would turn an empty body into an absent one.
+		out.Body = make([]byte, len(r.Body))
+		copy(out.Body, r.Body)
 	}
 	if r.Error != nil {
 		e := *r.Error
@@ -155,4 +157,12 @@ type Store interface {
 	Abandon(ctx context.Context, op Operation, fence int64) (CompleteStatus, error)
 	Get(ctx context.Context, scope, key string, now time.Time) (*Record, error)
 	Purge(ctx context.Context, now time.Time) (int, error)
+}
+
+// ResultCapper is the optional half of Store for a backend with a size limit of its own (Q20): a DynamoDB item
+// is capped at 400 KB. An adapter caps its own Policy.MaxResultBytes at what MaxResultBytes reports, so a
+// result too large for the backend is stored in the omitted form (status and headers replay, the body does
+// not) rather than reaching the store and failing there. A store that imposes no limit does not implement it.
+type ResultCapper interface {
+	MaxResultBytes() int
 }

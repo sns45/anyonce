@@ -1,5 +1,11 @@
 {
   "name": "anyonce-workers-tests",
+  "main": "./worker.ts",
   "compatibility_date": "2025-09-01",
-  "compatibility_flags": ["nodejs_compat"]
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": { "bindings": [{ "name": "IDEMPOTENCY", "class_name": "IdempotencyObject" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["IdempotencyObject"] }],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "anyonce-test", "database_id": "anyonce-test" }
+  ]
 }
