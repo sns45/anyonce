@@ -9,6 +9,7 @@
         "@anyonce/fixture-hono": "workspace:*",
         "@anyonce/hono": "workspace:*",
         "@anyonce/stores": "workspace:*",
+        "@anyonce/webhooks": "workspace:*",
         "@biomejs/biome": "^2.5.14",
         "@changesets/cli": "^3.0.3",
         "@cloudflare/vitest-pool-workers": "0.12.21",
@@ -99,6 +100,16 @@
         "redis",
       ],
     },
+    "packages/webhooks": {
+      "name": "@anyonce/webhooks",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@anyonce/core": "workspace:*",
+      },
+      "peerDependencies": {
+        "@anyonce/core": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@ampproject/remapping": ["@ampproject/remapping@2.3.0", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.5", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw=="],
@@ -112,6 +123,8 @@
     "@anyonce/hono": ["@anyonce/hono@workspace:packages/hono"],
 
     "@anyonce/stores": ["@anyonce/stores@workspace:packages/stores"],
+
+    "@anyonce/webhooks": ["@anyonce/webhooks@workspace:packages/webhooks"],
 
     "@aws-sdk/client-dynamodb": ["@aws-sdk/client-dynamodb@3.1134.0", "", { "dependencies": { "@aws-sdk/core": "^3.978.0", "@aws-sdk/credential-provider-node": "^3.972.83", "@aws-sdk/dynamodb-codec": "^3.973.45", "@aws-sdk/middleware-endpoint-discovery": "^3.972.30", "@aws-sdk/types": "^3.974.5", "@smithy/core": "^3.33.3", "@smithy/fetch-http-handler": "^5.7.2", "@smithy/node-http-handler": "^4.11.3", "@smithy/types": "^4.17.2", "tslib": "^2.6.2" } }, "sha512-i2FzVUVQWT0fEPE7/CxIP0620svDeNZKw4yU7VAa1s3otwXJ7CP2hgblvbPD6H3p+mTNSPfHoEyxK0iZDmBODQ=="],
 
