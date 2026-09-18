@@ -20,7 +20,7 @@ const UNTRANSLATED_WARNING =
   'anyonce: an in-flight duplicate was reported to anyq but no strategy translated it. ' +
   'Configure idempotencyStrategy() on the consumer so duplicates park instead of taking the legacy retry path.';
 
-/** D15: the only result a queue operation ever stores (REQ-Q-5, Q26). */
+/** D15: the only result a queue operation ever stores (REQ-Q-5, Q43). */
 const OK_RESULT: StoredResult = { kind: 'message', outcome: 'ok' };
 
 function policyFor<T>(options: ResolvedOptions<T>): ExecutePolicy {

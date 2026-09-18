@@ -215,7 +215,7 @@ Recommended resolution: one partition key, `pk = scope + <unit separator> + key`
 
 **Decision: pending.** P3 proceeds on the recommendation.
 
-## Q23: anyq's park is not identity preserving on the two adapters that support it natively
+## Q40: anyq's park is not identity preserving on the two adapters that support it natively
 
 D15 maps an in-flight duplicate to a park for the lease remainder, and Q2 makes that a `{ action: 'park', delayMs }` decision returned by the companion strategy. Reading the published adapters shows what park actually does:
 
@@ -228,7 +228,7 @@ Recommended resolution: keep D15's mapping and make the key source explicit and 
 
 **Decision: pending.** P4a proceeds on the recommendation.
 
-## Q24: REQ-DOC-9 says nine anyq adapters; anyq 0.5.0 publishes eleven
+## Q41: REQ-DOC-9 says nine anyq adapters; anyq 0.5.0 publishes eleven
 
 The npm scope holds `@anyq/core` plus eleven adapters: memory, redis-streams, rabbitmq, sqs, sns, google-pubsub, kafka, nats, azure-servicebus, cloudflare-queues, pgmq. `@anyq/sns` ships a producer only (no `consumer.d.ts`), so ten have a consumer. The Go module has nine consumer packages: it has no cloudflare-queues, which is a Workers only runtime.
 
@@ -236,7 +236,7 @@ Recommended resolution: read REQ-DOC-9's "all nine" as "every anyq consumer adap
 
 **Decision: pending.** P4a proceeds on the recommendation.
 
-## Q25: D8's queue scope is not derivable from a message on every adapter
+## Q42: D8's queue scope is not derivable from a message on every adapter
 
 D8 fixes the queue scope at `${queueName}/${consumerGroup}`. The wrapped handler receives a message, not the consumer, so the scope has to come from `metadata`. Reading `ProviderMetadata` in both languages: redis-streams carries both the stream and the consumer group; memory, sqs, kafka, pgmq, nats, google-pubsub and cloudflare-queues carry a queue, topic, stream or subscription name but no group; rabbitmq carries an exchange and a routing key but no queue name; azure-servicebus carries neither.
 
@@ -244,7 +244,7 @@ Recommended resolution: `scope?: string | ((message) => string)` with a default 
 
 **Decision: pending.** P4a proceeds on the recommendation.
 
-## Q26: D15's stored error arm is unreachable under REQ-Q-3
+## Q43: D15's stored error arm is unreachable under REQ-Q-3
 
 D15 says the stored result for a queue operation is `{ outcome: 'ok' } | { outcome: 'error', name, message }`. REQ-Q-3 says a handler exception abandons the record and rethrows so anyq's retry and dead-letter policy apply unchanged. The engine only calls `complete` after `run` returns, so an abandoned claim stores nothing and the error arm is never written.
 

@@ -63,7 +63,7 @@ export class FingerprintError extends AnyonceQueueError {
   }
 }
 
-/** Q25: the wrapper cannot derive something it needs and the caller must supply it. */
+/** Q42: the wrapper cannot derive something it needs and the caller must supply it. */
 export class QueueConfigurationError extends AnyonceQueueError {
   constructor(message: string) {
     super(message, 'configuration', false);

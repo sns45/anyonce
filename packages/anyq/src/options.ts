@@ -3,7 +3,7 @@ import type { IMessage, MessageHeaders, ProviderMetadata } from '@anyq/core';
 import { QueueConfigurationError } from './errors';
 import { messageFingerprint } from './fingerprint';
 
-/** REQ-Q-1 key sources. Q23: only 'body' survives an anyq park on every adapter. */
+/** REQ-Q-1 key sources. Q40: only 'body' survives an anyq park on every adapter. */
 export type KeySource = 'id' | 'header' | 'body';
 
 /** The header a producer sets when the broker id is not stable (REQ-DOC-1, Q4). */
@@ -97,7 +97,7 @@ export async function resolveKey<T>(
   return key;
 }
 
-/** Q25: the queue half of D8's scope, per provider, from what the message actually carries. */
+/** Q42: the queue half of D8's scope, per provider, from what the message actually carries. */
 function queueName(metadata: ProviderMetadata): {
   queue: string | undefined;
   group: string | undefined;

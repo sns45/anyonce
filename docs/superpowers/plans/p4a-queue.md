@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun 1.2.21 local (CI Bun latest 1.4.x), TypeScript 5 strict, tsup (ESM + CJS + d.ts), Biome 2, `@anyq/core` 0.5.0 and the `@anyq/memory`, `@anyq/redis-streams`, `@anyq/sqs`, `@anyq/kafka` adapters 0.5.0, Go 1.26 minimum with `github.com/sns45/anyq/go v0.5.0`, golangci-lint 2.13.2, Docker services from `test/compose.yml` (Redis 6379, ElasticMQ 9324, Redpanda 9092).
 
-**Spec:** `requirements.md` sections 2 (D6, D8, D9, D13, D14, D15, D21), 3 (the engine contract), 4.5 (REQ-Q-1..8), 4.8 (REQ-DOC-9), 4.9 (REQ-REL-4), 5 (NFR-2); `docs/reference/anyq-interfaces.md`; `docs/superpowers/questions.md` Q2, Q3, Q4, Q12 and the new Q23 to Q26 (Task 1); `docs/superpowers/specs/2026-09-anyonce-design.md` item B9; `CHECKLIST.md` sections "Every phase" and "P4a queue door".
+**Spec:** `requirements.md` sections 2 (D6, D8, D9, D13, D14, D15, D21), 3 (the engine contract), 4.5 (REQ-Q-1..8), 4.8 (REQ-DOC-9), 4.9 (REQ-REL-4), 5 (NFR-2); `docs/reference/anyq-interfaces.md`; `docs/superpowers/questions.md` Q2, Q3, Q4, Q12 and the new Q40 to Q43 (Task 1); `docs/superpowers/specs/2026-09-anyonce-design.md` item B9; `CHECKLIST.md` sections "Every phase" and "P4a queue door".
 
 ## Global Constraints
 
@@ -31,9 +31,9 @@
 
 - **Strategies are imported from the `@anyq/core` root.** `docs/reference/anyq-interfaces.md` cites `@anyq/core/strategies`; the published 0.5.0 `exports` map has no such subpath and re-exports every strategy factory from `.`. Import `retryThenDeadLetter` and the strategy types from `@anyq/core`.
 - **`@anyq/core` is ESM only, and a static import is fine.** Verified locally on Node 22.17: `require()` of the built `@anyq/core` ESM entry resolves (Node's require(esm) is unflagged from 22.12). `@anyonce/anyq` therefore ships ESM and CJS like every other package and the node-compat CI job requires its CJS entry.
-- **Key source is an explicit option with three named modes.** `key?: 'id' | 'header' | 'body' | ((message) => string | Promise<string>)`, default `'id'` (REQ-Q-1: anyq always populates `message.id`). `'header'` reads `keyHeader` (default `idempotency-key`) case-insensitively and decodes byte values with `TextDecoder`. `'body'` is the D9 fingerprint of the body, which is the only key source that survives an anyq park (Q23).
+- **Key source is an explicit option with three named modes.** `key?: 'id' | 'header' | 'body' | ((message) => string | Promise<string>)`, default `'id'` (REQ-Q-1: anyq always populates `message.id`). `'header'` reads `keyHeader` (default `idempotency-key`) case-insensitively and decodes byte values with `TextDecoder`. `'body'` is the D9 fingerprint of the body, which is the only key source that survives an anyq park (Q40).
 - **Scope is derived from provider metadata, and a provider that cannot supply one is a configuration error.** `memory` uses `metadata.memory.queueName`, `redis-streams` uses `stream` and `consumerGroup`, `sqs` uses `queueUrl`, `kafka` uses `topic`, `pgmq` uses `queueName`, `nats` uses `stream`, `google-pubsub` uses `subscription`, `cloudflare-queues` uses `queueName`. `rabbitmq` and `azure-servicebus` carry no queue name on the message, so the default throws `QueueConfigurationError` and the caller passes `scope`. An explicit `consumerGroup` option is appended as `${queue}/${group}` when the metadata has no group of its own (D8).
-- **D15's `{ outcome: 'error' }` arm is not produced.** REQ-Q-3 abandons the claim and rethrows on a handler error, so the engine never reaches `complete` for a failure. Storing failures would replay a permanent error for the whole TTL and take the message out of anyq's retry and dead-letter policy, which REQ-Q-3 exists to preserve. The arm stays in `StoredResult` from P1. Recorded as Q26.
+- **D15's `{ outcome: 'error' }` arm is not produced.** REQ-Q-3 abandons the claim and rethrows on a handler error, so the engine never reaches `complete` for a failure. Storing failures would replay a permanent error for the whole TTL and take the message out of anyq's retry and dead-letter policy, which REQ-Q-3 exists to preserve. The arm stays in `StoredResult` from P1. Recorded as Q43.
 - **Untranslated in-flight detection is one delivery late.** The wrapper cannot see the consumer's config, so it marks each `InFlightError` it throws and checks that mark at the start of the next delivery: if the previous in-flight error was never translated by a strategy, it warns once (Q2's "if it can detect"). The README states the requirement in its first paragraph either way.
 - **The typed errors expose both `instanceof` and a structural `code`.** `isInFlightError` and `isFingerprintMismatchError` check `instanceof` first and fall back to `code`, so two copies of the package in one dependency tree still translate. `retryable` is a plain property so anyq's `isRetryableError` predicate reads it without `@anyonce/anyq` extending `AnyQError`.
 - **Go's park policy default is fail loud.** `core.BaseQueueConfig.AllowParkDowngrade` defaults to false in Go and to true in TypeScript. The companion strategy's name is not in anyq's `neverParkStrategies` list, so a Go consumer on Kafka or Redis must set `AllowParkDowngrade: true`. The tests set it and `docs/queue-ids.md` says so.
@@ -72,9 +72,9 @@ go/anyqmw/errors_test.go, options_test.go, middleware_test.go, strategy_test.go,
 go/anyqmw/services_test.go                 REQ-Q-6 SQS and Kafka behind servicetest.Require
 go/go.mod                                  github.com/sns45/anyq/go v0.5.0
 docs/queue-ids.md                          REQ-DOC-9
-docs/superpowers/questions.md              Q23, Q24, Q25, Q26
+docs/superpowers/questions.md              Q40, Q41, Q42, Q43
 docs/reference/anyq-interfaces.md          one correction note (the SQS park row)
-requirements.md                            4.5 and 4.8 wording per Q23 to Q26
+requirements.md                            4.5 and 4.8 wording per Q40 to Q43
 CLAUDE.md                                  layout and dependency lines
 package.json                               test, test:services and test:reqs script lines
 test/ci.test.ts                            service-suite scan covers packages/anyq/services
@@ -83,7 +83,7 @@ test/ci.test.ts                            service-suite scan covers packages/an
 ```
 
 ---
-### Task 1: Record Q23 to Q26 and amend the spec files
+### Task 1: Record Q40 to Q43 and amend the spec files
 
 **Files:**
 - Modify: `docs/superpowers/questions.md` (append four entries), `requirements.md` (4.5 REQ-Q-1 note, 4.8 REQ-DOC-9 wording), `docs/reference/anyq-interfaces.md` (one correction note), `CLAUDE.md` (layout and dependency lines)
@@ -94,10 +94,10 @@ test/ci.test.ts                            service-suite scan covers packages/an
 
 The design walk against the published anyq 0.5.0 (npm `@anyq/*` 0.5.0, Go module `github.com/sns45/anyq/go v0.5.0`) surfaced four items. Each is filed with decision `pending` and work proceeds on the recommendation, exactly as Q15 to Q22 were.
 
-- [ ] **Step 1: Append Q23 to `docs/superpowers/questions.md`**
+- [ ] **Step 1: Append Q40 to `docs/superpowers/questions.md`**
 
 ```markdown
-## Q23: anyq's park is not identity preserving on the two adapters that support it natively
+## Q40: anyq's park is not identity preserving on the two adapters that support it natively
 
 D15 maps an in-flight duplicate to a park for the lease remainder, and Q2 makes that a `{ action: 'park', delayMs }` decision returned by the companion strategy. Reading the published adapters shows what park actually does:
 
@@ -111,10 +111,10 @@ Recommended resolution: keep D15's mapping and make the key source explicit and 
 **Decision: pending.** P4a proceeds on the recommendation.
 ```
 
-- [ ] **Step 2: Append Q24**
+- [ ] **Step 2: Append Q41**
 
 ```markdown
-## Q24: REQ-DOC-9 says nine anyq adapters; anyq 0.5.0 publishes eleven
+## Q41: REQ-DOC-9 says nine anyq adapters; anyq 0.5.0 publishes eleven
 
 The npm scope holds `@anyq/core` plus eleven adapters: memory, redis-streams, rabbitmq, sqs, sns, google-pubsub, kafka, nats, azure-servicebus, cloudflare-queues, pgmq. `@anyq/sns` ships a producer only (no `consumer.d.ts`), so ten have a consumer. The Go module has nine consumer packages: it has no cloudflare-queues, which is a Workers only runtime.
 
@@ -123,10 +123,10 @@ Recommended resolution: read REQ-DOC-9's "all nine" as "every anyq consumer adap
 **Decision: pending.** P4a proceeds on the recommendation.
 ```
 
-- [ ] **Step 3: Append Q25**
+- [ ] **Step 3: Append Q42**
 
 ```markdown
-## Q25: D8's queue scope is not derivable from a message on every adapter
+## Q42: D8's queue scope is not derivable from a message on every adapter
 
 D8 fixes the queue scope at `${queueName}/${consumerGroup}`. The wrapped handler receives a message, not the consumer, so the scope has to come from `metadata`. Reading `ProviderMetadata` in both languages: redis-streams carries both the stream and the consumer group; memory, sqs, kafka, pgmq, nats, google-pubsub and cloudflare-queues carry a queue, topic, stream or subscription name but no group; rabbitmq carries an exchange and a routing key but no queue name; azure-servicebus carries neither.
 
@@ -135,10 +135,10 @@ Recommended resolution: `scope?: string | ((message) => string)` with a default 
 **Decision: pending.** P4a proceeds on the recommendation.
 ```
 
-- [ ] **Step 4: Append Q26**
+- [ ] **Step 4: Append Q43**
 
 ```markdown
-## Q26: D15's stored error arm is unreachable under REQ-Q-3
+## Q43: D15's stored error arm is unreachable under REQ-Q-3
 
 D15 says the stored result for a queue operation is `{ outcome: 'ok' } | { outcome: 'error', name, message }`. REQ-Q-3 says a handler exception abandons the record and rethrows so anyq's retry and dead-letter policy apply unchanged. The engine only calls `complete` after `run` returns, so an abandoned claim stores nothing and the error arm is never written.
 
@@ -149,9 +149,9 @@ Recommended resolution: the queue door stores only `{ kind: 'message', outcome: 
 
 - [ ] **Step 5: Amend `requirements.md`**
 
-In 4.5 REQ-Q-1, after "Redelivery id stability per adapter is documented in `docs/queue-ids.md`.", add: "The key source is an explicit option (`'id'`, `'header'`, `'body'` or a function) because an anyq park does not preserve the message id on every adapter (Q23)."
+In 4.5 REQ-Q-1, after "Redelivery id stability per adapter is documented in `docs/queue-ids.md`.", add: "The key source is an explicit option (`'id'`, `'header'`, `'body'` or a function) because an anyq park does not preserve the message id on every adapter (Q40)."
 
-In 4.8 REQ-DOC-9, replace "one row per anyq adapter (all nine)" with "one row per anyq consumer adapter" and leave the rest of the sentence intact (Q24).
+In 4.8 REQ-DOC-9, replace "one row per anyq adapter (all nine)" with "one row per anyq consumer adapter" and leave the rest of the sentence intact (Q41).
 
 - [ ] **Step 6: Add the correction note to `docs/reference/anyq-interfaces.md`**
 
@@ -162,7 +162,7 @@ Append at the end of the file:
 
 The sections above were transcribed from the anyq source at `b49d41f`. Two rows do not match the published 0.5.0 artifacts and are corrected here rather than edited above, so the transcription stays verbatim:
 
-- TypeScript adapter table, `sqs` `parkMessage`: the published `@anyq/sqs` 0.5.0 does not change visibility. It acks the received message and publishes a new one with `SendMessage` and `DelaySeconds`, carrying `MessageBody` only, so the parked copy has a new `MessageId` and no message attributes. `@anyq/memory` `parkMessage` likewise re-enqueues and mints a fresh id, keeping `key` and `headers`. See `docs/superpowers/questions.md` Q23.
+- TypeScript adapter table, `sqs` `parkMessage`: the published `@anyq/sqs` 0.5.0 does not change visibility. It acks the received message and publishes a new one with `SendMessage` and `DelaySeconds`, carrying `MessageBody` only, so the parked copy has a new `MessageId` and no message attributes. `@anyq/memory` `parkMessage` likewise re-enqueues and mints a fresh id, keeping `key` and `headers`. See `docs/superpowers/questions.md` Q40.
 - Built-in strategies are re-exported from the `@anyq/core` root. The published `exports` map has no `./strategies` subpath.
 ```
 
@@ -183,7 +183,7 @@ Expected: no output.
 
 ```bash
 git add docs/superpowers/questions.md requirements.md docs/reference/anyq-interfaces.md CLAUDE.md
-git commit -m "docs(spec): record Q23 to Q26 and amend REQ-DOC-9 for the published anyq adapters"
+git commit -m "docs(spec): record Q40 to Q43 and amend REQ-DOC-9 for the published anyq adapters"
 ```
 
 ---
@@ -462,7 +462,7 @@ export class FingerprintError extends AnyonceQueueError {
   }
 }
 
-/** Q25: the wrapper cannot derive something it needs and the caller must supply it. */
+/** Q42: the wrapper cannot derive something it needs and the caller must supply it. */
 export class QueueConfigurationError extends AnyonceQueueError {
   constructor(message: string) {
     super(message, 'configuration', false);
@@ -718,7 +718,7 @@ import type { IMessage, MessageHeaders, ProviderMetadata } from '@anyq/core';
 import { QueueConfigurationError } from './errors';
 import { messageFingerprint } from './fingerprint';
 
-/** REQ-Q-1 key sources. Q23: only 'body' survives an anyq park on every adapter. */
+/** REQ-Q-1 key sources. Q40: only 'body' survives an anyq park on every adapter. */
 export type KeySource = 'id' | 'header' | 'body';
 
 /** The header a producer sets when the broker id is not stable (REQ-DOC-1, Q4). */
@@ -810,7 +810,7 @@ export async function resolveKey<T>(
   return key;
 }
 
-/** Q25: the queue half of D8's scope, per provider, from what the message actually carries. */
+/** Q42: the queue half of D8's scope, per provider, from what the message actually carries. */
 function queueName(metadata: ProviderMetadata): { queue?: string; group?: string } {
   switch (metadata.provider) {
     case 'memory':
@@ -1071,7 +1071,7 @@ const UNTRANSLATED_WARNING =
   'anyonce: an in-flight duplicate was reported to anyq but no strategy translated it. ' +
   'Configure idempotencyStrategy() on the consumer so duplicates park instead of taking the legacy retry path.';
 
-/** D15: the only result a queue operation ever stores (REQ-Q-5, Q26). */
+/** D15: the only result a queue operation ever stores (REQ-Q-5, Q43). */
 const OK_RESULT: StoredResult = { kind: 'message', outcome: 'ok' };
 
 function policyFor<T>(options: ResolvedOptions<T>): ExecutePolicy {
@@ -1379,7 +1379,7 @@ class Probe<T> extends MemoryConsumer<T> {
 
 - [ ] **Step 1: Write the memory adapter suite**
 
-`packages/anyq/test/memory-adapter.test.ts` proves the three REQ-Q-8 acceptance cases on an adapter with native park, plus the Q23 finding. Tests, in order:
+`packages/anyq/test/memory-adapter.test.ts` proves the three REQ-Q-8 acceptance cases on an adapter with native park, plus the Q40 finding. Tests, in order:
 
 ```ts
 test('REQ-Q-6: a memory consumer runs a wrapped handler once for a redelivered message', ...)
@@ -1402,16 +1402,16 @@ test('REQ-Q-8: with no strategy the typed error reaches anyq legacy handling unt
 Same setup with `strategy` unset; assert `runStrategy` returns `{ handled: false }` and that the error the consumer would see is the `InFlightError` with `translated === false`.
 
 ```ts
-test('REQ-Q-1: an anyq park re-enqueues with a fresh message id, which the id key source cannot follow (Q23)', ...)
+test('REQ-Q-1: an anyq park re-enqueues with a fresh message id, which the id key source cannot follow (Q40)', ...)
 ```
-Park a real message through the consumer's park hook, read the redelivered message, assert its `id` differs from the original and its `headers` still carry `idempotency-key`. This test is the executable form of Q23 and the reason `docs/queue-ids.md` recommends a header or body key on this adapter.
+Park a real message through the consumer's park hook, read the redelivered message, assert its `id` differs from the original and its `headers` still carry `idempotency-key`. This test is the executable form of Q40 and the reason `docs/queue-ids.md` recommends a header or body key on this adapter.
 
 - [ ] **Step 2: Write the three service suites**
 
 Each of `packages/anyq/services/redis-streams.test.ts`, `sqs.test.ts` and `kafka.test.ts` covers the same four cases with the adapter's own transport:
 
 - Redis Streams (`127.0.0.1:6379`, `@anyq/redis-streams`): create a unique stream and group per run, publish, consume. Scope comes from the metadata (`stream/consumerGroup`), so no `scope` option is needed; this suite is the one that proves the derived-scope path against real metadata. `allowParkDowngrade: true` and `key: 'id'` (Redis entry ids are stable across redelivery).
-- SQS (`http://127.0.0.1:9324`, `@anyq/sqs`, queue created per run with `@aws-sdk/client-sqs` `CreateQueueCommand` and static dummy credentials): `key: 'body'`, because an anyq park on SQS re-publishes the body and drops both the id and the attributes (Q23). Pass `scope` explicitly if the queue URL is unwieldy; otherwise the derived `queueUrl` scope is fine and should be asserted once.
+- SQS (`http://127.0.0.1:9324`, `@anyq/sqs`, queue created per run with `@aws-sdk/client-sqs` `CreateQueueCommand` and static dummy credentials): `key: 'body'`, because an anyq park on SQS re-publishes the body and drops both the id and the attributes (Q40). Pass `scope` explicitly if the queue URL is unwieldy; otherwise the derived `queueUrl` scope is fine and should be asserted once.
 - Kafka (`127.0.0.1:9092`, `@anyq/kafka`): a unique topic per run (Redpanda's dev-container profile auto-creates topics; if the adapter's client refuses, create the topic through the adapter's admin client before subscribing). `allowParkDowngrade: true` because Kafka has no native delay, and the park case asserts the downgrade path: the inner handler's first call is at or after `leaseUntil`.
 
 Each file starts with the reachability probe from `packages/stores/services/redis.test.ts` so it skips with a clear message locally and fails under `ANYONCE_REQUIRE_SERVICES=1`.
@@ -1696,7 +1696,7 @@ var (
 	ErrInFlight = errors.New("anyqmw: a duplicate of this message is already being processed")
 	// ErrFingerprintMismatch marks an identity that was seen with a different payload (D15).
 	ErrFingerprintMismatch = errors.New("anyqmw: this message identity was seen with a different payload")
-	// ErrConfiguration marks something the wrapper cannot derive and the caller must supply (Q25).
+	// ErrConfiguration marks something the wrapper cannot derive and the caller must supply (Q42).
 	ErrConfiguration = errors.New("anyqmw: configuration")
 )
 
@@ -1955,7 +1955,7 @@ func Strategy(inner core.Strategy) core.Strategy {
 - `REQ-Q-8: with the strategy configured, an in-flight duplicate parks and the handler waits for the lease` (pre-claim with a 300 ms lease, record `leaseUntil`, drive `ApplyStrategy` with the returned `*InFlightError` and a reinvoke that re-runs the wrapped handler, assert the recorded first-call time is at or after `leaseUntil` and the inner handler ran once)
 - `REQ-Q-8: with the strategy configured, a payload mismatch dead-letters with reason fingerprint-mismatch`
 - `REQ-Q-8: with no strategy the typed error reaches anyq legacy handling untranslated` (`ApplyStrategy` returns `handled == false`)
-- `REQ-Q-1: an anyq park re-enqueues with a fresh message id, which the id key source cannot follow (Q23)`
+- `REQ-Q-1: an anyq park re-enqueues with a fresh message id, which the id key source cannot follow (Q40)`
 
 - [ ] **Step 4: Write the service-backed test**
 
@@ -2060,7 +2060,7 @@ Table columns, one row per consumer adapter:
 | Message id | how anyq builds `message.id` for that adapter, quoted from the adapter source |
 | Stable across redelivery | yes or no, with the mechanism |
 | Stable across producer retry | always no, with one sentence on why |
-| Survives an anyq park | yes or no (Q23) |
+| Survives an anyq park | yes or no (Q40) |
 | Derived scope | what `resolveScope` produces, or "set scope" |
 | Recommended key source | `id`, `header` or `body` |
 | Status | `verified in P4a` or `per anyq adapter docs, unverified` |
@@ -2130,7 +2130,7 @@ Every phase:
 11. `rg -n "[\x{2013}\x{2014}]" --glob '!node_modules' --glob '!*.lock' --glob '!docs/reference/**' .` returns nothing
 12. `rg -n 'console\.(log|info|warn|error)\(.*key' packages go` returns nothing
 13. `.changeset/p4a-queue.md` present
-14. `docs/superpowers/questions.md` reviewed; Q23 to Q26 each carry a recommended resolution
+14. `docs/superpowers/questions.md` reviewed; Q40 to Q43 each carry a recommended resolution
 
 P4a:
 
