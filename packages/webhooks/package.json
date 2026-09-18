@@ -27,6 +27,9 @@
   },
   "devDependencies": {
     "@anyhook/signing": "0.2.2",
-    "@anyonce/core": "workspace:*"
+    "@anyonce/conformance": "workspace:*",
+    "@anyonce/core": "workspace:*",
+    "@anyonce/fixture-hono": "workspace:*",
+    "hono": "^4.13.8"
   }
 }

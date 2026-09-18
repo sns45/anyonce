@@ -143,6 +143,7 @@ describe('ci workflow', () => {
       '@anyonce/core/http',
       '@anyonce/hono',
       '@anyonce/conformance/runtime',
+      '@anyonce/webhooks',
     ]) {
       expect(text).toContain(`require('${entry}')`);
     }

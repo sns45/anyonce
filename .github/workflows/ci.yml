@@ -123,7 +123,7 @@ jobs:
       - run: bun run build
       - run: node --input-type=module -e "const m = await import('./packages/conformance/dist/index.js'); if (typeof m.runVectors !== 'function') process.exit(1);"
       - run: node -e "const m = require('./packages/conformance/dist/index.cjs'); if (typeof m.runVectors !== 'function') process.exit(1);"
-      - run: node -e "require('@anyonce/core'); require('@anyonce/core/testing'); require('@anyonce/core/http'); require('@anyonce/hono'); require('@anyonce/conformance/runtime')"
+      - run: node -e "require('@anyonce/core'); require('@anyonce/core/testing'); require('@anyonce/core/http'); require('@anyonce/hono'); require('@anyonce/conformance/runtime'); require('@anyonce/webhooks');"
       - run: bun run test:node
 
   deno:

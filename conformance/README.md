@@ -73,3 +73,18 @@ conformance.Run(t, handler, conformance.Options{Capabilities: []string{"short-tt
 2. Core vectors must cite a `draftRef`; profile vectors must not use `requires`.
 3. Add the id to `CORE_IDS` or `PROFILE_IDS` in `packages/conformance/test/catalog.ts`, and to `BARE_PASS_IDS` there if it passes without an idempotency layer.
 4. Run `bun run vectors:validate` and `bun test packages/conformance`.
+
+## Running the suite through the webhook door
+
+`@anyonce/webhooks` and `go/webhookmw` are HTTP doors, so the same vectors apply to them. The vectors were
+written for the `Idempotency-Key` door and carry no webhook signatures, so the harness points `idHeader` at the
+vector header, verifies with a constant true (the verification gate has its own tests), and skips the runner's
+control path. See `packages/webhooks/test/conformance.test.ts` and `go/webhookmw/conformance_test.go`.
+
+| Vector | Applies to the webhook door | Why |
+|---|---|---|
+| every `core` vector | yes | the receiver changes only where the key comes from, what the scope is and what runs before the store |
+| every `profile` vector | yes | the same, and the profile behaviours are the bridge's, not the door's |
+
+No vector is currently inapplicable. A vector that stops passing is listed here with its reason, never made to
+pass by weakening the receiver.
