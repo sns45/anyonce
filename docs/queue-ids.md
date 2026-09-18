@@ -1,0 +1,70 @@
+# Queue message ids
+
+A consumer side message id deduplicates redeliveries of one published message and nothing else. Every anyq producer mints a fresh id on every `publish` call, so a **producer retry**, a publish that failed or timed out and was sent again, puts a second message on the queue carrying a second id, and no consumer side id can tell the two apart. On top of that an anyq park is not identity preserving on every adapter (Q40): several adapters implement a park by republishing the message, which mints a new id and on some adapters drops the headers as well, so the parked copy can take a fresh claim and run the handler while the first claim is still live. The recommended default is therefore a producer supplied `idempotency-key` header, set once by the producer and reused across its own retries, with `key: 'header'` on the door (`Options.Key: anyqmw.KeySourceHeader` in Go). Use `key: 'id'` only where the table below says the id is stable and the producer never retries a publish, and `key: 'body'` where neither the id nor the header survives a park.
+
+| Adapter | Packages | Message id | Stable across redelivery | Stable across producer retry | Survives an anyq park | Derived scope | Recommended key source | Status |
+|---|---|---|---|---|---|---|---|---|
+| `memory` | `@anyq/memory`, Go `memory` | a queue minted id: `<epochMs>-<seq>-<rand>` in TypeScript, `msg-<epochMs>-<hex>` in Go | yes: a requeue pushes the same stored message back with its id | no: every publish enqueues a new id | no: the park acks the original and re-enqueues, minting a fresh id. The body, key and headers survive | the queue name | `header` | verified in P4a, TypeScript and Go |
+| `redis-streams` | `@anyq/redis-streams`, Go `redis` | the Redis stream entry id, `<ms>-<seq>` | yes: `XAUTOCLAIM` redelivers the same pending entry | no: every publish is a new `XADD` entry | yes: no native delay, so the park downgrades to an in-process retry of the same delivery | `stream/consumerGroup`, both halves from the message metadata | `header`, or `id` when the producer never retries | verified in P4a, TypeScript. The Go cells are read from `go/redis` |
+| `rabbitmq` | `@anyq/rabbitmq`, Go `rabbitmq` | `properties.messageId`, falling back to `rmq-<deliveryTag>` | yes when the producer set a `messageId`. The fallback is not: a delivery tag is per delivery and per channel | no: the producer mints a fresh UUID per publish | yes: neither package overrides the park hook or declares native delay, so the park downgrades in process | set `scope`: the metadata names an exchange and a routing key, never a queue | `header` | per anyq adapter source, unverified |
+| `sqs` | `@anyq/sqs`, Go `sqs` | `MessageId` | yes: the same `MessageId` comes back after the visibility timeout | no: a re-sent publish is a new message with a new `MessageId` | no: the park re-sends the body alone with `DelaySeconds` and deletes the original, so both the `MessageId` and the message attributes are lost | the queue URL | `body` | verified in P4a, TypeScript and Go |
+| `google-pubsub` | `@anyq/google-pubsub`, Go `pubsub` | `message.id`, the server assigned Pub/Sub id, passed through unchanged | yes: the adapter never rewrites the server id | no: every publish gets its own server id | yes: neither package overrides the park hook or declares native delay, so the park downgrades in process | the subscription name | `header` | per anyq adapter source, unverified |
+| `kafka` | `@anyq/kafka`, Go `kafka` | synthesized `<topic>-<partition>-<offset>`. Kafka has no message id of its own | yes: a redelivery re-reads the same offset | no: a retried publish writes a second offset | yes: no native delay, so the park downgrades to an in-process retry of the same delivery | the topic. Pass `consumerGroup` to append the group | `header`, or `id` when the producer never retries | verified in P4a, TypeScript and Go |
+| `nats` | `@anyq/nats`, Go `nats` | TypeScript: the `id` field of the producer's JSON envelope, falling back to the JetStream stream sequence. Go: the stream sequence, replaced by the configured `MsgIDHeader` header when the message carries one | yes: a JetStream redelivery keeps both the stream sequence and the payload | no: the producer mints a fresh UUID, and a fresh JetStream `msgID`, per publish | yes: the park is `nak(delay)`, which redelivers the same JetStream message | the stream name | `header` | per anyq adapter source, unverified |
+| `azure-servicebus` | `@anyq/azure-servicebus`, Go `azureservicebus` | `messageId`, falling back to a per delivery value: `sb-<epochMs>` in TypeScript, a generated `msg-<epochMs>-<hex>` in Go | yes when the producer set a `messageId`. The fallback is minted per delivery and is not | no: the producer mints a fresh UUID per publish | differs per language: the TypeScript park re-sends with the same `messageId` and no application properties, so the id survives and the headers do not, while the Go park re-sends the application properties and no `MessageID`, so the headers survive and the id does not | set `scope`: the metadata names neither a queue nor a topic | `body`, the only source that survives the park in both languages | per anyq adapter source, unverified |
+| `cloudflare-queues` | `@anyq/cloudflare-queues`, TypeScript only | `cfMessage.id`, the Cloudflare Queues id, passed through unchanged | yes: a retry redelivers the same Cloudflare message under the same id | no: every send is a new message | yes: the park is `cfMessage.retry({ delaySeconds })` on the message already in hand | the queue name | `id`. This adapter carries no headers at all, so `header` cannot be used | per anyq adapter source, unverified |
+| `pgmq` | `@anyq/pgmq`, Go `pgmq` | the pgmq row id, `msg_id` rendered as a string | yes: the row stays put and comes back with the same `msg_id` | no: every publish inserts a new row | yes: the park moves the row's visibility time forward, so the same row returns with the same id and headers | the queue name | `header` | per anyq adapter source, unverified |
+
+## The columns
+
+**Adapter** is the anyq driver name, the value `message.metadata.provider` carries.
+
+**Packages** is the npm package and the Go package that implement the consumer. `cloudflare-queues` is TypeScript only: the Go module has no such package, because Cloudflare Queues is a Workers runtime (Q41).
+
+**Message id** is how the adapter's consumer builds `message.id`, read out of the published `@anyq/<adapter>` 0.5.0 bundle and out of `github.com/sns45/anyq/go` v0.5.0. Where the two languages build it differently the cell says so per language. A cell that names a fallback names it because the fallback has different stability from the primary value, which is the whole point of the next column.
+
+**Stable across redelivery** is whether the broker hands the same `message.id` to the consumer when the same published message is delivered again, after a nack, a visibility timeout or a consumer group reclaim. A `yes` here is what makes `key: 'id'` usable at all.
+
+**Stable across producer retry** is `no` on every adapter, and it is the reason this page exists. A producer that retries a publish creates a second message: a second `XADD` entry, a second SQS `MessageId`, a second Kafka offset, a second pgmq row. The two messages carry the same payload and different ids, so no consumer side id deduplicates them. Only an identity the producer chooses once and reuses across its own retries does, which is the `idempotency-key` header, or `key: 'body'` where the payload is byte identical between the retries.
+
+**Survives an anyq park** is whether the identity is still the same after `idempotencyStrategy` returns `{ action: 'park', delayMs }` and anyq acts on it (Q40). Two mechanisms are in play. An adapter with `supportsNativeDelay` false has no park hook, so anyq downgrades the park to an in-process wait followed by a re-invocation of the same delivery: nothing about the message changes and every key source survives. An adapter with a native park either keeps the message where it is (`nats` naks with a delay, `pgmq` moves the visibility time, `cloudflare-queues` retries the same message), in which case the id survives, or republishes it (`memory`, `sqs`, `azure-servicebus`), in which case it survives only what the republish copies.
+
+Two per language notes belong to this column. On `sqs` the Go park was driven end to end in P4a against the ElasticMQ container and the loss of the `MessageId` and the message attributes is what the Go suite proves; the TypeScript park could not be driven there at all, because the AWS SDK bundled into `@anyq/sqs` 0.5.0 throws while decoding ElasticMQ 1.6.12's response (Q44), so the TypeScript suite asserts the strategy's park decision instead of an executed park, and the `no` in that cell is read from the adapter's `parkMessage` source rather than executed in TypeScript. On `azure-servicebus` the two languages copy different fields, so neither the id nor the header survives a park in both; `key: 'body'` is the only source that does.
+
+**Derived scope** is what `resolveScope` produces when no `scope` option is passed ([`packages/anyq/src/options.ts`](../packages/anyq/src/options.ts), [`go/anyqmw/options.go`](../go/anyqmw/options.go)). It is D8's `${queueName}/${consumerGroup}`, with the group appended only when one is known, either because the adapter names it on the message (`redis-streams` does, in both languages) or because the caller passed `consumerGroup`. `rabbitmq` and `azure-servicebus` name no queue on the message, so the door raises a typed configuration error at the first delivery naming the option to set rather than quietly sharing one scope across queues (Q42).
+
+**Recommended key source** is the `key` option to pass (`Options.Key` in Go). It is the source that is stable for the failure modes you actually have on that adapter: `header` wherever the headers survive both a redelivery and a park, because a header is also the only source that survives a producer retry; `body` where the headers do not survive a park; `id` only where no header is available at all.
+
+**Status** is `verified in P4a` where a test in this repository drove a real consumer through the door and asserted the behaviour, and `per anyq adapter source, unverified` where the cells were read out of the adapter's published source and nothing here executed them. Verification is marked per language because it differs: TypeScript covered `memory`, `redis-streams`, `sqs` and `kafka` ([`packages/anyq/test/memory-adapter.test.ts`](../packages/anyq/test/memory-adapter.test.ts), [`packages/anyq/services/redis-streams.test.ts`](../packages/anyq/services/redis-streams.test.ts), [`packages/anyq/services/sqs.test.ts`](../packages/anyq/services/sqs.test.ts), [`packages/anyq/services/kafka.test.ts`](../packages/anyq/services/kafka.test.ts)), while Go covered `memory`, `sqs` and `kafka` ([`go/anyqmw/memory_test.go`](../go/anyqmw/memory_test.go), [`go/anyqmw/services_test.go`](../go/anyqmw/services_test.go)). No unverified row is a tested fact, and an unverified row's park and redelivery cells are a reading of the adapter's code, not an observation of the broker.
+
+## What to set
+
+Pass the key source, and pass a scope only where the table says to. Everything else defaults.
+
+```ts
+idempotent(handler, { store, key: 'header' }); // keyHeader defaults to 'idempotency-key'
+idempotent(handler, { store, key: 'body' }); // sqs
+idempotent(handler, { store, key: 'header', scope: 'orders/workers' }); // rabbitmq
+idempotent(handler, { store, key: 'body', scope: 'orders/workers' }); // azure-servicebus
+```
+
+```go
+anyqmw.Wrap(handler, anyqmw.Options{Store: claims, Key: anyqmw.KeySourceHeader})
+anyqmw.Wrap(handler, anyqmw.Options{Store: claims, Key: anyqmw.KeySourceBody})
+anyqmw.Wrap(handler, anyqmw.Options{Store: claims, Key: anyqmw.KeySourceHeader, Scope: "orders/workers"})
+anyqmw.Wrap(handler, anyqmw.Options{Store: claims, Key: anyqmw.KeySourceBody, Scope: "orders/workers"})
+```
+
+Per adapter:
+
+- `memory`, `rabbitmq`, `google-pubsub`, `nats`, `pgmq`: `key: 'header'`. Add `scope` on `rabbitmq`, which names no queue on the message.
+- `redis-streams`, `kafka`: `key: 'header'`, or `key: 'id'` when the producer provably never retries a publish. The scope derives itself; pass `consumerGroup` on `kafka` if two groups on one topic must not share claims.
+- `sqs`: `key: 'body'`. The park drops the message attributes, so no header reaches the parked copy. The scope derives itself from the queue URL.
+- `azure-servicebus`: `key: 'body'` and an explicit `scope`. The two languages' parks preserve different fields, so `body` is the only source that works in both.
+- `cloudflare-queues`: `key: 'id'`. This adapter carries no headers, so deduplicating a producer retry here means putting the identity inside the payload and passing a `key` function that reads it.
+
+Whatever the adapter, the producer is the half that has to cooperate: it sets one `idempotency-key` per unit of work, keeps it across its own retries, and never regenerates it on the retry path. Without that, the door can only deduplicate what the broker already deduplicates.
+
+## `@anyq/sns` has no row
+
+`@anyq/sns` 0.5.0 ships an `SNSProducer` and no consumer: SNS pushes to a subscriber rather than being polled, so there is nothing for the queue door to wrap. Wrap the consumer of whatever SNS delivers to instead, usually the `sqs` row above, and key on the identity the publisher put in the message rather than on anything SNS assigned (Q41).
