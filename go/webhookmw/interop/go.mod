@@ -1,6 +1,6 @@
 module github.com/sns45/anyonce/go/webhookmw/interop
 
-go 1.27.1
+go 1.26
 
 require (
 	github.com/sns45/anyhook/go v0.2.1
