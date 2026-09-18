@@ -67,6 +67,20 @@ describe('verification gate', () => {
     expect(begins).toEqual([]);
   });
 
+  test('REQ-WH-2: a verify callback that throws is 500 configuration-error and never calls begin', async () => {
+    const { store, begins } = countingStore();
+    const handler = webhookReceiver({
+      store,
+      verify: () => {
+        throw new Error('verifier exploded');
+      },
+    })(async () => new Response('handled'));
+    const res = await handler(delivery());
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { code: string }).code).toBe('configuration-error');
+    expect(begins).toEqual([]);
+  });
+
   test('REQ-WH-2: verify sees the raw body bytes and the request', async () => {
     const { store } = countingStore();
     const seen: string[] = [];
@@ -101,6 +115,15 @@ describe('verification gate', () => {
     const res = await handler(req);
     expect(res.status).toBe(202);
     expect(begins).toHaveLength(1);
+  });
+
+  test('REQ-WH-2: a GET to a receiver with no verification still gets 500 configuration-error', async () => {
+    const { store, begins } = countingStore();
+    const handler = webhookReceiver({ store })(async () => new Response('handled'));
+    const res = await handler(new Request('https://example.test/hooks/stripe', { method: 'GET' }));
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { code: string }).code).toBe('configuration-error');
+    expect(begins).toEqual([]);
   });
 
   test('REQ-WH-2: an oversized body is 413 before verification and never calls begin', async () => {

@@ -1,7 +1,8 @@
-import type { IdempotencyRecord } from '@anyonce/core';
+import { type IdempotencyRecord, parseKey, sha256Hex } from '@anyonce/core';
 import {
   type FetchLikeHandler,
   type HttpIdempotencyOptions,
+  type KeyLookup,
   type ProblemCode,
   type ProblemTitles,
   problem,
@@ -17,7 +18,10 @@ import { isVerified } from './marker';
 export const DEFAULT_ID_HEADER = 'webhook-id';
 
 export interface WebhookReceiverOptions
-  extends Omit<HttpIdempotencyOptions, 'headerName' | 'problemTitles'> {
+  extends Omit<
+    HttpIdempotencyOptions,
+    'headerName' | 'problemTitles' | 'scope' | 'principal' | 'keySyntax'
+  > {
   /** REQ-WH-1: the header the delivery id arrives in. Default webhook-id. */
   idHeader?: string;
   /** REQ-WH-1: a body derived id (Stripe event.id, a GitHub delivery header). Wins over idHeader. */
@@ -54,6 +58,37 @@ function webhookTitles(idHeader: string, overrides?: ProblemTitles): ProblemTitl
   };
 }
 
+/** REQ-WH-1 and Q25: the id becomes the store key, so it is length and charset checked, never sf-string parsed. */
+function resolveKey(
+  req: Request,
+  body: Uint8Array,
+  idHeader: string,
+  key?: (req: Request, body: Uint8Array) => string | undefined,
+): KeyLookup {
+  const raw = key !== undefined ? key(req, body) : (req.headers.get(idHeader) ?? undefined);
+  if (raw === undefined || raw === '') return { kind: 'missing' };
+  const parsed = parseKey(raw, 'lenient');
+  if (!parsed.ok) return { kind: 'invalid', reason: parsed.reason };
+  return { kind: 'ok', key: parsed.key };
+}
+
+/** D8 and Q24: `${routePattern}/${sourceId}`, or the route alone when no sender identity is available. */
+function webhookScope(
+  req: Request,
+  body: Uint8Array,
+  routePattern: string | ((req: Request) => string) | undefined,
+  sourceId: ((req: Request, body: Uint8Array) => string | undefined) | undefined,
+): string {
+  const route =
+    routePattern === undefined
+      ? new URL(req.url).pathname
+      : typeof routePattern === 'string'
+        ? routePattern
+        : routePattern(req);
+  const source = sourceId?.(req, body);
+  return source === undefined || source === '' ? route : `${route}/${source}`;
+}
+
 export function webhookReceiver(options: WebhookReceiverOptions) {
   const idHeader = options.idHeader ?? DEFAULT_ID_HEADER;
   const titles = webhookTitles(idHeader, options.problemTitles);
@@ -63,9 +98,12 @@ export function webhookReceiver(options: WebhookReceiverOptions) {
     headerName: idHeader,
     required: options.required ?? true,
     methods: options.methods ?? ['POST'],
+    // D9: the webhook fingerprint is the body bytes alone, so the same delivery on two paths still matches.
+    fingerprint: options.fingerprint ?? ((_req, body) => sha256Hex(body)),
     problemTitles: titles,
   };
   const resolved: ResolvedHttpOptions = resolveHttpOptions(base);
+  const verifiedMarker = options.verifiedMarker;
   let logged = false;
 
   return <Rest extends unknown[]>(handler: FetchLikeHandler<Rest>) => {
@@ -89,13 +127,57 @@ export function webhookReceiver(options: WebhookReceiverOptions) {
       const read = await readBody(req, resolved.maxRequestBytes);
       if (!read.ok) return fail('payload-too-large');
 
-      const verified =
-        options.verify !== undefined
-          ? (await options.verify(req, read.body)) === true
-          : isVerified(req, options.verifiedMarker as string);
+      // Carried finding 1: a verify callback that throws is a broken verifier, not a rejected delivery, so it
+      // is 500 configuration-error (symmetric with the Go side's Options.Verify returning an error) and never
+      // reaches runIdempotent.
+      let verified: boolean;
+      try {
+        verified =
+          options.verify !== undefined
+            ? (await options.verify(req, read.body)) === true
+            : verifiedMarker !== undefined && isVerified(req, verifiedMarker);
+      } catch {
+        return fail('configuration-error');
+      }
       if (!verified) return fail('signature-invalid');
 
-      return runIdempotent(req, (r) => Promise.resolve(handler(r, ...rest)), resolved, {
+      const keyLookup = resolveKey(req, read.body, idHeader, options.key);
+      const routeScope = webhookScope(req, read.body, options.routePattern, options.sourceId);
+
+      // REQ-WH-5: onSuspicious wants the request, and the engine's onMismatch only carries the operation, so
+      // the policy is rebuilt per request with the request closed over. Rebuilding costs three allocations
+      // per delivery, so it only happens when there is an onSuspicious hook to wire; otherwise resolved is
+      // used unchanged. The two calls each get their own try/catch, so a throwing user onMismatch can never
+      // suppress the security relevant onSuspicious call, or the reverse.
+      const runOptions: ResolvedHttpOptions =
+        options.onSuspicious === undefined
+          ? resolved
+          : {
+              ...resolved,
+              policy: {
+                ...resolved.policy,
+                hooks: {
+                  ...resolved.policy.hooks,
+                  onMismatch(op, record) {
+                    try {
+                      options.onSuspicious?.(req, record);
+                    } catch {
+                      // onSuspicious never throws into the receiver; the engine's own safely() would catch
+                      // this too, but a dedicated catch here keeps it from suppressing the call below.
+                    }
+                    try {
+                      resolved.policy.hooks?.onMismatch?.(op, record);
+                    } catch {
+                      // Same rule for a user supplied onMismatch: it never suppresses onSuspicious above.
+                    }
+                  },
+                },
+              },
+            };
+
+      return runIdempotent(req, (r) => Promise.resolve(handler(r, ...rest)), runOptions, {
+        routeScope,
+        keyLookup,
         body: read.body,
       });
     };
