@@ -12,3 +12,4 @@ export { messageFingerprint } from './fingerprint';
 export { idempotent } from './idempotent';
 export type { IdempotentOptions, KeySource, ResolvedOptions } from './options';
 export { DEFAULT_KEY_HEADER } from './options';
+export { IDEMPOTENCY_STRATEGY_NAME, idempotencyStrategy } from './strategy';
