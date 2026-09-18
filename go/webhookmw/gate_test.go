@@ -75,6 +75,12 @@ func TestGate(t *testing.T) {
 		if p.Code != webhookmw.CodeConfigurationError || p.Status != 500 {
 			t.Fatalf("problem = %+v", p)
 		}
+		if p.Title != "The webhook endpoint could not establish that this delivery is genuine" {
+			t.Fatalf("title = %q", p.Title)
+		}
+		if p.Detail != "no verify callback or verifiedMarker is configured" {
+			t.Fatalf("detail = %q", p.Detail)
+		}
 		if store.count() != 0 {
 			t.Fatalf("Begin was called %d times", store.count())
 		}
@@ -188,9 +194,11 @@ func TestGate(t *testing.T) {
 
 	t.Run("REQ-WH-2: a Verify that returns an error is 500 configuration-error and never calls Begin", func(t *testing.T) {
 		store := newCountingStore()
+		var messages []string
 		mw := webhookmw.New(store, webhookmw.Options{
+			Logf: func(format string, args ...any) { messages = append(messages, fmt.Sprintf(format, args...)) },
 			Verify: func(*http.Request, []byte) (bool, error) {
-				return false, fmt.Errorf("the key service is down")
+				return false, fmt.Errorf("the key service is down, key msg_1")
 			},
 		})
 		rec := httptest.NewRecorder()
@@ -204,6 +212,81 @@ func TestGate(t *testing.T) {
 		}
 		if p.Code != webhookmw.CodeConfigurationError || p.Status != 500 {
 			t.Fatalf("problem = %+v", p)
+		}
+		if p.Detail != "the verify callback failed" {
+			t.Fatalf("detail = %q", p.Detail)
+		}
+		if store.count() != 0 {
+			t.Fatalf("Begin was called %d times", store.count())
+		}
+		// Ruling 12: the malfunction is not silent, and ruling 12 again: the line carries neither the
+		// verifier's own error text nor anything from the request.
+		if len(messages) != 1 {
+			t.Fatalf("logged %d times, want 1", len(messages))
+		}
+		for _, leak := range []string{"msg_1", "key service"} {
+			if strings.Contains(messages[0], leak) {
+				t.Fatalf("the log line carries %q: %q", leak, messages[0])
+			}
+		}
+	})
+
+	t.Run("REQ-WH-2: the two configuration-error causes log independently and carry different details", func(t *testing.T) {
+		detailFor := func(t *testing.T, opts webhookmw.Options) (string, []string) {
+			t.Helper()
+			var messages []string
+			opts.Logf = func(format string, args ...any) { messages = append(messages, fmt.Sprintf(format, args...)) }
+			mw := webhookmw.New(newCountingStore(), opts)
+			h := mw.Handler(handled())
+			var p webhookmw.Problem
+			for range 3 {
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, delivery("msg_1", `{"a":1}`))
+				if rec.Code != http.StatusInternalServerError {
+					t.Fatalf("status = %d, want 500", rec.Code)
+				}
+				if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return p.Detail, messages
+		}
+
+		unconfiguredDetail, unconfiguredMessages := detailFor(t, webhookmw.Options{})
+		failedDetail, failedMessages := detailFor(t, webhookmw.Options{
+			Verify: func(*http.Request, []byte) (bool, error) { return false, fmt.Errorf("down") },
+		})
+		if unconfiguredDetail == failedDetail {
+			t.Fatalf("both causes report the same detail %q", unconfiguredDetail)
+		}
+		// Each cause has its own latch, so neither can suppress the other, and each still logs exactly once.
+		if len(unconfiguredMessages) != 1 || len(failedMessages) != 1 {
+			t.Fatalf("logged %d and %d times, want 1 each", len(unconfiguredMessages), len(failedMessages))
+		}
+		if unconfiguredMessages[0] == failedMessages[0] {
+			t.Fatalf("both causes log the same line %q", unconfiguredMessages[0])
+		}
+	})
+
+	t.Run("REQ-WH-2: a configured receiver passes a non-POST straight to next without verifying", func(t *testing.T) {
+		store := newCountingStore()
+		verifyRan := false
+		mw := webhookmw.New(store, webhookmw.Options{
+			Verify: func(*http.Request, []byte) (bool, error) {
+				verifyRan = true
+				return false, nil
+			},
+		})
+		rec := httptest.NewRecorder()
+		mw.Handler(handled()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/hooks/stripe", nil))
+		// This is the one path that reaches next without verification. It is intended, it mirrors the HTTP
+		// door's method filter, and it is safe only because a method the receiver does not claim is never
+		// deduplicated either: nothing about it reaches the store.
+		if rec.Code != http.StatusOK || rec.Body.String() != "handled" {
+			t.Fatalf("status = %d, body = %q, want 200 and handled", rec.Code, rec.Body.String())
+		}
+		if verifyRan {
+			t.Fatal("Verify ran for a method the receiver does not apply to")
 		}
 		if store.count() != 0 {
 			t.Fatalf("Begin was called %d times", store.count())
@@ -231,8 +314,8 @@ func TestGate(t *testing.T) {
 	})
 
 	t.Run("REQ-WH-2: a marker set by an upstream verifier passes the gate", func(t *testing.T) {
-		store := newCountingStore()
-		mw := webhookmw.New(store, webhookmw.Options{VerifiedMarker: "stripe"})
+		matched := newCountingStore()
+		mw := webhookmw.New(matched, webhookmw.Options{VerifiedMarker: "stripe"})
 		upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := webhookmw.MarkVerified(r.Context(), "stripe")
 			mw.Handler(handled()).ServeHTTP(w, r.WithContext(ctx))
@@ -245,9 +328,16 @@ func TestGate(t *testing.T) {
 		if rec.Body.String() != "handled" {
 			t.Fatalf("body = %q, want handled", rec.Body.String())
 		}
+		// Zero, not one: this change is the gate only, so even a verified delivery is handed straight to
+		// next. The store arrives with key resolution in the next change and this becomes one then.
+		if matched.count() != 0 {
+			t.Fatalf("Begin was called %d times", matched.count())
+		}
 
-		// A different marker name is not the one that was set.
-		other := webhookmw.New(store, webhookmw.Options{VerifiedMarker: "github"})
+		// A different marker name is not the one that was set, and it gets its own store so the two halves
+		// cannot borrow each other's count.
+		mismatched := newCountingStore()
+		other := webhookmw.New(mismatched, webhookmw.Options{VerifiedMarker: "github"})
 		rec = httptest.NewRecorder()
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := webhookmw.MarkVerified(r.Context(), "stripe")
@@ -255,6 +345,9 @@ func TestGate(t *testing.T) {
 		}).ServeHTTP(rec, delivery("msg_1", `{"a":1}`))
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("status for the wrong marker = %d, want 401", rec.Code)
+		}
+		if mismatched.count() != 0 {
+			t.Fatalf("Begin was called %d times", mismatched.count())
 		}
 	})
 

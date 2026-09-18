@@ -103,8 +103,10 @@ func webhookTitles(idHeader string, overrides map[Code]string) map[Code]string {
 		CodeInvalidKey:          "The " + idHeader + " header value is not a valid key",
 		CodeConflict:            "A delivery with this " + idHeader + " is still in progress",
 		CodeFingerprintMismatch: "This " + idHeader + " was already delivered with a different payload",
-		CodeConfigurationError:  "This webhook endpoint runs no signature verification and cannot accept a delivery",
-		CodeSignatureInvalid:    "The webhook signature could not be verified",
+		// One title for both causes of a 500, because it has to be honest whether the receiver runs no
+		// verification at all or a working verifier merely failed. The detail member says which (ruling 13).
+		CodeConfigurationError: "The webhook endpoint could not establish that this delivery is genuine",
+		CodeSignatureInvalid:   "The webhook signature could not be verified",
 	}
 	for code, title := range overrides {
 		titles[code] = title

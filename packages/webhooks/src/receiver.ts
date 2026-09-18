@@ -42,8 +42,23 @@ export interface WebhookReceiverOptions
   logger?: (message: string) => void;
 }
 
+/**
+ * Q26 and ruling 12: the two lines the receiver ever logs, one per cause of a 500 configuration-error. Both
+ * are fixed strings: no request data, no header value, no delivery id and, for the second, no part of the
+ * verifier's own thrown error, because that error commonly quotes the header or the key it choked on (NFR-2).
+ * Each cause has its own latch, so neither can suppress the other's one line.
+ */
 const CONFIGURATION_MESSAGE =
   'anyonce: webhookReceiver was built with neither verify nor verifiedMarker, so no delivery can be accepted (REQ-WH-2)';
+const VERIFIER_FAILED_MESSAGE =
+  'anyonce: the webhook verify callback failed, so no delivery can be accepted (REQ-WH-2)';
+
+/**
+ * Ruling 13: the RFC 9457 detail member is what tells the two causes of a 500 configuration-error apart. They
+ * share one code because they are one class of failure. Both strings are byte identical to the Go twin's.
+ */
+const DETAIL_UNCONFIGURED = 'no verify callback or verifiedMarker is configured';
+const DETAIL_VERIFIER_FAILED = 'the verify callback failed';
 
 function webhookTitles(idHeader: string, overrides?: ProblemTitles): ProblemTitles {
   return {
@@ -51,8 +66,9 @@ function webhookTitles(idHeader: string, overrides?: ProblemTitles): ProblemTitl
     'invalid-key': `The ${idHeader} header value is not a valid key`,
     conflict: `A delivery with this ${idHeader} is still in progress`,
     'fingerprint-mismatch': `This ${idHeader} was already delivered with a different payload`,
-    'configuration-error':
-      'This webhook endpoint runs no signature verification and cannot accept a delivery',
+    // One title for both causes of a 500, because it has to be honest whether the receiver runs no
+    // verification at all or a working verifier merely failed. The detail member says which (ruling 13).
+    'configuration-error': 'The webhook endpoint could not establish that this delivery is genuine',
     'signature-invalid': 'The webhook signature could not be verified',
     ...overrides,
   };
@@ -104,23 +120,25 @@ export function webhookReceiver(options: WebhookReceiverOptions) {
   };
   const resolved: ResolvedHttpOptions = resolveHttpOptions(base);
   const verifiedMarker = options.verifiedMarker;
-  let logged = false;
+  // Ruling 12: one latch per cause, never a shared one, so neither cause can swallow the other's line.
+  let loggedUnconfigured = false;
+  let loggedVerifierFailed = false;
 
   return <Rest extends unknown[]>(handler: FetchLikeHandler<Rest>) => {
     return async (req: Request, ...rest: Rest): Promise<Response> => {
-      const fail = async (code: ProblemCode): Promise<Response> => {
-        const p = problem(code, resolved.problemBaseUri, undefined, titles[code]);
+      const fail = async (code: ProblemCode, detail?: string): Promise<Response> => {
+        const p = problem(code, resolved.problemBaseUri, detail, titles[code]);
         if (resolved.onError !== undefined) return resolved.onError(p, req);
         return problemResponse(p);
       };
 
       // D16: the configuration check is first, so a receiver that can never verify anything never runs a handler.
       if (options.verify === undefined && options.verifiedMarker === undefined) {
-        if (!logged) {
-          logged = true;
+        if (!loggedUnconfigured) {
+          loggedUnconfigured = true;
           log(CONFIGURATION_MESSAGE);
         }
-        return fail('configuration-error');
+        return fail('configuration-error', DETAIL_UNCONFIGURED);
       }
       if (!resolved.methods.has(req.method)) return handler(req, ...rest);
 
@@ -129,7 +147,8 @@ export function webhookReceiver(options: WebhookReceiverOptions) {
 
       // Carried finding 1: a verify callback that throws is a broken verifier, not a rejected delivery, so it
       // is 500 configuration-error (symmetric with the Go side's Options.Verify returning an error) and never
-      // reaches runIdempotent.
+      // reaches runIdempotent. Ruling 12: it also must not be silent, so it gets its own one time line. The
+      // thrown error itself is deliberately discarded rather than logged, since it can carry a key.
       let verified: boolean;
       try {
         verified =
@@ -137,7 +156,11 @@ export function webhookReceiver(options: WebhookReceiverOptions) {
             ? (await options.verify(req, read.body)) === true
             : verifiedMarker !== undefined && isVerified(req, verifiedMarker);
       } catch {
-        return fail('configuration-error');
+        if (!loggedVerifierFailed) {
+          loggedVerifierFailed = true;
+          log(VERIFIER_FAILED_MESSAGE);
+        }
+        return fail('configuration-error', DETAIL_VERIFIER_FAILED);
       }
       if (!verified) return fail('signature-invalid');
 

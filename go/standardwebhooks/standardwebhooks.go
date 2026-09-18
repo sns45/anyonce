@@ -28,7 +28,10 @@ const DefaultTolerance = 300 * time.Second
 // anyway, so it is rejected as a skew failure rather than reaching time.Unix.
 const maxTimestampSeconds = 1 << 62
 
-// ErrVerification is returned by Verify for every failure mode, so a caller cannot tell them apart from the error.
+// ErrVerification wraps every failure Verify reports. errors.Is against it is the only classification a caller
+// gets, and it is the only one a caller should act on: the wrapped message text does name which check failed,
+// but it is there for a log line, never for a response body, since telling a sender which check failed hands an
+// attacker an oracle.
 var ErrVerification = errors.New("standardwebhooks: the signature did not verify")
 
 // ParseSecret strips the whsec_ prefix and decodes the standard base64 remainder. A secret that decodes to zero
@@ -82,8 +85,8 @@ func (v *Verifier) WithClock(now func() time.Time) *Verifier {
 	return &out
 }
 
-// Verify checks the three headers against body. Every failure returns an error wrapping ErrVerification, so a
-// caller cannot tell the failure modes apart, and the middleware can map the whole class to one 401.
+// Verify checks the three headers against body. Every failure returns an error wrapping ErrVerification, so the
+// middleware can map the whole class to one 401 without inspecting which check failed.
 func (v *Verifier) Verify(h http.Header, body []byte) error {
 	id := h.Get("webhook-id")
 	ts := h.Get("webhook-timestamp")

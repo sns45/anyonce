@@ -10,9 +10,22 @@ import (
 	"github.com/sns45/anyonce/go/internal/httpx"
 )
 
-// configurationMessage is the one line the receiver ever logs (Q26). It is a fixed string: no request data, no
-// header value and no delivery id, because it is emitted before anything about the delivery has been trusted.
-const configurationMessage = "anyonce: webhookmw was built with neither Verify nor VerifiedMarker, so no delivery can be accepted (REQ-WH-2)"
+// The two lines the receiver ever logs, one per cause of a 500 configuration-error (Q26, ruling 12). Both are
+// fixed strings: no request data, no header value, no delivery id and, for the second, no part of the
+// verifier's own error, because that error can easily embed a header value or a key (NFR-2). Each has its own
+// latch in Middleware, so neither cause can ever suppress the other's one line.
+const (
+	configurationMessage  = "anyonce: webhookmw was built with neither Verify nor VerifiedMarker, so no delivery can be accepted (REQ-WH-2)"
+	verifierFailedMessage = "anyonce: the webhook verify callback failed, so no delivery can be accepted (REQ-WH-2)"
+)
+
+// The RFC 9457 detail member that tells the two causes of a 500 configuration-error apart (ruling 13). They are
+// one code because they are one class of failure; detail is what distinguishes them. Neither carries request
+// data, and both are byte identical to the TypeScript twin's.
+const (
+	detailUnconfigured   = "no verify callback or verifiedMarker is configured"
+	detailVerifierFailed = "the verify callback failed"
+)
 
 // markerKey is the private context key the verified markers hang off.
 type markerKey struct{}
@@ -50,7 +63,10 @@ type Middleware struct {
 	store    anyonce.Store
 	opts     resolved
 	problems httpx.ProblemWriter
-	logOnce  sync.Once
+	// The two causes of a 500 configuration-error latch separately, so a receiver that has already reported
+	// one cause still reports the other the first time it happens.
+	logUnconfigured   sync.Once
+	logVerifierFailed sync.Once
 }
 
 // New builds the receiver. Every Options field has a working default, so Options{Verify: ...} is a whole
@@ -84,7 +100,10 @@ func (m *Middleware) configured() bool {
 }
 
 // verified runs the gate for one delivery. The second result is false when the verifier could not decide, which
-// is a broken verifier rather than a rejected delivery and must never be answered with a 401.
+// is a broken verifier rather than a rejected delivery and must never be answered with a 401. The verifier's
+// error text is deliberately not carried out of here: it goes into neither the log line nor the problem detail,
+// because a verifier error commonly quotes the header or the key it choked on (NFR-2). The caller signals the
+// malfunction with a fixed message instead.
 func (m *Middleware) verified(r *http.Request, body []byte) (ok bool, decided bool) {
 	if m.opts.Verify != nil {
 		result, err := m.opts.Verify(r, body)
@@ -107,8 +126,8 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !m.configured() {
 			// Q26: exactly one line per receiver instance, however many requests arrive.
-			m.logOnce.Do(func() { m.opts.Logf("%s", configurationMessage) })
-			m.fail(w, r, CodeConfigurationError, "", nil)
+			m.logUnconfigured.Do(func() { m.opts.Logf("%s", configurationMessage) })
+			m.fail(w, r, CodeConfigurationError, detailUnconfigured, nil)
 			return
 		}
 		if !m.opts.methods[r.Method] {
@@ -126,7 +145,9 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		}
 		ok, decided := m.verified(r, body)
 		if !decided {
-			m.fail(w, r, CodeConfigurationError, "", nil)
+			// Ruling 12: a broken verifier must not produce a silent 500, so it gets its own one time line.
+			m.logVerifierFailed.Do(func() { m.opts.Logf("%s", verifierFailedMessage) })
+			m.fail(w, r, CodeConfigurationError, detailVerifierFailed, nil)
 			return
 		}
 		if !ok {
