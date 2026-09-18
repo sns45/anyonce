@@ -288,7 +288,7 @@ Each store documents: consistency, atomicity mechanism for `begin`, native TTL o
 
 Claude Code MUST read the real anyq consumer handler signature from `github.com/sns45/anyq` (TS `packages/core`) and `github.com/sns45/anyq/go` before implementing; the shapes below are illustrative.
 
-- **REQ-Q-1** `idempotent(handler, { store, key?, scope?, fingerprint?, leaseMs?, ttlMs?, onInFlight?: 'retry' | 'ack' })` returns a handler with the same signature. Default `key`: message id if the adapter exposes one, else `idempotency-key` message attribute/header, else SHA-256 of body. Default scope: `${queue}/${consumerGroup}`. Redelivery id stability per adapter is documented in `docs/queue-ids.md`.
+- **REQ-Q-1** `idempotent(handler, { store, key?, scope?, fingerprint?, leaseMs?, ttlMs?, onInFlight?: 'retry' | 'ack' })` returns a handler with the same signature. Default `key`: message id if the adapter exposes one, else `idempotency-key` message attribute/header, else SHA-256 of body. Default scope: `${queue}/${consumerGroup}`. Redelivery id stability per adapter is documented in `docs/queue-ids.md`. The key source is an explicit option (`'id'`, `'header'`, `'body'` or a function) because an anyq park does not preserve the message id on every adapter (Q23).
 - **REQ-Q-2** Outcomes per D15. `retry` on in-flight uses anyq's delay/requeue primitive with delay = lease remaining; `ack` treats in-flight duplicate as handled (documented as at-most-once-per-lease trade-off).
 - **REQ-Q-3** Handler exception → `abandon` and rethrow so anyq's existing retry strategy and DLQ policy apply unchanged.
 - **REQ-Q-4** Mismatch → call anyq dead-letter with reason `fingerprint-mismatch`; if the adapter cannot dead-letter, rethrow a typed `FingerprintMismatchError`.
@@ -329,7 +329,7 @@ Claude Code MUST read the real anyq consumer handler signature from `github.com/
 - **REQ-DOC-6** `docs/security.md`: key entropy, scope/principal composition, log redaction of keys (only first 8 chars logged), replay isolation, stored-body considerations.
 - **REQ-DOC-7** Examples under `examples/`: `worker-hono-do`, `lambda-fetch-dynamodb`, `go-net-http-postgres`, `anyq-consumer-ts`, `anyq-consumer-go`, `webhook-receiver-standard-webhooks`. Each has a README and a smoke test run in CI.
 - **REQ-DOC-8** `llms.txt` at repo root summarizing packages and semantics (same pattern as in8.sh).
-- **REQ-DOC-9** `docs/queue-ids.md`: one row per anyq adapter (all nine) with the message id's stability across redelivery and producer retry; the three adapters tested in P4a marked verified, the rest marked per anyq docs, unverified; recommends a producer-supplied `idempotency-key` header where the id is not stable.
+- **REQ-DOC-9** `docs/queue-ids.md`: one row per anyq consumer adapter with the message id's stability across redelivery and producer retry; the three adapters tested in P4a marked verified, the rest marked per anyq docs, unverified; recommends a producer-supplied `idempotency-key` header where the id is not stable.
 
 ### 4.9 Release and supply chain
 

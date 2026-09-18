@@ -8,8 +8,8 @@ Read `requirements.md` before touching code. It is the design; this file is how 
 packages/core            @anyonce/core        engine, types, memory store, testing/ (store contract suite)
   src/http/              @anyonce/core/http   withIdempotency and the shared HTTP helpers (subpath export)
 packages/hono            @anyonce/hono        Hono middleware + withIdempotency fetch wrapper
-packages/anyq            @anyonce/anyq        anyq consumer middleware
 packages/webhooks        @anyonce/webhooks    Standard Webhooks receiver + verify helper
+packages/anyq            @anyonce/anyq        anyq consumer middleware and the companion idempotency strategy
 packages/stores          @anyonce/stores      subpath exports: /durable-objects /d1 /dynamodb /redis /postgres
 packages/conformance     @anyonce/conformance runner + CLI
 conformance/             vectors/, schema.json, README.md, REPORT.md, DRAFT-GAPS.md, fixtures/
@@ -34,7 +34,7 @@ benchmarks/
 ## Code rules
 
 - TypeScript: strict, `exactOptionalPropertyTypes`, no `any` outside test fakes, ESM source, tsup builds ESM+CJS+d.ts. Web APIs only in core, hono, webhooks (no `node:` imports). Peer dependencies for framework and client libraries.
-- Go: standard library first; the only third-party deps are the store clients and `modernc.org/sqlite`. No cgo. Errors wrapped with `%w`; sentinel errors exported from `anyonce` (`ErrConflict`, `ErrMismatch`, `ErrStaleFence`, `ErrStoreUnavailable`).
+- Go: standard library first; the only third-party deps are the store clients, `modernc.org/sqlite` and `github.com/sns45/anyq/go` (used by `anyqmw` and its tests). No cgo. Errors wrapped with `%w`; sentinel errors exported from `anyonce` (`ErrConflict`, `ErrMismatch`, `ErrStaleFence`, `ErrStoreUnavailable`).
 - Import direction: `@anyonce/core` root never imports from `./http`; `@anyonce/hono` and `@anyonce/webhooks` import only from `@anyonce/core` and `@anyonce/core/http`. A test enforces this.
 - Store `begin` is one atomic operation per store. Get-then-lock is a bug even if the tests pass.
 - Four kinds of text exist once per language and must stay byte equal across them: the SQL statements (`packages/stores/src/sql.ts` against the constants in `go/store/internal/sqlstore/sqlstore.go`), the DynamoDB condition and update expressions (`packages/stores/src/dynamodb.ts` against the constants in `go/store/dynamodb/dynamodb.go`), the Redis Lua scripts (`packages/stores/src/redis.ts` against `go/store/redis/scripts.go`), and the schemas (`packages/stores/src/sql.ts` against `go/store/postgres/schema.sql` and `go/store/sqlite/schema.sql`, plus the committed migrations under `packages/stores/migrations`). `packages/stores/test/parity.test.ts` compares each pair whole, reading the Go backtick constants by name, so change both sides in the same commit and keep the Go constants as single backtick literals.
