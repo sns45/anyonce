@@ -1,11 +1,12 @@
 import { afterEach, expect, test } from 'bun:test';
 import { MemoryStore } from '@anyonce/core';
-import type { ApplyStrategyResult, IMessage, MessageHandler } from '@anyq/core';
+import type { ApplyStrategyResult, IMessage } from '@anyq/core';
 import { RedisStreamsConsumer, RedisStreamsProducer } from '@anyq/redis-streams';
 import { InFlightError } from '../src/errors';
 import { messageFingerprint } from '../src/fingerprint';
 import { idempotent } from '../src/idempotent';
 import { idempotencyStrategy } from '../src/strategy';
+import { deliveries, drive, record } from './harness';
 import { describeService } from './services';
 
 /**
@@ -37,68 +38,6 @@ class Probe<T> extends RedisStreamsConsumer<T> {
     await super.deadLetterMessage(message, reason);
   }
 }
-
-/** Counts deliveries and hands out a promise per count, so no test waits on a duration. */
-function deliveries() {
-  let hits = 0;
-  const waiters: Array<{ at: number; resolve: () => void }> = [];
-  return {
-    hit(): void {
-      hits += 1;
-      for (const waiter of waiters) if (hits >= waiter.at) waiter.resolve();
-    },
-    reaches(at: number): Promise<void> {
-      return new Promise<void>((resolve) => {
-        if (hits >= at) resolve();
-        else waiters.push({ at, resolve });
-      });
-    },
-  };
-}
-
-interface Driven {
-  ids: string[];
-  errors: Error[];
-  results: ApplyStrategyResult[];
-}
-
-function record(): Driven {
-  return { ids: [], errors: [], results: [] };
-}
-
-/**
- * The shape of every anyq consumer's catch block: run the handler, and on a throw hand the error to the
- * strategy with a re-invocation of the same handler. Driving it here keeps the ApplyStrategyResult, which the
- * adapter's own loop discards.
- */
-function drive<T>(
-  probe: Probe<T>,
-  wrapped: MessageHandler<T>,
-  seen: Driven,
-  settled: { hit(): void },
-  ack: (delivery: number) => boolean,
-): MessageHandler<T> {
-  return async (message: IMessage<T>): Promise<void> => {
-    seen.ids.push(message.id);
-    const delivery = seen.ids.length;
-    let disposed = false;
-    try {
-      await wrapped(message);
-    } catch (thrown) {
-      const error = thrown instanceof Error ? thrown : new Error(String(thrown));
-      seen.errors.push(error);
-      const result = await probe.runStrategy(message, error, () => wrapped(message));
-      seen.results.push(result);
-      disposed = result.handled;
-    }
-    // anyq acknowledges only a delivery the handler completed. Once the strategy has handled the failure it has
-    // already decided the message's fate, so acknowledging here too would be a second call for one delivery.
-    if (!disposed && ack(delivery)) await message.ack();
-    settled.hit();
-  };
-}
-
-const always = (): boolean => true;
 
 function names(label: string): { stream: string; group: string } {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -225,7 +164,7 @@ await describeService('anyq redis-streams consumer', PORT, () => {
     );
     const seen = record();
     const settled = deliveries();
-    await probe.subscribe(drive(probe, wrapped, seen, settled, always), { autoAck: false });
+    await probe.subscribe(drive(probe, wrapped, seen, settled), { autoAck: false });
 
     await settled.reaches(1);
 
@@ -254,7 +193,7 @@ await describeService('anyq redis-streams consumer', PORT, () => {
     );
     const seen = record();
     const settled = deliveries();
-    await probe.subscribe(drive(probe, wrapped, seen, settled, always), { autoAck: false });
+    await probe.subscribe(drive(probe, wrapped, seen, settled), { autoAck: false });
 
     const headers = { 'idempotency-key': `rs-${stream}` };
     await producer.publish({ orderId: 'c-1', total: 1 }, { headers });
@@ -292,7 +231,7 @@ await describeService('anyq redis-streams consumer', PORT, () => {
     );
     const seen = record();
     const settled = deliveries();
-    await probe.subscribe(drive(probe, wrapped, seen, settled, always), { autoAck: false });
+    await probe.subscribe(drive(probe, wrapped, seen, settled), { autoAck: false });
 
     await settled.reaches(1);
 

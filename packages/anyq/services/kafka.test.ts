@@ -4,12 +4,13 @@ process.env.KAFKAJS_NO_PARTITIONER_WARNING = '1';
 
 import { afterAll, afterEach, expect, test } from 'bun:test';
 import { MemoryStore } from '@anyonce/core';
-import type { ApplyStrategyResult, IMessage, MessageHandler } from '@anyq/core';
+import type { ApplyStrategyResult, IMessage } from '@anyq/core';
 import { KafkaConsumer, KafkaProducer } from '@anyq/kafka';
 import { InFlightError } from '../src/errors';
 import { messageFingerprint } from '../src/fingerprint';
 import { idempotent } from '../src/idempotent';
 import { idempotencyStrategy } from '../src/strategy';
+import { deliveries, drive, record } from './harness';
 import { describeService } from './services';
 
 /**
@@ -60,64 +61,6 @@ class Probe<T> extends KafkaConsumer<T> {
   }
 }
 
-/** Counts deliveries and hands out a promise per count, so no test waits on a duration. */
-function deliveries() {
-  let hits = 0;
-  const waiters: Array<{ at: number; resolve: () => void }> = [];
-  return {
-    hit(): void {
-      hits += 1;
-      for (const waiter of waiters) if (hits >= waiter.at) waiter.resolve();
-    },
-    reaches(at: number): Promise<void> {
-      return new Promise<void>((resolve) => {
-        if (hits >= at) resolve();
-        else waiters.push({ at, resolve });
-      });
-    },
-  };
-}
-
-interface Driven {
-  ids: string[];
-  errors: Error[];
-  results: ApplyStrategyResult[];
-}
-
-function record(): Driven {
-  return { ids: [], errors: [], results: [] };
-}
-
-/**
- * The shape of every anyq consumer's catch block: run the handler, and on a throw hand the error to the
- * strategy with a re-invocation of the same handler. Driving it here keeps the ApplyStrategyResult, which the
- * adapter's own loop discards.
- */
-function drive<T>(
-  probe: Probe<T>,
-  wrapped: MessageHandler<T>,
-  seen: Driven,
-  settled: { hit(): void },
-): MessageHandler<T> {
-  return async (message: IMessage<T>): Promise<void> => {
-    seen.ids.push(message.id);
-    let disposed = false;
-    try {
-      await wrapped(message);
-    } catch (thrown) {
-      const error = thrown instanceof Error ? thrown : new Error(String(thrown));
-      seen.errors.push(error);
-      const result = await probe.runStrategy(message, error, () => wrapped(message));
-      seen.results.push(result);
-      disposed = result.handled;
-    }
-    // anyq acknowledges only a delivery the handler completed. Once the strategy has handled the failure it has
-    // already decided the message's fate, so acknowledging here too would be a second call for one delivery.
-    if (!disposed) await message.ack();
-    settled.hit();
-  };
-}
-
 let cleanup: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
@@ -152,13 +95,45 @@ function build<T>(
   return { probe, producer };
 }
 
-/** The producer connects first and its publish auto-creates the topic, so the consumer never subscribes to a
- * topic that does not exist yet. The consumer then reads the partition from the beginning. */
-async function open<T>(probe: Probe<T>, producer: KafkaProducer<T>): Promise<void> {
+/**
+ * Both clients connect, and the topic is created explicitly through the consumer's own kafkajs client rather
+ * than left to Redpanda's auto-create, so a test can subscribe and join its group before it publishes
+ * anything. The park case depends on that: the short lease it takes must not have to outlive a JoinGroup.
+ */
+async function open<T>(probe: Probe<T>, producer: KafkaProducer<T>, topic: string): Promise<void> {
   await producer.connect();
+  await probe.connect();
   cleanup.push(async () => {
     await probe.disconnect();
     await producer.disconnect();
+  });
+  const admin = probe.getKafka()?.admin();
+  if (admin === undefined)
+    throw new Error('the kafka consumer exposed no client to create the topic with');
+  await admin.connect();
+  try {
+    await admin.createTopics({
+      topics: [{ topic, numPartitions: 1, replicationFactor: 1 }],
+      waitForLeaders: true,
+    });
+  } finally {
+    await admin.disconnect();
+  }
+}
+
+/**
+ * kafkajs joins the group asynchronously, after consumer.run() and so after subscribe() has returned. A test
+ * whose timing must not include the join waits on the first GROUP_JOIN, which is the moment the consumer is
+ * actually live on its partitions. The listener is registered before subscribe so a fast join is not missed.
+ */
+function joined<T>(probe: Probe<T>): Promise<void> {
+  const consumer = probe.getConsumer();
+  if (consumer === null) throw new Error('the kafka consumer is not connected');
+  return new Promise<void>((resolve) => {
+    const off = consumer.on(consumer.events.GROUP_JOIN, () => {
+      off();
+      resolve();
+    });
   });
 }
 
@@ -166,13 +141,7 @@ await describeService('anyq kafka consumer', PORT, () => {
   test('REQ-Q-6: a kafka consumer runs a wrapped handler once for a duplicate the producer re-sent', async () => {
     const topic = topicFor('once');
     const { probe, producer } = build<{ orderId: string }>(topic, {});
-    await open(probe, producer);
-
-    const body = { orderId: 'a-1' };
-    const key = `kafka-${topic}`;
-    const headers = { 'idempotency-key': key };
-    await producer.publish(body, { key: 'anyonce', headers });
-    await producer.publish(body, { key: 'anyonce', headers });
+    await open(probe, producer, topic);
 
     const store = new MemoryStore();
     let ran = 0;
@@ -184,11 +153,16 @@ await describeService('anyq kafka consumer', PORT, () => {
     );
     const seen = record();
     const settled = deliveries();
-    await probe.connect();
     await probe.subscribe(drive(probe, wrapped, seen, settled), {
       autoAck: false,
       fromBeginning: true,
     });
+
+    const body = { orderId: 'a-1' };
+    const key = `kafka-${topic}`;
+    const headers = { 'idempotency-key': key };
+    await producer.publish(body, { key: 'anyonce', headers });
+    await producer.publish(body, { key: 'anyonce', headers });
     await settled.reaches(2);
 
     expect(ran).toBe(1);
@@ -206,22 +180,11 @@ await describeService('anyq kafka consumer', PORT, () => {
     const { probe, producer } = build<{ orderId: string }>(topic, {
       strategy: idempotencyStrategy(),
     });
-    await open(probe, producer);
+    await open(probe, producer, topic);
 
     const body = { orderId: 'b-1' };
     const key = `kafka-${topic}`;
-    await producer.publish(body, { key: 'anyonce', headers: { 'idempotency-key': key } });
-
     const store = new MemoryStore();
-    const claimedAt = Date.now();
-    const leaseMs = 300;
-    const leaseUntil = claimedAt + leaseMs;
-    const claim = await store.begin(
-      { scope: topic, key, fingerprint: await messageFingerprint(body) },
-      { leaseMs, ttlMs: 60_000, now: claimedAt },
-    );
-    expect(claim.outcome).toBe('acquired');
-
     let ran = 0;
     let firstCallAt = 0;
     const wrapped = idempotent<{ orderId: string }>(
@@ -233,11 +196,24 @@ await describeService('anyq kafka consumer', PORT, () => {
     );
     const seen = record();
     const settled = deliveries();
-    await probe.connect();
+    const live = joined(probe);
     await probe.subscribe(drive(probe, wrapped, seen, settled), {
       autoAck: false,
       fromBeginning: true,
     });
+    await live;
+
+    // The group is live and the topic is empty, so the lease window covers the delivery and nothing else.
+    const claimedAt = Date.now();
+    const leaseMs = 300;
+    const leaseUntil = claimedAt + leaseMs;
+    const claim = await store.begin(
+      { scope: topic, key, fingerprint: await messageFingerprint(body) },
+      { leaseMs, ttlMs: 60_000, now: claimedAt },
+    );
+    expect(claim.outcome).toBe('acquired');
+
+    await producer.publish(body, { key: 'anyonce', headers: { 'idempotency-key': key } });
     await settled.reaches(1);
 
     expect(seen.errors[0]).toBeInstanceOf(InFlightError);
@@ -252,10 +228,7 @@ await describeService('anyq kafka consumer', PORT, () => {
     const { probe, producer } = build<{ orderId: string; total: number }>(topic, {
       strategy: idempotencyStrategy(),
     });
-    await open(probe, producer);
-
-    const headers = { 'idempotency-key': `kafka-${topic}` };
-    await producer.publish({ orderId: 'c-1', total: 1 }, { key: 'anyonce', headers });
+    await open(probe, producer, topic);
 
     const store = new MemoryStore();
     let ran = 0;
@@ -267,11 +240,13 @@ await describeService('anyq kafka consumer', PORT, () => {
     );
     const seen = record();
     const settled = deliveries();
-    await probe.connect();
     await probe.subscribe(drive(probe, wrapped, seen, settled), {
       autoAck: false,
       fromBeginning: true,
     });
+
+    const headers = { 'idempotency-key': `kafka-${topic}` };
+    await producer.publish({ orderId: 'c-1', total: 1 }, { key: 'anyonce', headers });
     await settled.reaches(1);
     await producer.publish({ orderId: 'c-1', total: 2 }, { key: 'anyonce', headers });
     await settled.reaches(2);
@@ -286,19 +261,11 @@ await describeService('anyq kafka consumer', PORT, () => {
   test('REQ-Q-8: with no strategy the typed error reaches anyq legacy handling untranslated', async () => {
     const topic = topicFor('untranslated');
     const { probe, producer } = build<{ orderId: string }>(topic, {});
-    await open(probe, producer);
+    await open(probe, producer, topic);
 
     const body = { orderId: 'd-1' };
     const key = `kafka-${topic}`;
-    await producer.publish(body, { key: 'anyonce', headers: { 'idempotency-key': key } });
-
     const store = new MemoryStore();
-    const claim = await store.begin(
-      { scope: topic, key, fingerprint: await messageFingerprint(body) },
-      { leaseMs: 60_000, ttlMs: 60_000, now: Date.now() },
-    );
-    expect(claim.outcome).toBe('acquired');
-
     let ran = 0;
     const wrapped = idempotent<{ orderId: string }>(
       async () => {
@@ -308,11 +275,18 @@ await describeService('anyq kafka consumer', PORT, () => {
     );
     const seen = record();
     const settled = deliveries();
-    await probe.connect();
     await probe.subscribe(drive(probe, wrapped, seen, settled), {
       autoAck: false,
       fromBeginning: true,
     });
+
+    const claim = await store.begin(
+      { scope: topic, key, fingerprint: await messageFingerprint(body) },
+      { leaseMs: 60_000, ttlMs: 60_000, now: Date.now() },
+    );
+    expect(claim.outcome).toBe('acquired');
+
+    await producer.publish(body, { key: 'anyonce', headers: { 'idempotency-key': key } });
     await settled.reaches(1);
 
     expect(ran).toBe(0);

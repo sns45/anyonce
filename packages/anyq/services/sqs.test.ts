@@ -1,12 +1,13 @@
 import { afterEach, expect, test } from 'bun:test';
 import { MemoryStore } from '@anyonce/core';
-import type { ApplyStrategyResult, IMessage, MessageHandler, RetryDecision } from '@anyq/core';
+import type { ApplyStrategyResult, IMessage, RetryDecision } from '@anyq/core';
 import { SQSConsumer, SQSProducer } from '@anyq/sqs';
 import { CreateQueueCommand, DeleteQueueCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { InFlightError } from '../src/errors';
 import { messageFingerprint } from '../src/fingerprint';
 import { idempotent } from '../src/idempotent';
 import { idempotencyStrategy } from '../src/strategy';
+import { deliveries, drive, record } from './harness';
 import { describeService } from './services';
 
 /**
@@ -44,64 +45,6 @@ class Probe<T> extends SQSConsumer<T> {
     this.deadLetters.push({ id: message.id, reason });
     await super.deadLetterMessage(message, reason);
   }
-}
-
-/** Counts deliveries and hands out a promise per count, so no test waits on a duration. */
-function deliveries() {
-  let hits = 0;
-  const waiters: Array<{ at: number; resolve: () => void }> = [];
-  return {
-    hit(): void {
-      hits += 1;
-      for (const waiter of waiters) if (hits >= waiter.at) waiter.resolve();
-    },
-    reaches(at: number): Promise<void> {
-      return new Promise<void>((resolve) => {
-        if (hits >= at) resolve();
-        else waiters.push({ at, resolve });
-      });
-    },
-  };
-}
-
-interface Driven {
-  ids: string[];
-  errors: Error[];
-  results: ApplyStrategyResult[];
-}
-
-function record(): Driven {
-  return { ids: [], errors: [], results: [] };
-}
-
-/**
- * The shape of every anyq consumer's catch block: run the handler, and on a throw hand the error to the
- * strategy with a re-invocation of the same handler. Driving it here keeps the ApplyStrategyResult, which the
- * adapter's own loop discards.
- */
-function drive<T>(
-  probe: Probe<T>,
-  wrapped: MessageHandler<T>,
-  seen: Driven,
-  settled: { hit(): void },
-): MessageHandler<T> {
-  return async (message: IMessage<T>): Promise<void> => {
-    seen.ids.push(message.id);
-    let disposed = false;
-    try {
-      await wrapped(message);
-    } catch (thrown) {
-      const error = thrown instanceof Error ? thrown : new Error(String(thrown));
-      seen.errors.push(error);
-      const result = await probe.runStrategy(message, error, () => wrapped(message));
-      seen.results.push(result);
-      disposed = result.handled;
-    }
-    // anyq acknowledges only a delivery the handler completed. Once the strategy has handled the failure it has
-    // already decided the message's fate, and on SQS a second DeleteMessage for one receipt handle is an error.
-    if (!disposed) await message.ack();
-    settled.hit();
-  };
 }
 
 let cleanup: Array<() => Promise<void>> = [];

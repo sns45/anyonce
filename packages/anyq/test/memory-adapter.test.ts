@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { MemoryStore } from '@anyonce/core';
-import type { ApplyStrategyResult, IMessage, MessageHandler } from '@anyq/core';
+import type { ApplyStrategyResult, IMessage } from '@anyq/core';
 import { MemoryConsumer, MemoryProducer, unregisterQueue } from '@anyq/memory';
+import { deliveries, drive, record } from '../services/harness';
 import { InFlightError } from '../src/errors';
 import { messageFingerprint } from '../src/fingerprint';
 import { idempotent } from '../src/idempotent';
@@ -36,64 +37,6 @@ class Probe<T> extends MemoryConsumer<T> {
   }
 }
 
-/** Counts deliveries and hands out a promise per count, so no test waits on a duration. */
-function deliveries() {
-  let hits = 0;
-  const waiters: Array<{ at: number; resolve: () => void }> = [];
-  return {
-    hit(): void {
-      hits += 1;
-      for (const waiter of waiters) if (hits >= waiter.at) waiter.resolve();
-    },
-    reaches(at: number): Promise<void> {
-      return new Promise<void>((resolve) => {
-        if (hits >= at) resolve();
-        else waiters.push({ at, resolve });
-      });
-    },
-  };
-}
-
-interface Driven {
-  ids: string[];
-  errors: Error[];
-  results: ApplyStrategyResult[];
-}
-
-/**
- * The shape of every anyq consumer's catch block: run the handler, and on a throw hand the error to the
- * strategy with a re-invocation of the same handler. Driving it here keeps the ApplyStrategyResult, which the
- * adapter's own loop discards.
- */
-function drive<T>(
-  probe: Probe<T>,
-  wrapped: MessageHandler<T>,
-  seen: Driven,
-  settled: { hit(): void },
-): MessageHandler<T> {
-  return async (message: IMessage<T>): Promise<void> => {
-    seen.ids.push(message.id);
-    let disposed = false;
-    try {
-      await wrapped(message);
-    } catch (thrown) {
-      const error = thrown instanceof Error ? thrown : new Error(String(thrown));
-      seen.errors.push(error);
-      const result = await probe.runStrategy(message, error, () => wrapped(message));
-      seen.results.push(result);
-      disposed = result.handled;
-    }
-    // anyq acknowledges only a delivery the handler completed. Once the strategy has handled the failure it has
-    // already decided the message's fate, so acknowledging here too would be a second call for one delivery.
-    if (!disposed) await message.ack();
-    settled.hit();
-  };
-}
-
-function record(): Driven {
-  return { ids: [], errors: [], results: [] };
-}
-
 const QUIET = { logging: { enabled: false } } as const;
 
 let cleanup: Array<() => Promise<void>> = [];
@@ -123,7 +66,7 @@ async function start<T>(
 }
 
 describe('memory adapter through the door', () => {
-  test('REQ-Q-6: a memory consumer runs a wrapped handler once for a redelivered message', async () => {
+  test('REQ-Q-6: a memory consumer runs a wrapped handler once for a duplicate the producer re-sent', async () => {
     const queueName = queueFor('memory-once');
     const consumer = new MemoryConsumer<{ orderId: string }>({
       driver: 'memory',
@@ -134,8 +77,8 @@ describe('memory adapter through the door', () => {
 
     const store = new MemoryStore();
     const handled: Array<{ orderId: string }> = [];
-    // The redelivery is a producer that sent the same work twice: two queue messages with fresh ids, one
-    // producer supplied key and byte identical bodies, which is the case the id key source cannot catch.
+    // A producer that sent the same work twice: two queue messages with fresh ids, one producer supplied key
+    // and byte identical bodies, which is the case the id key source cannot catch.
     const wrapped = idempotent<{ orderId: string }>(
       async (message) => {
         handled.push(message.body);
