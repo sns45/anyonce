@@ -14,7 +14,7 @@
     "test": "bun test packages/core packages/hono packages/conformance conformance/ scripts test/ci.test.ts packages/stores/test packages/webhooks",
     "test:coverage": "vitest run --root packages/core --config vitest.config.ts --coverage",
     "test:services": "bun test test/compose.test.ts packages/stores/services",
-    "test:reqs": "bun run scripts/reqs.ts --phase p3",
+    "test:reqs": "bun run scripts/reqs.ts --phase p4b",
     "size": "bun run scripts/size.ts",
     "typecheck": "bun run --filter '@anyonce/*' typecheck && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p test/tsconfig.json && tsc --noEmit -p test/workers/tsconfig.json && tsc --noEmit -p packages/stores/workers/tsconfig.json",
     "test:workers": "vitest run --config test/workers/vitest.config.ts",
