@@ -109,6 +109,12 @@ describe('ci workflow', () => {
     expect(runs(ci.jobs.go as Job)).toContain('go-engine-coverage.sh');
   });
 
+  test('REQ-REL-4: the go job runs the nested anyhook interop module', () => {
+    const steps = (ci.jobs.go.steps as Array<{ run?: string; 'working-directory'?: string }>);
+    const step = steps.find((s) => s['working-directory'] === 'go/webhookmw/interop');
+    expect(step?.run).toBe('go test -race ./...');
+  });
+
   test('REQ-REL-4: the ts job runs the toolchain doctor right after install', () => {
     const runSteps = (ci.jobs.ts as Job).steps.filter((s) => typeof s.run === 'string');
     expect(runSteps[0]?.run).toBe('bun install --frozen-lockfile');
