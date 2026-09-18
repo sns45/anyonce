@@ -299,7 +299,11 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 			m.fail(w, r, CodeConflict, "", http.Header{"Retry-After": {httpx.RetryAfter(res.LeaseUntil, policy)}})
 		case anyonce.ResultMismatch:
 			// REQ-WH-5: the security signal fires before the problem is rendered, and it fires whatever a user
-			// supplied Policy.Hooks.OnMismatch did, because the engine recovers that hook's panics itself.
+			// supplied Policy.Hooks.OnMismatch did, because the engine recovers that hook's panics itself and
+			// returns ResultMismatch regardless. Ruling 16: the one property this ordering costs is that the
+			// record here may already have been seen by that user hook, since in Go it runs first, inside the
+			// engine, whereas the TypeScript receiver calls onSuspicious ahead of it. Neither order lets one
+			// hook suppress the other; only the TypeScript order guarantees untouched stored state.
 			m.onSuspicious(r, res.Record)
 			m.fail(w, r, CodeFingerprintMismatch, "", nil)
 		case anyonce.ResultStoreError:
