@@ -295,7 +295,14 @@ describe('webhook receiver', () => {
   test('REQ-WH-1: a GET passes through untouched because the receiver applies to POST only', async () => {
     const s = store();
     let runs = 0;
-    const handler = webhookReceiver({ store: s, verify: () => true })(async () => {
+    let verifyRan = false;
+    const handler = webhookReceiver({
+      store: s,
+      verify: () => {
+        verifyRan = true;
+        return true;
+      },
+    })(async () => {
       runs += 1;
       return new Response('handled');
     });
@@ -303,6 +310,7 @@ describe('webhook receiver', () => {
     expect(res.status).toBe(200);
     expect(runs).toBe(1);
     expect(res.headers.get('Idempotency-Replayed')).toBeNull();
+    expect(verifyRan).toBe(false);
   });
 
   test('REQ-WH-1: the handler receives the body unread', async () => {
