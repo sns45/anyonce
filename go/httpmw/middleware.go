@@ -3,13 +3,11 @@ package httpmw
 import (
 	"context"
 	"errors"
-	"math"
 	"net/http"
-	"strconv"
 	"sync/atomic"
-	"time"
 
 	"github.com/sns45/anyonce/go/anyonce"
+	"github.com/sns45/anyonce/go/internal/httpx"
 )
 
 var errHijacked = errors.New("httpmw: connection hijacked")
@@ -20,8 +18,9 @@ var errPanicked = errors.New("httpmw: handler panicked")
 
 // Middleware is the HTTP door for net/http (REQ-HTTP-18).
 type Middleware struct {
-	store anyonce.Store
-	opts  resolved
+	store    anyonce.Store
+	opts     resolved
+	problems httpx.ProblemWriter
 }
 
 // New builds the middleware. It panics when Options.RequirePrincipal is set without Options.Principal, the
@@ -31,6 +30,7 @@ func New(store anyonce.Store, opts Options) *Middleware {
 		panic("httpmw: Options.RequirePrincipal is true but Options.Principal is nil")
 	}
 	m := &Middleware{store: store, opts: opts.resolve()}
+	m.problems = httpx.ProblemWriter{BaseURI: m.opts.ProblemBaseURI, Titles: m.opts.ProblemTitles, OnError: m.opts.OnError}
 	// Q20: the policy cap never exceeds what the store says it can hold whole.
 	limit := m.opts.Policy.MaxResultBytes
 	if limit <= 0 {
@@ -49,61 +49,7 @@ func New(store anyonce.Store, opts Options) *Middleware {
 // w.Header() first, so the hook can override them but cannot lose them (REQ-HTTP-13), matching the ruling the
 // TypeScript bridge follows under a custom controller.
 func (m *Middleware) fail(w http.ResponseWriter, r *http.Request, code Code, detail string, extra http.Header) {
-	p := NewProblem(code, m.opts.ProblemBaseURI, detail)
-	if m.opts.OnError != nil {
-		h := w.Header()
-		for name, values := range extra {
-			h[http.CanonicalHeaderKey(name)] = values
-		}
-		h.Set("Cache-Control", "no-store")
-		m.opts.OnError(w, r, p)
-		return
-	}
-	WriteProblem(w, p, extra)
-}
-
-func retryAfter(leaseUntil time.Time, policy anyonce.Policy) string {
-	now := time.Now()
-	if policy.Clock != nil {
-		now = policy.Clock()
-	}
-	seconds := int64(math.Ceil(leaseUntil.Sub(now).Seconds()))
-	if seconds < 1 {
-		seconds = 1
-	}
-	return strconv.FormatInt(seconds, 10)
-}
-
-// writeReplay is REQ-HTTP-9 and D12. A nil rec (which the store contract should never produce for a replayed
-// result, but callers should not have to trust that) is treated as an empty 200 with the replay header.
-func writeReplay(w http.ResponseWriter, rec *anyonce.Record) {
-	h := w.Header()
-	status := http.StatusOK
-	var body []byte
-	var omitted bool
-	if rec != nil {
-		omitted = rec.ResultOmitted
-		if rec.Result != nil {
-			if rec.Result.Status != 0 {
-				status = rec.Result.Status
-			}
-			for _, kv := range rec.Result.Headers {
-				h.Add(kv[0], kv[1])
-			}
-			if !rec.ResultOmitted {
-				body = rec.Result.Body
-			}
-		}
-	}
-	h.Set("Idempotency-Replayed", "true")
-	if omitted {
-		h.Set("Idempotency-Replay", "omitted")
-	}
-	if len(body) > 0 {
-		h.Set("Content-Length", strconv.Itoa(len(body)))
-	}
-	w.WriteHeader(status)
-	_, _ = w.Write(body)
+	m.problems.Fail(w, r, code, detail, extra)
 }
 
 // Handler wraps next (REQ-HTTP-18).
@@ -113,19 +59,19 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		key, status, reason := lookupKey(r.Header, m.opts.HeaderName, m.opts.KeySyntax)
+		key, status, reason := httpx.LookupKey(r.Header, m.opts.HeaderName, m.opts.KeySyntax)
 		switch status {
-		case keyMissing:
+		case httpx.KeyMissing:
 			if !m.opts.Required {
 				next.ServeHTTP(w, r)
 				return
 			}
 			m.fail(w, r, CodeMissingKey, "", http.Header{"Link": {"<" + m.opts.DocsURL + ">; rel=\"describedby\""}})
 			return
-		case keyInvalid:
+		case httpx.KeyInvalid:
 			m.fail(w, r, CodeInvalidKey, reason, nil)
 			return
-		case keyOK:
+		case httpx.KeyOK:
 			// handled below
 		}
 		scope, ok := resolveScope(r, m.opts)
@@ -133,8 +79,8 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 			m.fail(w, r, CodeMissingPrincipal, "", nil)
 			return
 		}
-		body, err := readBody(r, m.opts.MaxRequestBytes)
-		if errors.Is(err, errTooLarge) {
+		body, err := httpx.ReadBody(r, m.opts.MaxRequestBytes)
+		if errors.Is(err, httpx.ErrTooLarge) {
 			m.fail(w, r, CodePayloadTooLarge, "", nil)
 			return
 		}
@@ -164,7 +110,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		if limit <= 0 {
 			limit = anyonce.DefaultPolicy().MaxResultBytes
 		}
-		cw := &captureWriter{ResponseWriter: w, limit: limit}
+		cw := httpx.NewCaptureWriter(w, limit)
 
 		// A handler panic is recovered here, inside run, so the engine sees a failing handler and abandons
 		// the claim exactly as it does for a returned error; the panic value is replayed after Execute
@@ -180,11 +126,11 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 			if degraded.Load() {
 				w.Header().Set("Idempotency-Degraded", "true")
 			}
-			next.ServeHTTP(cw, r.WithContext(withInfo(ctx, key, fence)))
-			if cw.hijacked {
+			next.ServeHTTP(cw, r.WithContext(httpx.WithInfo(ctx, key, fence)))
+			if cw.Hijacked() {
 				return anyonce.StoredResult{}, errHijacked
 			}
-			return cw.result(m.opts.storeHeaders), nil
+			return cw.Result(m.opts.storeHeaders), nil
 		}, policy)
 		if panicValue != nil {
 			panic(panicValue)
@@ -195,7 +141,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 				// The handler took over the connection; nothing left to write.
 			case res.Kind == anyonce.ResultStoreError:
 				m.fail(w, r, CodeStoreUnavailable, "", http.Header{"Retry-After": {"1"}})
-			case !cw.wroteHeader:
+			case !cw.WroteHeader():
 				http.Error(w, "httpmw: idempotency failed", http.StatusInternalServerError)
 			}
 			return
@@ -204,9 +150,9 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		case anyonce.ResultExecuted:
 			// The handler already wrote the response through cw.
 		case anyonce.ResultReplayed:
-			writeReplay(w, res.Record)
+			httpx.WriteReplay(w, res.Record)
 		case anyonce.ResultConflict:
-			m.fail(w, r, CodeConflict, "", http.Header{"Retry-After": {retryAfter(res.LeaseUntil, policy)}})
+			m.fail(w, r, CodeConflict, "", http.Header{"Retry-After": {httpx.RetryAfter(res.LeaseUntil, policy)}})
 		case anyonce.ResultMismatch:
 			m.fail(w, r, CodeFingerprintMismatch, "", nil)
 		case anyonce.ResultStoreError:

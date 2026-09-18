@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/sns45/anyonce/go/anyonce"
+	"github.com/sns45/anyonce/go/internal/httpx"
 )
 
 // FingerprintMode selects the D9 fingerprint: body hashes method, path with query and the raw bytes; jcs hashes the
@@ -18,11 +19,11 @@ const (
 )
 
 // DefaultHeaderName, DefaultMaxRequestBytes and DefaultProblemBaseURI are the Options defaults (REQ-HTTP-2,
-// REQ-HTTP-6, REQ-HTTP-13).
+// REQ-HTTP-6, REQ-HTTP-13). The last two are shared with the other doors and live in internal/httpx.
 const (
 	DefaultHeaderName      = "Idempotency-Key"
-	DefaultMaxRequestBytes = 1 << 20
-	DefaultProblemBaseURI  = "https://in8.sh/anyonce/problems/"
+	DefaultMaxRequestBytes = httpx.DefaultMaxRequestBytes
+	DefaultProblemBaseURI  = httpx.DefaultProblemBaseURI
 )
 
 // DefaultMethods are the methods the layer applies to (REQ-HTTP-1).
@@ -64,6 +65,9 @@ type Options struct {
 	DocsURL        string
 	// OnError renders a problem differently (REQ-HTTP-13). Status and code must not change.
 	OnError func(w http.ResponseWriter, r *http.Request, p Problem)
+	// ProblemTitles overrides the title of one or more problem codes (Q23). The status and the code member are
+	// fixed by D11 and are not overridable. A nil map keeps the defaults.
+	ProblemTitles map[Code]string
 	// Skip opts a request out (REQ-HTTP-15).
 	Skip func(*http.Request) bool
 }
