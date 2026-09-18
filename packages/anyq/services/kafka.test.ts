@@ -30,18 +30,30 @@ const PORT = 9092;
 const BROKERS = [`127.0.0.1:${PORT}`];
 
 /**
- * kafkajs schedules its pending request check with a negative delay whenever nothing is throttled, and the
- * runtime reports that as a TimeoutNegativeWarning. It comes from inside the published @anyq/kafka bundle, so
- * this drops that one warning and still prints anything else, rather than silencing the process wholesale.
+ * A lifecycle hook has its own timeout and does not inherit the one a test declares, and the default is short
+ * enough that a client connect or a consumer group leave on a loaded CI runner runs past it. Every hook in
+ * this file is given the same budget as the tests.
  */
-function onWarning(warning: Error): void {
-  if (warning.name === 'TimeoutNegativeWarning') return;
-  console.warn(`${warning.name}: ${warning.message}`);
-}
-process.on('warning', onWarning);
+const HOOK_TIMEOUT_MS = 60_000;
+
+/**
+ * kafkajs schedules its pending request check with a negative delay whenever nothing is throttled, and a
+ * runtime reports that as a TimeoutNegativeWarning on stderr. It comes from inside the published @anyq/kafka
+ * bundle and nothing about correctness turns on it, but it is noise in the test output.
+ *
+ * A `process.on('warning')` listener suppressed it on one bun version and not on another, because whether a
+ * listener replaces the default printer is up to the runtime. A negative delay is defined to mean zero, so
+ * clamping it here removes the warning at its source instead of trying to intercept the report of it, which
+ * works whatever the runtime does with warnings. The original is restored when this file is done.
+ */
+const nativeSetTimeout = globalThis.setTimeout;
+globalThis.setTimeout = ((...args: Parameters<typeof nativeSetTimeout>) => {
+  const [handler, delay, ...rest] = args;
+  return nativeSetTimeout(handler, typeof delay === 'number' && delay < 0 ? 0 : delay, ...rest);
+}) as typeof globalThis.setTimeout;
 afterAll(() => {
-  process.off('warning', onWarning);
-});
+  globalThis.setTimeout = nativeSetTimeout;
+}, HOOK_TIMEOUT_MS);
 
 /** applyStrategy and deadLetterMessage are protected on BaseConsumer; this widens what a test drives. */
 class Probe<T> extends KafkaConsumer<T> {
@@ -66,7 +78,7 @@ let cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const step of cleanup.reverse()) await step();
   cleanup = [];
-});
+}, HOOK_TIMEOUT_MS);
 
 function topicFor(label: string): string {
   return `anyonce-kafka-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

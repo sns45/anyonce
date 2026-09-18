@@ -39,12 +39,18 @@ class Probe<T> extends MemoryConsumer<T> {
 
 const QUIET = { logging: { enabled: false } } as const;
 
+/**
+ * A lifecycle hook has its own timeout and does not inherit the one a test declares. This adapter is in
+ * process and fast, but the hook is given an explicit budget so every suite in this phase reads the same way.
+ */
+const HOOK_TIMEOUT_MS = 30_000;
+
 let cleanup: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
   for (const step of cleanup.reverse()) await step();
   cleanup = [];
-});
+}, HOOK_TIMEOUT_MS);
 
 function queueFor(label: string): string {
   return `anyonce-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

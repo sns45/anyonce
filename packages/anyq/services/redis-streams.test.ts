@@ -21,6 +21,12 @@ import { describeService } from './services';
 const HOST = '127.0.0.1';
 const PORT = 6379;
 
+/**
+ * A lifecycle hook has its own timeout and does not inherit the one a test declares, and the default is short
+ * enough that a client quit on a loaded CI runner runs past it. Every hook here gets the tests' budget.
+ */
+const HOOK_TIMEOUT_MS = 60_000;
+
 /** applyStrategy and deadLetterMessage are protected on BaseConsumer; this widens what a test drives. */
 class Probe<T> extends RedisStreamsConsumer<T> {
   readonly deadLetters: Array<{ id: string; reason: string }> = [];
@@ -49,7 +55,7 @@ let cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const step of cleanup.reverse()) await step();
   cleanup = [];
-});
+}, HOOK_TIMEOUT_MS);
 
 function build<T>(
   stream: string,

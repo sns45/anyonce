@@ -22,6 +22,13 @@ import { describeService } from './services';
 
 const PORT = 9324;
 const ENDPOINT = `http://127.0.0.1:${PORT}`;
+
+/**
+ * A lifecycle hook has its own timeout and does not inherit the one a test declares, and the default is short
+ * enough that an SQS consumer disconnect, which waits out the in-flight long poll, runs past it. Every hook
+ * here gets the tests' budget.
+ */
+const HOOK_TIMEOUT_MS = 60_000;
 const CONNECTION = {
   region: 'us-east-1',
   endpoint: ENDPOINT,
@@ -52,7 +59,7 @@ let cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const step of cleanup.reverse()) await step();
   cleanup = [];
-});
+}, HOOK_TIMEOUT_MS);
 
 async function makeQueue(label: string): Promise<string> {
   const admin = new SQSClient({
