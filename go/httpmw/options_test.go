@@ -1,8 +1,13 @@
 package httpmw
 
 import (
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/sns45/anyonce/go/store/memory"
 )
 
 func TestOptions(t *testing.T) {
@@ -49,6 +54,26 @@ func TestOptions(t *testing.T) {
 		}
 		if got := (Options{ProblemBaseURI: "https://p.test/"}).resolve().DocsURL; got != "https://p.test/missing-key" {
 			t.Fatal(got)
+		}
+	})
+	// This file is the internal test package, so the exported surface is named without the httpmw qualifier.
+	t.Run("REQ-WH-2: ProblemTitles reaches the problem the middleware renders", func(t *testing.T) {
+		mw := New(memory.New(), Options{
+			Required:      true,
+			ProblemTitles: map[Code]string{CodeMissingKey: "The webhook-id header is required for this request"},
+		})
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/hook", strings.NewReader("x"))
+		mw.Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })).ServeHTTP(rec, req)
+		if rec.Code != 400 {
+			t.Fatalf("status = %d, want 400", rec.Code)
+		}
+		var p Problem
+		if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+			t.Fatal(err)
+		}
+		if p.Title != "The webhook-id header is required for this request" || p.Code != CodeMissingKey {
+			t.Fatalf("problem = %+v", p)
 		}
 	})
 }
