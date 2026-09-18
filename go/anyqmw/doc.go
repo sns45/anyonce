@@ -12,5 +12,5 @@
 // against the memory, Redis Streams, SQS and Kafka adapters (REQ-Q-6). Without it the typed error reaches anyq's
 // legacy path and Wrap warns once through Options.Warn.
 //
-// See docs/queue-ids.md for how to choose a key source per broker and what each one survives.
+// Which key source to choose per broker, and what each one survives, belongs in docs/queue-ids.md (REQ-DOC-1).
 package anyqmw

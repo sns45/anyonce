@@ -28,8 +28,8 @@ func memoryMeta(queue string) core.ProviderMetadata {
 func TestWithDefaults(t *testing.T) {
 	t.Run("REQ-Q-1: the zero Options take the documented defaults", func(t *testing.T) {
 		o := Options{}.withDefaults()
-		if o.Key != KeyID {
-			t.Fatalf("default key source is %q, want %q", o.Key, KeyID)
+		if o.Key != KeySourceID {
+			t.Fatalf("default key source is %q, want %q", o.Key, KeySourceID)
 		}
 		if o.KeyHeader != DefaultKeyHeader {
 			t.Fatalf("default key header is %q, want %q", o.KeyHeader, DefaultKeyHeader)
@@ -51,8 +51,8 @@ func TestWithDefaults(t *testing.T) {
 	})
 
 	t.Run("REQ-Q-1: withDefaults keeps every value the caller set", func(t *testing.T) {
-		o := Options{Key: KeyBody, KeyHeader: "x-key", OnInFlight: InFlightAck}.withDefaults()
-		if o.Key != KeyBody || o.KeyHeader != "x-key" || o.OnInFlight != InFlightAck {
+		o := Options{Key: KeySourceBody, KeyHeader: "x-key", OnInFlight: InFlightAck}.withDefaults()
+		if o.Key != KeySourceBody || o.KeyHeader != "x-key" || o.OnInFlight != InFlightAck {
 			t.Fatalf("withDefaults overwrote a caller value: %+v", o)
 		}
 	})
@@ -70,7 +70,7 @@ func TestResolveKey(t *testing.T) {
 	})
 
 	t.Run("REQ-Q-1: the header source reads idempotency-key case insensitively", func(t *testing.T) {
-		o := Options{Key: KeyHeader}.withDefaults()
+		o := Options{Key: KeySourceHeader}.withDefaults()
 		headers := core.MessageHeaders{"Idempotency-Key": []byte("from-producer")}
 		key, err := o.resolveKey(msg("m-1", []byte(`{}`), headers, memoryMeta("orders")))
 		if err != nil {
@@ -79,7 +79,7 @@ func TestResolveKey(t *testing.T) {
 		if key != "from-producer" {
 			t.Fatalf("key is %q, want from-producer", key)
 		}
-		custom := Options{Key: KeyHeader, KeyHeader: "X-Order-Key"}.withDefaults()
+		custom := Options{Key: KeySourceHeader, KeyHeader: "X-Order-Key"}.withDefaults()
 		key, err = custom.resolveKey(msg("m-1", []byte(`{}`), core.MessageHeaders{"x-order-key": []byte("from-header")}, memoryMeta("orders")))
 		if err != nil {
 			t.Fatal(err)
@@ -90,7 +90,7 @@ func TestResolveKey(t *testing.T) {
 	})
 
 	t.Run("REQ-Q-1: a missing header under the header source is a configuration error", func(t *testing.T) {
-		o := Options{Key: KeyHeader}.withDefaults()
+		o := Options{Key: KeySourceHeader}.withDefaults()
 		_, err := o.resolveKey(msg("m-1", []byte(`{}`), nil, memoryMeta("orders")))
 		if !errors.Is(err, ErrConfiguration) {
 			t.Fatalf("want ErrConfiguration, got %v", err)
@@ -98,7 +98,7 @@ func TestResolveKey(t *testing.T) {
 	})
 
 	t.Run("REQ-Q-1: the body source is the fingerprint, so it survives a re-published message", func(t *testing.T) {
-		o := Options{Key: KeyBody}.withDefaults()
+		o := Options{Key: KeySourceBody}.withDefaults()
 		body := []byte(`{"a":1}`)
 		first, err := o.resolveKey(msg("id-1", body, nil, memoryMeta("orders")))
 		if err != nil {

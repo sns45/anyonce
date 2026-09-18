@@ -60,7 +60,7 @@ func TestWrap(t *testing.T) {
 		if record.Result == nil || record.Result.Kind != anyonce.KindMessage || record.Result.Outcome != anyonce.OutcomeOK {
 			t.Fatalf("stored result is %+v", record.Result)
 		}
-		if len(record.Result.Body) != 0 || record.Result.Status != 0 || record.Result.Error != nil {
+		if len(record.Result.Body) != 0 || record.Result.Status != 0 || len(record.Result.Headers) != 0 || record.Result.Error != nil {
 			t.Fatalf("stored result carries payload data: %+v", record.Result)
 		}
 		if record.ResultOmitted {
@@ -201,6 +201,28 @@ func TestWrap(t *testing.T) {
 		}
 	})
 
+	t.Run("REQ-Q-7: a handler that swallows a cancellation still abandons the claim", func(t *testing.T) {
+		store := memory.New()
+		ctx, cancel := context.WithCancel(context.Background())
+		handler := anyqmw.Wrap(func(ctx context.Context, _ core.Message) error {
+			cancel()
+			// The handler reports success while its context is already cancelled, which is the case the
+			// engine cannot see on its own: without the wrapper's guard a completed record would be stored
+			// for work anyq is about to redeliver.
+			return nil
+		}, anyqmw.Options{Store: store})
+		if err := handler(ctx, message("m-1", []byte(`{}`), nil)); !errors.Is(err, context.Canceled) {
+			t.Fatalf("want context.Canceled, got %v", err)
+		}
+		record, err := store.Get(context.Background(), "orders", "m-1", time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if record != nil {
+			t.Fatalf("a swallowed cancellation left a record behind: %+v", record)
+		}
+	})
+
 	t.Run("REQ-Q-7: a panicking handler abandons the claim and the panic still propagates", func(t *testing.T) {
 		store := memory.New()
 		handler := anyqmw.Wrap(func(context.Context, core.Message) error { panic("boom") }, anyqmw.Options{Store: store})
@@ -272,12 +294,25 @@ func TestWrap(t *testing.T) {
 		}
 	})
 
+	t.Run("REQ-Q-1: Wrap panics when the one required option is missing", func(t *testing.T) {
+		defer func() {
+			recovered := recover()
+			if recovered == nil {
+				t.Fatal("Wrap accepted a nil Store")
+			}
+			if got, want := recovered, "anyqmw: Options.Store is nil"; got != want {
+				t.Fatalf("panic value is %v, want %q", got, want)
+			}
+		}()
+		anyqmw.Wrap(func(context.Context, core.Message) error { return nil }, anyqmw.Options{})
+	})
+
 	t.Run("REQ-Q-1: an identity the wrapper cannot derive is a configuration error", func(t *testing.T) {
 		store := memory.New()
 		handler := anyqmw.Wrap(func(context.Context, core.Message) error {
 			t.Error("the handler ran without a usable identity")
 			return nil
-		}, anyqmw.Options{Store: store, Key: anyqmw.KeyHeader})
+		}, anyqmw.Options{Store: store, Key: anyqmw.KeySourceHeader})
 		err := handler(context.Background(), message("m-1", []byte(`{}`), nil))
 		if !errors.Is(err, anyqmw.ErrConfiguration) {
 			t.Fatalf("want ErrConfiguration, got %v", err)
@@ -289,7 +324,9 @@ func TestWrap(t *testing.T) {
 		store := memory.New()
 		var mu sync.Mutex
 		runs := 0
-		entered := make(chan struct{}, 1)
+		// entered has room for every delivery, so a broken door that let a second delivery into the handler
+		// reports that instead of blocking on the send and hanging the test.
+		entered := make(chan struct{}, deliveries)
 		release := make(chan struct{})
 		// Warn is silenced because the conflicting deliveries overlap, so one of them legitimately reports an
 		// untranslated in-flight error and the default Warn would log during the test.
@@ -315,11 +352,16 @@ func TestWrap(t *testing.T) {
 			}(i)
 		}
 		close(start)
-		// The winner parks inside the handler until every other delivery has been answered, so the
-		// conflict count is deterministic without a sleep anywhere in the test.
+		// The winner parks inside the handler until every other delivery has been answered, so the conflict
+		// count is deterministic without a sleep anywhere in the test. Every other delivery is answered
+		// either by returning (finished) or, if the door is broken, by entering the handler too; counting
+		// both means a broken door fails on the assertions below instead of hanging on this drain.
 		<-entered
-		for range deliveries - 1 {
-			<-finished
+		for answered := 0; answered < deliveries-1; answered++ {
+			select {
+			case <-finished:
+			case <-entered:
+			}
 		}
 		close(release)
 		wg.Wait()

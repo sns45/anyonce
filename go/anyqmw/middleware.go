@@ -22,7 +22,13 @@ const untranslatedWarning = "anyqmw: an in-flight duplicate was reported to anyq
 // handler, an in-flight duplicate returns an *InFlightError for the companion Strategy to park, a payload
 // mismatch returns a *MismatchError for the companion Strategy to dead-letter, and a handler error or panic
 // abandons the claim and propagates so anyq's own policy applies unchanged (REQ-Q-3).
+//
+// Wrap panics when Options.Store is nil, the startup-time half of the one required field: a nil store would
+// otherwise fail on the first delivery with an unhelpful nil dereference.
 func Wrap(handler core.Handler, opts Options) core.Handler {
+	if opts.Store == nil {
+		panic("anyqmw: Options.Store is nil")
+	}
 	o := opts.withDefaults()
 	var mu sync.Mutex
 	var pending *InFlightError

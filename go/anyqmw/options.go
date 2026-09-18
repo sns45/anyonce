@@ -10,18 +10,18 @@ import (
 	"github.com/sns45/anyq/go/core"
 )
 
-// KeySource selects where the identity comes from (REQ-Q-1). Q40: only KeyBody survives an anyq park on every
+// KeySource selects where the identity comes from (REQ-Q-1). Q40: only KeySourceBody survives an anyq park on every
 // adapter, because a parked message is republished and the broker id changes.
 type KeySource string
 
-// KeyID, KeyHeader and KeyBody are the three key sources. KeyID is the default.
+// KeySourceID, KeySourceHeader and KeySourceBody are the three key sources. KeySourceID is the default.
 const (
-	// KeyID is the broker message id, core.Message.ID.
-	KeyID KeySource = "id"
-	// KeyHeader is a message header, named by Options.KeyHeader and matched case-insensitively.
-	KeyHeader KeySource = "header"
-	// KeyBody is the body fingerprint, so a re-published message keeps its identity.
-	KeyBody KeySource = "body"
+	// KeySourceID is the broker message id, core.Message.ID.
+	KeySourceID KeySource = "id"
+	// KeySourceHeader is a message header, named by Options.KeyHeader and matched case-insensitively.
+	KeySourceHeader KeySource = "header"
+	// KeySourceBody is the body fingerprint, so a re-published message keeps its identity.
+	KeySourceBody KeySource = "body"
 )
 
 // DefaultKeyHeader is the header a producer sets when the broker id is not stable (REQ-DOC-1, Q4).
@@ -41,14 +41,14 @@ const (
 
 // Options configures Wrap. Zero values take the documented defaults.
 type Options struct {
-	// Store is the claim store. It is the one required field.
+	// Store is the claim store. It is the one required field: Wrap panics when it is nil.
 	Store anyonce.Store
-	// Key selects the identity source (REQ-Q-1). Default KeyID. KeyFunc overrides it.
+	// Key selects the identity source (REQ-Q-1). Default KeySourceID. KeyFunc overrides it.
 	Key KeySource
 	// KeyFunc derives the identity from the message itself and wins over Key. Its result is validated like any
 	// other key.
 	KeyFunc func(core.Message) (string, error)
-	// KeyHeader is the header read under KeySource KeyHeader, matched case-insensitively. Default
+	// KeyHeader is the header read under KeySourceHeader, matched case-insensitively. Default
 	// DefaultKeyHeader.
 	KeyHeader string
 	// Scope replaces the scope derived from the adapter metadata (Q42). ScopeFunc overrides it.
@@ -74,7 +74,7 @@ type Options struct {
 // never pays for the defaulting.
 func (o Options) withDefaults() Options {
 	if o.Key == "" {
-		o.Key = KeyID
+		o.Key = KeySourceID
 	}
 	if o.KeyHeader == "" {
 		o.KeyHeader = DefaultKeyHeader
@@ -127,15 +127,15 @@ func (o Options) resolveKey(msg core.Message) (string, error) {
 			return "", err
 		}
 		key = derived
-	case o.Key == KeyBody:
+	case o.Key == KeySourceBody:
 		key = anyonce.SHA256Hex(msg.Body())
-	case o.Key == KeyHeader:
+	case o.Key == KeySourceHeader:
 		found, ok := headerValue(msg.Headers(), o.KeyHeader)
 		if !ok {
-			return "", fmt.Errorf("%w: key source %q found no %s header on this message", ErrConfiguration, KeyHeader, o.KeyHeader)
+			return "", fmt.Errorf("%w: key source %q found no %s header on this message", ErrConfiguration, o.Key, o.KeyHeader)
 		}
 		key = found
-	case o.Key == KeyID:
+	case o.Key == KeySourceID:
 		key = msg.ID()
 	default:
 		return "", fmt.Errorf("%w: unknown key source %q", ErrConfiguration, o.Key)
