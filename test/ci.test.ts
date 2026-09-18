@@ -110,7 +110,7 @@ describe('ci workflow', () => {
   });
 
   test('REQ-REL-4: the go job runs the nested anyhook interop module', () => {
-    const steps = (ci.jobs.go.steps as Array<{ run?: string; 'working-directory'?: string }>);
+    const steps = ci.jobs.go.steps as Array<{ run?: string; 'working-directory'?: string }>;
     const step = steps.find((s) => s['working-directory'] === 'go/webhookmw/interop');
     expect(step?.run).toBe('go test -race ./...');
   });
