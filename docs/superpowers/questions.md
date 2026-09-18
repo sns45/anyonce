@@ -214,3 +214,51 @@ The first P3 DynamoDB store keyed an item by `pk = scope`, `sk = key`. D8's defa
 Recommended resolution: one partition key, `pk = scope + <unit separator> + key`, and no sort key. `ensureTable` and `EnsureTable` create `pk` (S) as the only key; `itemKey`/`ItemKey` compose it and the row decoder splits on the first separator, which a scope never contains. Every claim is then a point write on its own partition and the table spreads across partitions the way DynamoDB expects. `docs/stores.md` records it in the Setup and Cost cells.
 
 **Decision: pending.** P3 proceeds on the recommendation.
+
+## Q23: REQ-WH-2 and D16 need problem codes that D11 does not list
+
+REQ-WH-2 returns a "500 `configuration-error`" when the receiver has neither a `verify` callback nor a `verifiedMarker`, and D16 says an unverified request never reaches the store without naming the status a failed verification returns. D11's catalogue has neither code, and REQ-HTTP-13 says every error is a problem details document with a stable `code`. Separately, the D11 titles name the `Idempotency-Key` header, which is the wrong header to name to a webhook sender that sent `webhook-id`.
+
+Recommended resolution: add two codes to D11, to `packages/core/src/http/problems.ts`, to the Go catalogue and to `docs/problems.md`. `configuration-error` (500) is the REQ-WH-2 answer. `signature-invalid` (401) is the answer when `verify` returns false or the `verifiedMarker` is absent: 401 rather than 403 because the sender did present a credential (a signature) and it did not verify, which is what the Standard Webhooks ecosystem returns. Neither code is reachable from the HTTP door, so the HTTP door's behaviour does not change. For the titles, add an optional `problemTitles` map to the HTTP options (Go `Options.ProblemTitles`) that overrides a title per code without touching the status or the code, and let `@anyonce/webhooks` and `webhookmw` set titles that name `webhook-id`.
+
+**Decision: pending.** P4b proceeds on the recommendation.
+
+## Q24: what `sourceId` is in D8's webhook scope
+
+D8 gives the webhook adapter the scope `${routePattern}/${sourceId}` and never says where `sourceId` comes from. REQ-WH-1's `verify` returns a boolean, so verification yields no sender identity, and the REQ-WH-6 helper `standardWebhooksVerify(secret)` identifies an endpoint (one secret per receiving endpoint), not a sender.
+
+Recommended resolution: `sourceId` is the verified sender identity when the deployment can produce one, and the receiver takes it as an option, `sourceId?: (req, body) => string | undefined` (Go `Options.SourceID func(*http.Request, []byte) string`). The default scope is `${routePattern}/${sourceId}` when that function yields a non-empty value and `${routePattern}` alone when it does not, because inventing a constant source segment would be noise in every stored row. `routePattern` is the `routePattern` option when given, otherwise the request pathname (Go `r.URL.EscapedPath()`), which mirrors the HTTP door's D8 fallback. A multi-tenant receiver that maps a signature or a path segment to a tenant passes `sourceId` and gets per-tenant replay isolation; `docs/security.md` (P6) records that a shared endpoint without a `sourceId` shares one dedupe namespace across senders.
+
+**Decision: pending.** P4b proceeds on the recommendation.
+
+## Q25: whether D7's key rules apply to a webhook id, and what a verified request with no id gets
+
+The webhook door's key is a `webhook-id` header value or a body-derived id (REQ-WH-1), not an `Idempotency-Key`. D7 defines key syntax (lenient or strict RFC 9651 sf-string, 255 bytes, printable ASCII) for the HTTP door. Nothing says whether a webhook id is validated the same way, and REQ-WH-1 does not say what happens when a request verifies but carries no id.
+
+Recommended resolution: the length and charset half of D7 applies, because the id becomes the store key and every store has to hold it: the id goes through the lenient parser (1 to 255 bytes, printable ASCII, surrounding quotes stripped), and an id that fails is 400 `invalid-key`. The strict sf-string mode is not offered on the webhook door, because `webhook-id` is not a structured field and no sender quotes it. `required` defaults to true on the webhook door (it defaults to false on the HTTP door per REQ-HTTP-3), so a request that verified and carries no id and no `key` function result is 400 `missing-key`: a verified sender with no id is a sender bug and silently passing it through would run the handler on every redelivery.
+
+**Decision: pending.** P4b proceeds on the recommendation.
+
+## Q26: REQ-WH-2 says the receiver logs once, and P2 decided the adapters never log
+
+REQ-WH-2 says the middleware "returns 500 `configuration-error` at first request and logs once". The P2 plan's constraints say nothing in `packages/core`, `packages/hono` or `go/httpmw` logs at all, and NFR-2 plus the CI key-log gate police what may appear in a log line.
+
+Recommended resolution: the no-logging rule stays for `@anyonce/core`, `@anyonce/hono` and `go/httpmw`. `@anyonce/webhooks` and `go/webhookmw` log exactly once per receiver instance, and only for the configuration error, through an injectable sink (`logger?: (message: string) => void`, default `console.error`; Go `Logf func(format string, args ...any)`, default `log.Printf`) so the tests assert the message without capturing stderr. The message is a fixed string that names the two options and carries no request data, no header value and no key, so the key-log gate stays green and NFR-2 is unaffected. No other code path in either package logs.
+
+**Decision: pending.** P4b proceeds on the recommendation.
+
+## Q27: the anyhook signer is available in both languages for the REQ-WH-6 interop test
+
+The interop test signs with anyhook and receives with anyonce. Checked on 18 September 2026: `npm view @anyhook/signing version` reports 0.2.2, and `https://proxy.golang.org/github.com/sns45/anyhook/go/@latest` reports `v0.2.1` (tag `go/v0.2.1`, commit `a08fd47`). Both match `docs/reference/anyhook-signing.md`, so no reimplementation of the signer is needed in either language. The Go side still has a packaging question: CLAUDE.md says the Go module's only third-party dependencies are the store clients and `modernc.org/sqlite`, and a test-only require would still land in the published `go/go.mod` and `go/go.sum`.
+
+Recommended resolution: TypeScript adds `@anyhook/signing@0.2.2` as a devDependency of `packages/webhooks` (a devDependency is not a published dependency, so D21 is unaffected). Go puts the interop test in a nested, test-only module `go/webhookmw/interop` with its own `go.mod` requiring `github.com/sns45/anyhook/go v0.2.1`, so `github.com/sns45/anyonce/go` keeps the dependency set CLAUDE.md names and `go build ./...` in `go/` never sees it; the existing `go` CI job gains one step that runs `go test -race ./...` inside that directory. anyonce still imports nothing from anyhook at runtime.
+
+**Decision: pending.** P4b proceeds on the recommendation.
+
+## Q28: which conformance vectors apply to the webhook door
+
+The webhook receiver is an HTTP door built on `runIdempotent`, so the replay, 409 and 422 vectors should hold for it, but the suite was written for the `Idempotency-Key` door and the runner drives fixture control paths (`POST /reset`, `GET /counter`) that a receiver with `required: true` would answer 400.
+
+Recommended resolution: P4b runs the whole suite through the receiver in both languages with `idHeader` set to `Idempotency-Key`, `verify` returning true (the vectors carry no signatures, and the gate is proven by its own tests), `required: true`, and a `skip` predicate for the runner's control paths `/reset` and `/counter` so the runner can reset and read the counter. Every vector that does not pass is listed in `conformance/README.md` with the reason it does not apply to this door, and is never made to pass by weakening the receiver. The expectation recorded up front is that all core and all profile vectors pass, because the receiver changes only where the key comes from, what the scope is and what runs before the store.
+
+**Decision: pending.** P4b proceeds on the recommendation.
