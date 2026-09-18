@@ -1,15 +1,17 @@
-package httpmw
+package httpx_test
 
 import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/sns45/anyonce/go/internal/httpx"
 )
 
 func TestCaptureWriter(t *testing.T) {
 	t.Run("REQ-HTTP-7: passes writes through and buffers at most the cap plus one byte", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		w := &captureWriter{ResponseWriter: rec, limit: 5}
+		w := httpx.NewCaptureWriter(rec, 5)
 		w.Header().Set("Content-Type", "text/plain")
 		for _, part := range []string{"aaaa", "bbbb", "cccc"} {
 			if _, err := w.Write([]byte(part)); err != nil {
@@ -19,41 +21,39 @@ func TestCaptureWriter(t *testing.T) {
 		if rec.Body.String() != "aaaabbbbcccc" || rec.Code != 200 {
 			t.Fatalf("%d %q", rec.Code, rec.Body.String())
 		}
-		if !w.overCap || w.buf.Len() != 6 {
-			t.Fatalf("overCap %v buffered %d", w.overCap, w.buf.Len())
-		}
-		res := w.result(map[string]bool{"Content-Type": true})
+		// The buffer stops one byte over the cap, which is how the engine tells a capped result from an exact fit.
+		res := w.Result(map[string]bool{"Content-Type": true})
 		if res.Kind != "http" || res.Status != 200 || len(res.Body) != 6 || len(res.Headers) != 1 || res.Headers[0] != [2]string{"content-type", "text/plain"} {
 			t.Fatalf("%+v", res)
 		}
 	})
 	t.Run("REQ-HTTP-8: result keeps allowlisted headers, repeats values, and never Set-Cookie", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		w := &captureWriter{ResponseWriter: rec, limit: 10}
+		w := httpx.NewCaptureWriter(rec, 10)
 		w.Header().Add("Link", "<a>")
 		w.Header().Add("Link", "<b>")
 		w.Header().Set("Set-Cookie", "a=1")
 		w.Header().Set("X-Other", "1")
 		w.WriteHeader(201)
-		res := w.result(map[string]bool{"Link": true, "Set-Cookie": true})
+		res := w.Result(map[string]bool{"Link": true, "Set-Cookie": true})
 		if res.Status != 201 || len(res.Headers) != 2 || res.Headers[0] != [2]string{"link", "<a>"} || res.Headers[1] != [2]string{"link", "<b>"} {
 			t.Fatalf("%+v", res)
 		}
 	})
 	t.Run("REQ-HTTP-8: a header set after WriteHeader is not in the stored result", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		w := &captureWriter{ResponseWriter: rec, limit: 10}
+		w := httpx.NewCaptureWriter(rec, 10)
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(200)
 		w.Header().Set("X-Late", "nope")
-		res := w.result(map[string]bool{"Content-Type": true, "X-Late": true})
+		res := w.Result(map[string]bool{"Content-Type": true, "X-Late": true})
 		if len(res.Headers) != 1 || res.Headers[0] != [2]string{"content-type", "text/plain"} {
 			t.Fatalf("%+v", res)
 		}
 	})
 	t.Run("REQ-HTTP-7: a 103 Early Hints write passes through and the final status is the one captured", func(t *testing.T) {
 		rec := &multiStatusWriter{ResponseRecorder: httptest.NewRecorder()}
-		w := &captureWriter{ResponseWriter: rec, limit: 10}
+		w := httpx.NewCaptureWriter(rec, 10)
 		w.Header().Set("Link", "</s.css>; rel=preload")
 		w.WriteHeader(http.StatusEarlyHints)
 		w.Header().Set("Content-Type", "text/plain")
@@ -67,14 +67,14 @@ func TestCaptureWriter(t *testing.T) {
 		if rec.Code != http.StatusCreated || rec.Body.String() != "ok" {
 			t.Fatalf("%d %q", rec.Code, rec.Body.String())
 		}
-		res := w.result(map[string]bool{"Content-Type": true})
+		res := w.Result(map[string]bool{"Content-Type": true})
 		if res.Status != http.StatusCreated || len(res.Headers) != 1 || res.Headers[0] != [2]string{"content-type", "text/plain"} {
 			t.Fatalf("%+v", res)
 		}
 	})
 	t.Run("REQ-HTTP-18: Flush reaches the underlying writer and Unwrap exposes it for http.ResponseController", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		w := &captureWriter{ResponseWriter: rec, limit: 10}
+		w := httpx.NewCaptureWriter(rec, 10)
 		if err := http.NewResponseController(w).Flush(); err != nil {
 			t.Fatal(err)
 		}
@@ -84,16 +84,32 @@ func TestCaptureWriter(t *testing.T) {
 	})
 	t.Run("REQ-HTTP-18: Flush falls back to http.ResponseController and ignores an unsupported base writer", func(t *testing.T) {
 		base := &headerOnlyWriter{}
-		w := &captureWriter{ResponseWriter: base, limit: 10}
+		w := httpx.NewCaptureWriter(base, 10)
 		w.Flush()
 		if base.status != http.StatusOK {
 			t.Fatalf("status %d", base.status)
 		}
 	})
+	t.Run("REQ-HTTP-18: WroteHeader and Hijacked report what the handler did", func(t *testing.T) {
+		w := httpx.NewCaptureWriter(httptest.NewRecorder(), 10)
+		if w.WroteHeader() || w.Hijacked() {
+			t.Fatal("nothing has been written yet")
+		}
+		w.WriteHeader(204)
+		if !w.WroteHeader() {
+			t.Fatal("expected WroteHeader after WriteHeader")
+		}
+		if _, _, err := w.Hijack(); err != http.ErrNotSupported {
+			t.Fatalf("hijack error %v", err)
+		}
+		if w.Hijacked() {
+			t.Fatal("a refused hijack must not disable idempotency")
+		}
+	})
 }
 
 // headerOnlyWriter is an http.ResponseWriter that implements neither http.Flusher nor http.Hijacker, used to
-// exercise captureWriter's http.ResponseController fallback.
+// exercise CaptureWriter's http.ResponseController fallback.
 type headerOnlyWriter struct {
 	header http.Header
 	status int

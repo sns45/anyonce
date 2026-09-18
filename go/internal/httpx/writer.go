@@ -1,4 +1,4 @@
-package httpmw
+package httpx
 
 import (
 	"bufio"
@@ -11,9 +11,9 @@ import (
 	"github.com/sns45/anyonce/go/anyonce"
 )
 
-// captureWriter streams every write to the client while buffering a copy up to limit plus one byte (REQ-HTTP-7).
+// CaptureWriter streams every write to the client while buffering a copy up to limit plus one byte (REQ-HTTP-7).
 // It forwards Flush, Hijack (which disables idempotency for the request) and Unwrap for http.ResponseController.
-type captureWriter struct {
+type CaptureWriter struct {
 	http.ResponseWriter
 	status      int
 	wroteHeader bool
@@ -24,7 +24,19 @@ type captureWriter struct {
 	hijacked    bool
 }
 
-func (w *captureWriter) WriteHeader(code int) {
+// NewCaptureWriter wraps w and buffers up to limit bytes of the body for the store (D12).
+func NewCaptureWriter(w http.ResponseWriter, limit int) *CaptureWriter {
+	return &CaptureWriter{ResponseWriter: w, limit: limit}
+}
+
+// WroteHeader reports whether the handler has written a status line yet.
+func (w *CaptureWriter) WroteHeader() bool { return w.wroteHeader }
+
+// Hijacked reports whether the handler took the connection, which disables idempotency (REQ-HTTP-18).
+func (w *CaptureWriter) Hijacked() bool { return w.hijacked }
+
+// WriteHeader records the final status and freezes the header snapshot, passing the call through (REQ-HTTP-7).
+func (w *CaptureWriter) WriteHeader(code int) {
 	// An informational 1xx (RFC 9110 section 15.2) is not the response: it goes out on the wire and the final
 	// status is still to come, so it is never recorded and never freezes the header snapshot (REQ-HTTP-7).
 	if code >= 100 && code < 200 {
@@ -42,7 +54,8 @@ func (w *captureWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
-func (w *captureWriter) Write(p []byte) (int, error) {
+// Write passes p through to the client while buffering at most the cap plus one byte (REQ-HTTP-7).
+func (w *CaptureWriter) Write(p []byte) (int, error) {
 	if !w.wroteHeader {
 		w.WriteHeader(http.StatusOK)
 	}
@@ -61,7 +74,7 @@ func (w *captureWriter) Write(p []byte) (int, error) {
 // Flush forwards to the underlying writer's Flush, or, when it is not an http.Flusher directly, through
 // http.ResponseController so a writer that only supports flushing that way still streams (REQ-HTTP-18). A
 // writer that supports neither leaves Flush a silent no-op, matching http.ErrNotSupported.
-func (w *captureWriter) Flush() {
+func (w *CaptureWriter) Flush() {
 	if !w.wroteHeader {
 		w.WriteHeader(http.StatusOK)
 	}
@@ -72,7 +85,8 @@ func (w *captureWriter) Flush() {
 	_ = http.NewResponseController(w.ResponseWriter).Flush()
 }
 
-func (w *captureWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+// Hijack hands the connection to the caller and marks the request as no longer idempotent (REQ-HTTP-18).
+func (w *CaptureWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	h, ok := w.ResponseWriter.(http.Hijacker)
 	if !ok {
 		return nil, nil, http.ErrNotSupported
@@ -82,12 +96,12 @@ func (w *captureWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 }
 
 // Unwrap lets http.ResponseController reach the underlying writer.
-func (w *captureWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+func (w *CaptureWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
-// result builds the StoredResult after the handler returned: allowlisted headers with lowercase names so a record
+// Result builds the StoredResult after the handler returned: allowlisted headers with lowercase names so a record
 // looks the same in both languages, every value of a repeated header, never Set-Cookie, and the buffered body (over
 // the cap by one byte when the response was larger).
-func (w *captureWriter) result(allow map[string]bool) anyonce.StoredResult {
+func (w *CaptureWriter) Result(allow map[string]bool) anyonce.StoredResult {
 	status := w.status
 	header := w.snapshot
 	if !w.wroteHeader {
@@ -108,7 +122,7 @@ func (w *captureWriter) result(allow map[string]bool) anyonce.StoredResult {
 	return res
 }
 
-// sortedKeys returns h's header names in sorted order so result's output is deterministic.
+// sortedKeys returns h's header names in sorted order so Result's output is deterministic.
 func sortedKeys(h http.Header) []string {
 	keys := make([]string, 0, len(h))
 	for name := range h {
