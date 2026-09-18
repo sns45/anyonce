@@ -32,10 +32,21 @@ export interface WebhookReceiverOptions
   verifiedMarker?: string;
   /** REQ-WH-5: fires when the same id arrives with a different body. Never throws into the receiver. */
   onSuspicious?: (req: Request, record: IdempotencyRecord) => void;
-  /** D8: the route half of the scope. Default is the request pathname. */
+  /** D8: the route half of the scope. Default is the request pathname. Ignored when scope is given. */
   routePattern?: string | ((req: Request) => string);
-  /** D8 and Q24: the verified sender identity. When it yields nothing the scope is the route alone. */
+  /**
+   * D8 and Q24: the verified sender identity. When it yields nothing the scope is the route alone. Ignored
+   * when scope is given, and supplying both is a construction-time TypeError rather than a silent discard.
+   */
   sourceId?: (req: Request, body: Uint8Array) => string | undefined;
+  /**
+   * REQ-WH-1 and ruling 18: the whole store scope for this delivery. It replaces routePattern and sourceId
+   * entirely, so nothing else is appended to what it returns, and it takes the body because the sender a
+   * webhook door scopes by is usually only readable from the payload. Passing it together with sourceId is a
+   * TypeError from webhookReceiver, because a scope that quietly dropped the sender identity would put two
+   * senders in one dedupe namespace and let one suppress the other's delivery.
+   */
+  scope?: (req: Request, body: Uint8Array) => string;
   /** Q23: overrides on top of the webhook defaults, which name idHeader. */
   problemTitles?: ProblemTitles;
   /** Q26: where the one configuration-error message goes. Default console.error. */
@@ -88,29 +99,40 @@ function resolveKey(
   return { kind: 'ok', key: parsed.key };
 }
 
-/** D8 and Q24: `${routePattern}/${sourceId}`, or the route alone when no sender identity is available. */
-function webhookScope(
-  req: Request,
-  body: Uint8Array,
-  routePattern: string | ((req: Request) => string) | undefined,
-  sourceId: ((req: Request, body: Uint8Array) => string | undefined) | undefined,
-): string {
+/**
+ * D8 and Q24: `${routePattern}/${sourceId}`, or the route alone when no sender identity is available. Ruling
+ * 18: an explicit scope replaces the whole of that, which is why webhookReceiver refuses to be given both.
+ */
+function webhookScope(req: Request, body: Uint8Array, options: WebhookReceiverOptions): string {
+  if (options.scope !== undefined) return options.scope(req, body);
+  const routePattern = options.routePattern;
   const route =
     routePattern === undefined
       ? new URL(req.url).pathname
       : typeof routePattern === 'string'
         ? routePattern
         : routePattern(req);
-  const source = sourceId?.(req, body);
+  const source = options.sourceId?.(req, body);
   return source === undefined || source === '' ? route : `${route}/${source}`;
 }
 
 export function webhookReceiver(options: WebhookReceiverOptions) {
+  // Ruling 18: scope replaces routePattern and sourceId whole, so a receiver given both would silently drop
+  // the sender identity and share one dedupe namespace between senders. That is a cross-sender replay risk,
+  // so it is loud at construction rather than quiet at delivery time.
+  if (options.scope !== undefined && options.sourceId !== undefined) {
+    throw new TypeError(
+      'anyonce: webhookReceiver was given both scope and sourceId, and scope replaces the computed scope entirely, so sourceId would never be read',
+    );
+  }
   const idHeader = options.idHeader ?? DEFAULT_ID_HEADER;
   const titles = webhookTitles(idHeader, options.problemTitles);
   const log = options.logger ?? ((message: string): void => console.error(message));
+  // The webhook scope function takes the body, so it is not the bridge's own scope option and must never be
+  // handed to it: resolveScope would call it with the request alone and prefer its result over routeScope.
+  const { scope: _scope, ...bridgeOptions } = options;
   const base: HttpIdempotencyOptions = {
-    ...options,
+    ...bridgeOptions,
     headerName: idHeader,
     required: options.required ?? true,
     methods: options.methods ?? ['POST'],
@@ -165,7 +187,7 @@ export function webhookReceiver(options: WebhookReceiverOptions) {
       if (!verified) return fail('signature-invalid');
 
       const keyLookup = resolveKey(req, read.body, idHeader, options.key);
-      const routeScope = webhookScope(req, read.body, options.routePattern, options.sourceId);
+      const routeScope = webhookScope(req, read.body, options);
 
       // REQ-WH-5: onSuspicious wants the request, and the engine's onMismatch only carries the operation, so
       // the policy is rebuilt per request with the request closed over. Rebuilding costs three allocations

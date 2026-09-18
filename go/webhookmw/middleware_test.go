@@ -186,6 +186,50 @@ func TestReceiver(t *testing.T) {
 		}
 	})
 
+	t.Run("REQ-WH-1: a Scope function replaces the computed scope, so RoutePattern is never consulted", func(t *testing.T) {
+		store := newCountingStore()
+		webhookmw.New(store, webhookmw.Options{
+			Verify:       alwaysVerify,
+			RoutePattern: "/hooks/stripe",
+			Scope:        func(*http.Request, []byte) string { return "tenant_7" },
+		}).Handler(handled()).ServeHTTP(httptest.NewRecorder(), delivery("msg_1", `{"a":1}`))
+		if ops := store.ops(); len(ops) != 1 || ops[0].Scope != "tenant_7" {
+			t.Fatalf("ops = %+v, want scope tenant_7", ops)
+		}
+	})
+
+	t.Run("REQ-WH-1: a Scope function sees the request and the body bytes", func(t *testing.T) {
+		store := newCountingStore()
+		webhookmw.New(store, webhookmw.Options{
+			Verify: alwaysVerify,
+			Scope: func(r *http.Request, body []byte) string {
+				var payload struct {
+					Account string `json:"account"`
+				}
+				if err := json.Unmarshal(body, &payload); err != nil {
+					t.Errorf("Scope could not read the body: %v", err)
+				}
+				return r.URL.EscapedPath() + "/" + payload.Account
+			},
+		}).Handler(handled()).ServeHTTP(httptest.NewRecorder(), delivery("msg_1", `{"account":"acct_9"}`))
+		if ops := store.ops(); len(ops) != 1 || ops[0].Scope != "/hooks/stripe/acct_9" {
+			t.Fatalf("ops = %+v, want scope /hooks/stripe/acct_9", ops)
+		}
+	})
+
+	t.Run("REQ-WH-1: New panics when Scope is set together with SourceID", func(t *testing.T) {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("New accepted both Scope and SourceID, so the sender identity would be discarded")
+			}
+		}()
+		webhookmw.New(memory.New(), webhookmw.Options{
+			Verify:   alwaysVerify,
+			Scope:    func(*http.Request, []byte) string { return "tenant_7" },
+			SourceID: func(*http.Request, []byte) string { return "acct_42" },
+		})
+	})
+
 	t.Run("REQ-WH-1: the same id in two source scopes runs the handler twice", func(t *testing.T) {
 		var runs atomic.Int64
 		mw := webhookmw.New(memory.New(), webhookmw.Options{

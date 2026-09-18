@@ -78,8 +78,13 @@ type Middleware struct {
 }
 
 // New builds the receiver. Every Options field has a working default, so Options{Verify: ...} is a whole
-// configuration.
+// configuration. It panics when Options.Scope is set together with Options.SourceID, matching httpmw.New's
+// panic on RequirePrincipal without Principal: Scope replaces the computed scope whole, so a receiver given
+// both would silently drop the sender identity and share one dedupe namespace between senders (ruling 18).
 func New(store anyonce.Store, opts Options) *Middleware {
+	if opts.Scope != nil && opts.SourceID != nil {
+		panic("webhookmw: Options.Scope replaces the computed scope entirely, so Options.SourceID would never be read")
+	}
 	m := &Middleware{store: store, opts: opts.resolve()}
 	m.problems = httpx.ProblemWriter{BaseURI: m.opts.ProblemBaseURI, Titles: m.opts.ProblemTitles, OnError: m.opts.OnError}
 	// Q20: the policy cap never exceeds what the store says it can hold whole.
@@ -140,8 +145,12 @@ func lookupID(r *http.Request, body []byte, o resolved) (string, httpx.KeyStatus
 	return httpx.LookupKey(r.Header, o.IDHeader, anyonce.SyntaxLenient)
 }
 
-// scope is D8 and Q24: the route pattern, plus a slash and the sender identity when SourceID yields one.
+// scope is D8 and Q24: the route pattern, plus a slash and the sender identity when SourceID yields one. Ruling
+// 18: an explicit Options.Scope replaces the whole of that, which is why New refuses to be given both.
 func (m *Middleware) scope(r *http.Request, body []byte) string {
+	if m.opts.Scope != nil {
+		return m.opts.Scope(r, body)
+	}
 	route := m.opts.RoutePattern
 	if route == "" {
 		route = r.URL.EscapedPath()

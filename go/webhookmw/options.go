@@ -58,10 +58,18 @@ type Options struct {
 	VerifiedMarker string
 	// OnSuspicious fires when the same id arrives with a different body (REQ-WH-5).
 	OnSuspicious func(r *http.Request, rec *anyonce.Record)
-	// RoutePattern is the route half of the scope (D8). Default r.URL.EscapedPath().
+	// RoutePattern is the route half of the scope (D8). Default r.URL.EscapedPath(). Ignored when Scope is set.
 	RoutePattern string
 	// SourceID is the verified sender identity (Q24). An empty result leaves the scope as the route alone.
+	// Ignored when Scope is set, and setting both panics from New rather than discarding this one silently.
 	SourceID func(r *http.Request, body []byte) string
+	// Scope is the whole store scope for one delivery (REQ-WH-1, ruling 18). It replaces RoutePattern and
+	// SourceID entirely, so nothing is appended to what it returns, and it takes the body because the sender a
+	// webhook door scopes by is usually only readable from the payload. It is also how a receiver behind a
+	// router puts anything request-derived into its scope, which a plain RoutePattern string cannot express.
+	// Setting it together with SourceID panics from New, because a scope that quietly dropped the sender
+	// identity would put two senders in one dedupe namespace and let one suppress the other's delivery.
+	Scope func(r *http.Request, body []byte) string
 	// Fingerprint overrides the D9 default of SHA-256 over the body bytes alone.
 	Fingerprint func(r *http.Request, body []byte) (string, error)
 	// Methods the receiver applies to. Default POST.
