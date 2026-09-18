@@ -61,11 +61,21 @@ export function standardWebhooksVerify(
     throw new TypeError('anyonce: standardWebhooksVerify needs at least one secret');
   const tolerance = (options.toleranceSeconds ?? DEFAULT_TOLERANCE_SECONDS) * 1000;
   const clock = options.clock ?? Date.now;
-  const keys = secrets.map((raw) =>
-    crypto.subtle.importKey('raw', raw as BufferSource, { name: 'HMAC', hash: 'SHA-256' }, false, [
-      'sign',
-    ]),
-  );
+  // The import happens once, here, so a delivery never pays for it. What that costs is a promise created
+  // outside any request: if it rejects before the first delivery arrives, a runtime with no handler attached
+  // reports an unhandled rejection, which on Node terminates the process. Attaching a handler at creation
+  // defers the failure to the await site below, where it surfaces as an ordinary rejection from verify.
+  const keys = secrets.map((raw) => {
+    const key = crypto.subtle.importKey(
+      'raw',
+      raw as BufferSource,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    key.catch(() => {});
+    return key;
+  });
 
   return async (req, body) => {
     const id = req.headers.get('webhook-id');

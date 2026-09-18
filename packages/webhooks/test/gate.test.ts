@@ -154,6 +154,14 @@ describe('verification gate', () => {
     expect(begins).toEqual([]);
   });
 
+  test('REQ-WH-2: an empty verifiedMarker is a TypeError at construction', () => {
+    // M-3: Go reads an empty VerifiedMarker as unconfigured. Accepting it here as a marker named empty string
+    // would build a receiver nothing can ever mark, so it 401s forever, and the two languages would disagree.
+    expect(() => webhookReceiver({ store: countingStore().store, verifiedMarker: '' })).toThrow(
+      TypeError,
+    );
+  });
+
   test('REQ-WH-2: a marker set by an upstream verifier passes the gate', async () => {
     const { store, begins } = countingStore();
     const handler = webhookReceiver({ store, verifiedMarker: 'gateway' })(

@@ -330,6 +330,29 @@ describe('webhook receiver', () => {
     expect(suspicious).toEqual(['msg_both_hooks']);
   });
 
+  test('REQ-WH-5: a throwing user onMismatch is counted in hookErrors even though the receiver catches it', async () => {
+    // M-7: the receiver takes the onMismatch call over so onSuspicious cannot be suppressed, which took the
+    // throw out of the engine's safely(). The counter has to mean the same thing here as on every other door.
+    const s = store();
+    const hookErrors = { count: 0 };
+    const handler = webhookReceiver({
+      store: s,
+      verify: () => true,
+      hookErrors,
+      hooks: {
+        onMismatch: () => {
+          throw new Error('onMismatch exploded');
+        },
+      },
+      onSuspicious: () => {},
+    })(async () => new Response('handled'));
+    const first = await handler(delivery('msg_counted', '{"a":1}'));
+    await first.text();
+    const second = await handler(delivery('msg_counted', '{"a":2}'));
+    expect(second.status).toBe(422);
+    expect(hookErrors.count).toBe(1);
+  });
+
   test('REQ-WH-1: a GET passes through untouched because the receiver applies to POST only', async () => {
     const s = store();
     let runs = 0;

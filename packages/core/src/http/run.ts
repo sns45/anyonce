@@ -32,6 +32,9 @@ export interface RunContext {
   /**
    * Body bytes the caller already read. A door that must see the body before the store (signature verification,
    * a body derived id) reads it once and hands the bytes over instead of making the bridge clone and read again.
+   * The caller owns the bound: REQ-HTTP-6's maxRequestBytes is not applied to bytes supplied this way, because
+   * the read that would have enforced it has already happened, so a door that injects the body enforces the cap
+   * on its own read (the webhook receiver does, with the same maxRequestBytes option).
    */
   body?: Uint8Array;
 }

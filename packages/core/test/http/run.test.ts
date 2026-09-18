@@ -592,4 +592,27 @@ describe('RunContext injection', () => {
       await httpFingerprint('POST', '/hook', new TextEncoder().encode('injected')),
     );
   });
+
+  test('REQ-HTTP-6: caller supplied body bytes are not re-checked against maxRequestBytes', async () => {
+    // The contract RunContext.body documents: the caller owns the bound, because the read that would have
+    // enforced maxRequestBytes has already happened by the time the bytes arrive. The webhook receiver, the
+    // only door that injects a body today, enforces the same cap on its own read before calling in here.
+    const store = new MemoryStore();
+    const options = resolveHttpOptions({ store, maxRequestBytes: 8 });
+    const oversized = new TextEncoder().encode('x'.repeat(64));
+    const res = await runIdempotent(
+      new Request('https://example.test/hook', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'k-unbounded-body' },
+        body: 'x'.repeat(64),
+      }),
+      async () => new Response('ran', { status: 200 }),
+      options,
+      { body: oversized },
+    );
+    expect(res.status).toBe(200);
+    await res.text();
+    const record = await store.get({ scope: 'POST /hook', key: 'k-unbounded-body' }, Date.now());
+    expect(record?.state).toBe('completed');
+  });
 });
