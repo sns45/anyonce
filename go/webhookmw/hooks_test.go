@@ -1,7 +1,9 @@
 package webhookmw_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -14,6 +16,27 @@ import (
 	"github.com/sns45/anyonce/go/store/memory"
 	"github.com/sns45/anyonce/go/webhookmw"
 )
+
+// failingStore refuses every call, so a receiver built on it takes the D13 store error path on Begin.
+type failingStore struct{}
+
+func (failingStore) Begin(context.Context, anyonce.Operation, anyonce.BeginOptions) (anyonce.BeginOutcome, error) {
+	return anyonce.BeginOutcome{}, errors.New("down")
+}
+
+func (failingStore) Complete(context.Context, anyonce.Operation, int64, anyonce.StoredResult, time.Time) (anyonce.CompleteStatus, error) {
+	return "", errors.New("down")
+}
+
+func (failingStore) Abandon(context.Context, anyonce.Operation, int64) (anyonce.CompleteStatus, error) {
+	return "", errors.New("down")
+}
+
+func (failingStore) Get(context.Context, string, string, time.Time) (*anyonce.Record, error) {
+	return nil, errors.New("down")
+}
+
+func (failingStore) Purge(context.Context, time.Time) (int, error) { return 0, errors.New("down") }
 
 // TestReplayAndHooks covers what the engine decides for a delivery that got past key resolution: replay, the
 // in-flight conflict, the mismatch and its security hook, and the claim a handler runs under. The key, the scope
@@ -261,6 +284,48 @@ func TestReplayAndHooks(t *testing.T) {
 		}
 		if runs.Load() != 2 {
 			t.Fatalf("the handler ran %d times, want 2", runs.Load())
+		}
+	})
+
+	t.Run("REQ-WH-7: a store that fails at Begin under fail-open runs the handler and marks Idempotency-Degraded", func(t *testing.T) {
+		// D13 and REQ-HTTP-12 on this door. Fail-closed is the default and is covered by the 503 below, so
+		// this is the arm nothing reached: the receiver's own copy of the degraded flag and the header it
+		// sets before the handler writes anything.
+		var runs atomic.Int64
+		open := webhookmw.New(failingStore{}, webhookmw.Options{
+			Verify: alwaysVerify,
+			Policy: anyonce.Policy{OnStoreError: anyonce.FailOpen},
+		}).Handler(countingHandler(&runs))
+		rec := httptest.NewRecorder()
+		open.ServeHTTP(rec, delivery("msg_degraded", `{"a":1}`))
+		if rec.Code != http.StatusOK || rec.Body.String() != "handled" {
+			t.Fatalf("status = %d, body = %q, want 200 and handled", rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Idempotency-Degraded"); got != "true" {
+			t.Fatalf("Idempotency-Degraded = %q, want true", got)
+		}
+		if runs.Load() != 1 {
+			t.Fatalf("the handler ran %d times, want 1", runs.Load())
+		}
+
+		// The same store fail-closed is 503 store-unavailable with Retry-After 1 and never runs the handler.
+		var closedRuns atomic.Int64
+		closed := webhookmw.New(failingStore{}, webhookmw.Options{Verify: alwaysVerify}).
+			Handler(countingHandler(&closedRuns))
+		rec = httptest.NewRecorder()
+		closed.ServeHTTP(rec, delivery("msg_degraded", `{"a":1}`))
+		if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") != "1" {
+			t.Fatalf("status = %d, Retry-After = %q, want 503 and 1", rec.Code, rec.Header().Get("Retry-After"))
+		}
+		var p webhookmw.Problem
+		if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+			t.Fatal(err)
+		}
+		if p.Code != webhookmw.CodeStoreUnavailable {
+			t.Fatalf("code = %q, want store-unavailable", p.Code)
+		}
+		if closedRuns.Load() != 0 {
+			t.Fatalf("the handler ran %d times under fail-closed, want 0", closedRuns.Load())
 		}
 	})
 }

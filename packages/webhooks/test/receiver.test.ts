@@ -136,6 +136,44 @@ describe('webhook receiver', () => {
     ).not.toBeNull();
   });
 
+  test('REQ-WH-1: a scope function replaces the computed scope, so routePattern is never consulted', async () => {
+    const s = store();
+    const handler = webhookReceiver({
+      store: s,
+      verify: () => true,
+      routePattern: '/hooks/:provider',
+      scope: () => 'tenant_7',
+    })(async () => new Response('handled'));
+    await handler(delivery('msg_scope', '{"a":1}'));
+    expect(await s.get({ scope: 'tenant_7', key: 'msg_scope' }, Date.now())).not.toBeNull();
+    expect(await s.get({ scope: '/hooks/:provider', key: 'msg_scope' }, Date.now())).toBeNull();
+  });
+
+  test('REQ-WH-1: a scope function sees the request and the body bytes', async () => {
+    const s = store();
+    const handler = webhookReceiver({
+      store: s,
+      verify: () => true,
+      scope: (req, body) =>
+        `${new URL(req.url).pathname}/${(JSON.parse(new TextDecoder().decode(body)) as { account: string }).account}`,
+    })(async () => new Response('handled'));
+    await handler(delivery('msg_scope', '{"account":"acct_9"}'));
+    expect(
+      await s.get({ scope: '/hooks/stripe/acct_9', key: 'msg_scope' }, Date.now()),
+    ).not.toBeNull();
+  });
+
+  test('REQ-WH-1: scope together with sourceId is a TypeError at construction', () => {
+    expect(() =>
+      webhookReceiver({
+        store: store(),
+        verify: () => true,
+        scope: () => 'tenant_7',
+        sourceId: () => 'acct_42',
+      }),
+    ).toThrow(TypeError);
+  });
+
   test('REQ-WH-1: the same id in two source scopes runs the handler twice', async () => {
     const s = store();
     let runs = 0;
@@ -290,6 +328,29 @@ describe('webhook receiver', () => {
     const second = await handler(delivery('msg_both_hooks', '{"a":2}'));
     expect(second.status).toBe(422);
     expect(suspicious).toEqual(['msg_both_hooks']);
+  });
+
+  test('REQ-WH-5: a throwing user onMismatch is counted in hookErrors even though the receiver catches it', async () => {
+    // M-7: the receiver takes the onMismatch call over so onSuspicious cannot be suppressed, which took the
+    // throw out of the engine's safely(). The counter has to mean the same thing here as on every other door.
+    const s = store();
+    const hookErrors = { count: 0 };
+    const handler = webhookReceiver({
+      store: s,
+      verify: () => true,
+      hookErrors,
+      hooks: {
+        onMismatch: () => {
+          throw new Error('onMismatch exploded');
+        },
+      },
+      onSuspicious: () => {},
+    })(async () => new Response('handled'));
+    const first = await handler(delivery('msg_counted', '{"a":1}'));
+    await first.text();
+    const second = await handler(delivery('msg_counted', '{"a":2}'));
+    expect(second.status).toBe(422);
+    expect(hookErrors.count).toBe(1);
   });
 
   test('REQ-WH-1: a GET passes through untouched because the receiver applies to POST only', async () => {

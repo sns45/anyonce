@@ -35,6 +35,15 @@ const (
 	detailVerifierFailed = "the verify callback failed"
 )
 
+// The RFC 9110 section 15.5.2 challenge on the one problem this door answers with a 401 (ruling 20, Q29). The
+// scheme token is Signature because the credential being challenged is a Standard Webhooks signature. It
+// carries no parameters: a realm would name nothing a sender could act on. The header name is the canonical
+// form net/http stores, so it goes into an http.Header literal without a second canonicalization.
+const (
+	signatureChallengeHeader = "Www-Authenticate"
+	signatureChallenge       = "Signature"
+)
+
 // markerKey is the private context key the verified markers hang off.
 type markerKey struct{}
 
@@ -78,8 +87,13 @@ type Middleware struct {
 }
 
 // New builds the receiver. Every Options field has a working default, so Options{Verify: ...} is a whole
-// configuration.
+// configuration. It panics when Options.Scope is set together with Options.SourceID, matching httpmw.New's
+// panic on RequirePrincipal without Principal: Scope replaces the computed scope whole, so a receiver given
+// both would silently drop the sender identity and share one dedupe namespace between senders (ruling 18).
 func New(store anyonce.Store, opts Options) *Middleware {
+	if opts.Scope != nil && opts.SourceID != nil {
+		panic("webhookmw: Options.Scope replaces the computed scope entirely, so Options.SourceID would never be read")
+	}
 	m := &Middleware{store: store, opts: opts.resolve()}
 	m.problems = httpx.ProblemWriter{BaseURI: m.opts.ProblemBaseURI, Titles: m.opts.ProblemTitles, OnError: m.opts.OnError}
 	// Q20: the policy cap never exceeds what the store says it can hold whole.
@@ -137,11 +151,21 @@ func lookupID(r *http.Request, body []byte, o resolved) (string, httpx.KeyStatus
 		}
 		return parsed, httpx.KeyOK, ""
 	}
+	// Ruling 19: a header that is present but empty is a missing id, not an invalid one, which is what the
+	// TypeScript receiver answers. httpx.LookupKey would hand "" to ParseKey and call it 400 invalid-key, so
+	// the empty case is settled here; the HTTP door's own behaviour is deliberately left alone.
+	if values := r.Header.Values(o.IDHeader); len(values) == 1 && values[0] == "" {
+		return "", httpx.KeyMissing, ""
+	}
 	return httpx.LookupKey(r.Header, o.IDHeader, anyonce.SyntaxLenient)
 }
 
-// scope is D8 and Q24: the route pattern, plus a slash and the sender identity when SourceID yields one.
+// scope is D8 and Q24: the route pattern, plus a slash and the sender identity when SourceID yields one. Ruling
+// 18: an explicit Options.Scope replaces the whole of that, which is why New refuses to be given both.
 func (m *Middleware) scope(r *http.Request, body []byte) string {
+	if m.opts.Scope != nil {
+		return m.opts.Scope(r, body)
+	}
 	route := m.opts.RoutePattern
 	if route == "" {
 		route = r.URL.EscapedPath()
@@ -213,7 +237,9 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 		if !ok {
-			m.fail(w, r, CodeSignatureInvalid, "", nil)
+			// Ruling 20 and Q29: RFC 9110 section 15.5.2 makes a challenge a MUST on a 401. The header is
+			// built per response rather than shared, so nothing can alias the value slice the writer stores.
+			m.fail(w, r, CodeSignatureInvalid, "", http.Header{signatureChallengeHeader: {signatureChallenge}})
 			return
 		}
 

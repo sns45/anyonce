@@ -11,6 +11,7 @@ import {
   readBody,
   resolveHttpOptions,
   runIdempotent,
+  withProtocolHeaders,
 } from '@anyonce/core/http';
 import { isVerified } from './marker';
 
@@ -20,7 +21,13 @@ export const DEFAULT_ID_HEADER = 'webhook-id';
 export interface WebhookReceiverOptions
   extends Omit<
     HttpIdempotencyOptions,
-    'headerName' | 'problemTitles' | 'scope' | 'principal' | 'keySyntax'
+    | 'headerName'
+    | 'problemTitles'
+    | 'scope'
+    | 'principal'
+    | 'requirePrincipal'
+    | 'keySyntax'
+    | 'skip'
   > {
   /** REQ-WH-1: the header the delivery id arrives in. Default webhook-id. */
   idHeader?: string;
@@ -28,16 +35,37 @@ export interface WebhookReceiverOptions
   key?: (req: Request, body: Uint8Array) => string | undefined;
   /** D16: runs before the store. A false result is 401 signature-invalid. */
   verify?: (req: Request, body: Uint8Array) => boolean | Promise<boolean>;
-  /** D16: the name of a marker an upstream verifier set with markVerified. */
+  /**
+   * D16: the name of a marker an upstream verifier set with markVerified. An empty string is a TypeError from
+   * webhookReceiver rather than a marker named empty string, because Go treats an empty VerifiedMarker as no
+   * marker at all and one of the two had to give.
+   */
   verifiedMarker?: string;
   /** REQ-WH-5: fires when the same id arrives with a different body. Never throws into the receiver. */
   onSuspicious?: (req: Request, record: IdempotencyRecord) => void;
-  /** D8: the route half of the scope. Default is the request pathname. */
+  /** D8: the route half of the scope. Default is the request pathname. Ignored when scope is given. */
   routePattern?: string | ((req: Request) => string);
-  /** D8 and Q24: the verified sender identity. When it yields nothing the scope is the route alone. */
+  /**
+   * D8 and Q24: the verified sender identity. When it yields nothing the scope is the route alone. Ignored
+   * when scope is given, and supplying both is a construction-time TypeError rather than a silent discard.
+   */
   sourceId?: (req: Request, body: Uint8Array) => string | undefined;
+  /**
+   * REQ-WH-1 and ruling 18: the whole store scope for this delivery. It replaces routePattern and sourceId
+   * entirely, so nothing else is appended to what it returns, and it takes the body because the sender a
+   * webhook door scopes by is usually only readable from the payload. Passing it together with sourceId is a
+   * TypeError from webhookReceiver, because a scope that quietly dropped the sender identity would put two
+   * senders in one dedupe namespace and let one suppress the other's delivery.
+   */
+  scope?: (req: Request, body: Uint8Array) => string;
   /** Q23: overrides on top of the webhook defaults, which name idHeader. */
   problemTitles?: ProblemTitles;
+  /**
+   * REQ-HTTP-15: per-request opt-out. D16: it runs after the verification gate, not before it, so a path the
+   * receiver skips is still a path an unverified delivery cannot reach. What skip turns off is deduplication,
+   * never verification, and a skipped delivery that fails the gate is still 401.
+   */
+  skip?: (req: Request) => boolean;
   /** Q26: where the one configuration-error message goes. Default console.error. */
   logger?: (message: string) => void;
 }
@@ -59,6 +87,14 @@ const VERIFIER_FAILED_MESSAGE =
  */
 const DETAIL_UNCONFIGURED = 'no verify callback or verifiedMarker is configured';
 const DETAIL_VERIFIER_FAILED = 'the verify callback failed';
+
+/**
+ * Ruling 20 and Q29: RFC 9110 section 15.5.2 makes at least one challenge a MUST on a 401, and only the
+ * signature-invalid problem is a 401. The scheme token is Signature because the credential the receiver is
+ * challenging for is a Standard Webhooks signature. It carries no parameters: a realm would name nothing a
+ * sender could act on, and the sender has no way to present a different credential interactively.
+ */
+const SIGNATURE_CHALLENGE: [string, string] = ['WWW-Authenticate', 'Signature'];
 
 function webhookTitles(idHeader: string, overrides?: ProblemTitles): ProblemTitles {
   return {
@@ -88,29 +124,47 @@ function resolveKey(
   return { kind: 'ok', key: parsed.key };
 }
 
-/** D8 and Q24: `${routePattern}/${sourceId}`, or the route alone when no sender identity is available. */
-function webhookScope(
-  req: Request,
-  body: Uint8Array,
-  routePattern: string | ((req: Request) => string) | undefined,
-  sourceId: ((req: Request, body: Uint8Array) => string | undefined) | undefined,
-): string {
+/**
+ * D8 and Q24: `${routePattern}/${sourceId}`, or the route alone when no sender identity is available. Ruling
+ * 18: an explicit scope replaces the whole of that, which is why webhookReceiver refuses to be given both.
+ */
+function webhookScope(req: Request, body: Uint8Array, options: WebhookReceiverOptions): string {
+  if (options.scope !== undefined) return options.scope(req, body);
+  const routePattern = options.routePattern;
   const route =
     routePattern === undefined
       ? new URL(req.url).pathname
       : typeof routePattern === 'string'
         ? routePattern
         : routePattern(req);
-  const source = sourceId?.(req, body);
+  const source = options.sourceId?.(req, body);
   return source === undefined || source === '' ? route : `${route}/${source}`;
 }
 
 export function webhookReceiver(options: WebhookReceiverOptions) {
+  // Ruling 18: scope replaces routePattern and sourceId whole, so a receiver given both would silently drop
+  // the sender identity and share one dedupe namespace between senders. That is a cross-sender replay risk,
+  // so it is loud at construction rather than quiet at delivery time.
+  if (options.scope !== undefined && options.sourceId !== undefined) {
+    throw new TypeError(
+      'anyonce: webhookReceiver was given both scope and sourceId, and scope replaces the computed scope entirely, so sourceId would never be read',
+    );
+  }
+  // M-3: Go reads an empty VerifiedMarker as unconfigured, so TypeScript must not read it as a marker whose
+  // name is the empty string. Nothing can ever set that marker, so it would be a receiver that 401s forever.
+  if (options.verifiedMarker === '') {
+    throw new TypeError(
+      'anyonce: webhookReceiver was given an empty verifiedMarker; name it or omit it',
+    );
+  }
   const idHeader = options.idHeader ?? DEFAULT_ID_HEADER;
   const titles = webhookTitles(idHeader, options.problemTitles);
   const log = options.logger ?? ((message: string): void => console.error(message));
+  // The webhook scope function takes the body, so it is not the bridge's own scope option and must never be
+  // handed to it: resolveScope would call it with the request alone and prefer its result over routeScope.
+  const { scope: _scope, ...bridgeOptions } = options;
   const base: HttpIdempotencyOptions = {
-    ...options,
+    ...bridgeOptions,
     headerName: idHeader,
     required: options.required ?? true,
     methods: options.methods ?? ['POST'],
@@ -126,10 +180,20 @@ export function webhookReceiver(options: WebhookReceiverOptions) {
 
   return <Rest extends unknown[]>(handler: FetchLikeHandler<Rest>) => {
     return async (req: Request, ...rest: Rest): Promise<Response> => {
-      const fail = async (code: ProblemCode, detail?: string): Promise<Response> => {
+      // Ruling 21: the receiver renders its own gate problems before the bridge runs, so it owes an onError
+      // override the same protocol headers the bridge's own fail merges on. Without this a custom renderer
+      // produced cacheable 401, 500 and 413 responses while every problem the bridge rendered was no-store.
+      const fail = async (
+        code: ProblemCode,
+        detail?: string,
+        headers: [string, string][] = [],
+      ): Promise<Response> => {
         const p = problem(code, resolved.problemBaseUri, detail, titles[code]);
-        if (resolved.onError !== undefined) return resolved.onError(p, req);
-        return problemResponse(p);
+        if (resolved.onError !== undefined) {
+          const res = await resolved.onError(p, req);
+          return withProtocolHeaders(res, [...headers, ['Cache-Control', 'no-store']]);
+        }
+        return problemResponse(p, headers);
       };
 
       // D16: the configuration check is first, so a receiver that can never verify anything never runs a handler.
@@ -162,10 +226,12 @@ export function webhookReceiver(options: WebhookReceiverOptions) {
         }
         return fail('configuration-error', DETAIL_VERIFIER_FAILED);
       }
-      if (!verified) return fail('signature-invalid');
+      // Ruling 20 and Q29: RFC 9110 section 15.5.2 makes a challenge a MUST on a 401. The scheme token is
+      // Signature, because the credential being challenged is a Standard Webhooks signature.
+      if (!verified) return fail('signature-invalid', undefined, [SIGNATURE_CHALLENGE]);
 
       const keyLookup = resolveKey(req, read.body, idHeader, options.key);
-      const routeScope = webhookScope(req, read.body, options.routePattern, options.sourceId);
+      const routeScope = webhookScope(req, read.body, options);
 
       // REQ-WH-5: onSuspicious wants the request, and the engine's onMismatch only carries the operation, so
       // the policy is rebuilt per request with the request closed over. Rebuilding costs three allocations
@@ -192,6 +258,12 @@ export function webhookReceiver(options: WebhookReceiverOptions) {
                       resolved.policy.hooks?.onMismatch?.(op, record);
                     } catch {
                       // Same rule for a user supplied onMismatch: it never suppresses onSuspicious above.
+                      // M-7: the engine's own safely() counts a throwing user hook, and it would have counted
+                      // this one had the receiver not taken the call over, so the count happens here instead.
+                      // Otherwise hookErrors would mean something different on this door than on every other.
+                      if (resolved.policy.hookErrors !== undefined) {
+                        resolved.policy.hookErrors.count += 1;
+                      }
                     }
                   },
                 },

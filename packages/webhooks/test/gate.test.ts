@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Operation, Store } from '@anyonce/core';
 import { MemoryStore } from '@anyonce/core';
+import type { Problem } from '@anyonce/core/http';
 import { markVerified, webhookReceiver } from '../src/index';
 
 function countingStore(): { store: Store; begins: Operation[] } {
@@ -153,6 +154,14 @@ describe('verification gate', () => {
     expect(begins).toEqual([]);
   });
 
+  test('REQ-WH-2: an empty verifiedMarker is a TypeError at construction', () => {
+    // M-3: Go reads an empty VerifiedMarker as unconfigured. Accepting it here as a marker named empty string
+    // would build a receiver nothing can ever mark, so it 401s forever, and the two languages would disagree.
+    expect(() => webhookReceiver({ store: countingStore().store, verifiedMarker: '' })).toThrow(
+      TypeError,
+    );
+  });
+
   test('REQ-WH-2: a marker set by an upstream verifier passes the gate', async () => {
     const { store, begins } = countingStore();
     const handler = webhookReceiver({ store, verifiedMarker: 'gateway' })(
@@ -175,6 +184,71 @@ describe('verification gate', () => {
     expect(res.status).toBe(500);
     expect(((await res.json()) as { code: string }).code).toBe('configuration-error');
     expect(begins).toEqual([]);
+  });
+
+  test('REQ-WH-2: a custom onError still carries Cache-Control no-store on every gate problem', async () => {
+    // Ruling 21: the receiver renders the gate's problems itself, so without the protocol header merge a
+    // custom renderer produced cacheable 401, 500 and 413 responses while the bridge's own problems on the
+    // same receiver were no-store. The renderer sets neither header, which is the whole point.
+    const onError = (p: Problem): Response =>
+      new Response(`custom:${p.code}`, { status: p.status });
+    const unconfigured = webhookReceiver({
+      store: countingStore().store,
+      logger: () => {},
+      onError,
+    })(async () => new Response('handled'));
+    const invalid = webhookReceiver({ store: countingStore().store, verify: () => false, onError })(
+      async () => new Response('handled'),
+    );
+    const tooLarge = webhookReceiver({
+      store: countingStore().store,
+      verify: () => true,
+      maxRequestBytes: 8,
+      onError,
+    })(async () => new Response('handled'));
+
+    for (const [status, res] of [
+      [500, await unconfigured(delivery())],
+      [401, await invalid(delivery())],
+      [413, await tooLarge(delivery('x'.repeat(64)))],
+    ] as const) {
+      expect(res.status).toBe(status);
+      expect(await res.text()).toStartWith('custom:');
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
+      // Ruling 20: the 401's challenge survives a custom renderer the same way.
+      expect(res.headers.get('WWW-Authenticate')).toBe(status === 401 ? 'Signature' : null);
+    }
+  });
+
+  test('REQ-WH-2: a 401 carries the RFC 9110 WWW-Authenticate challenge and no other problem does', async () => {
+    // Ruling 20: RFC 9110 section 15.5.2 makes at least one challenge a MUST on a 401, and signature-invalid
+    // is the only problem this door answers with one.
+    const invalid = webhookReceiver({ store: countingStore().store, verify: () => false })(
+      async () => new Response('handled'),
+    );
+    const unauthorized = await invalid(delivery());
+    expect(unauthorized.status).toBe(401);
+    expect(unauthorized.headers.get('WWW-Authenticate')).toBe('Signature');
+
+    const unconfigured = webhookReceiver({ store: countingStore().store, logger: () => {} })(
+      async () => new Response('handled'),
+    );
+    const tooLarge = webhookReceiver({
+      store: countingStore().store,
+      verify: () => true,
+      maxRequestBytes: 8,
+    })(async () => new Response('handled'));
+    const missingId = webhookReceiver({ store: countingStore().store, verify: () => true })(
+      async () => new Response('handled'),
+    );
+    for (const [status, res] of [
+      [500, await unconfigured(delivery())],
+      [413, await tooLarge(delivery('x'.repeat(64)))],
+      [400, await missingId(delivery('{"a":1}', {}))],
+    ] as const) {
+      expect(res.status).toBe(status);
+      expect(res.headers.get('WWW-Authenticate')).toBeNull();
+    }
   });
 
   test('REQ-WH-2: an oversized body is 413 before verification and never calls begin', async () => {

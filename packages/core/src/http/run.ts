@@ -32,6 +32,9 @@ export interface RunContext {
   /**
    * Body bytes the caller already read. A door that must see the body before the store (signature verification,
    * a body derived id) reads it once and hands the bytes over instead of making the bridge clone and read again.
+   * The caller owns the bound: REQ-HTTP-6's maxRequestBytes is not applied to bytes supplied this way, because
+   * the read that would have enforced it has already happened, so a door that injects the body enforces the cap
+   * on its own read (the webhook receiver does, with the same maxRequestBytes option).
    */
   body?: Uint8Array;
 }
@@ -43,9 +46,11 @@ function retryAfterSeconds(leaseUntil: number, now: number): string {
 /**
  * REQ-HTTP-13 follow-up: merges the protocol headers the bridge would otherwise have set onto an onError
  * response, without overriding any the handler already set itself. Response headers may be immutable, so a
- * missing header is applied to a copy built from the original body and init.
+ * missing header is applied to a copy built from the original body and init. Exported because every door that
+ * renders a problem of its own before the bridge runs (the webhook receiver's gate) owes an onError override
+ * the same headers, and one implementation is the only way they stay the same.
  */
-function withProtocolHeaders(res: Response, headers: [string, string][]): Response {
+export function withProtocolHeaders(res: Response, headers: [string, string][]): Response {
   const missing = headers.filter(([name]) => !res.headers.has(name));
   if (missing.length === 0) return res;
   if (res.bodyUsed) return res;

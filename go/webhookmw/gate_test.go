@@ -351,6 +351,49 @@ func TestGate(t *testing.T) {
 		}
 	})
 
+	t.Run("REQ-WH-2: a 401 carries the RFC 9110 WWW-Authenticate challenge and no other problem does", func(t *testing.T) {
+		// Ruling 20: RFC 9110 section 15.5.2 makes at least one challenge a MUST on a 401, and
+		// signature-invalid is the only problem this door answers with one.
+		unauthorized := httptest.NewRecorder()
+		webhookmw.New(newCountingStore(), webhookmw.Options{
+			Verify: func(*http.Request, []byte) (bool, error) { return false, nil },
+		}).Handler(handled()).ServeHTTP(unauthorized, delivery("msg_1", `{"a":1}`))
+		if unauthorized.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401", unauthorized.Code)
+		}
+		if got := unauthorized.Header().Get("WWW-Authenticate"); got != "Signature" {
+			t.Fatalf("WWW-Authenticate = %q, want Signature", got)
+		}
+
+		// A 500 configuration-error, a 413 payload-too-large and a 400 missing-key are not 401s and carry
+		// no challenge.
+		unconfigured := httptest.NewRecorder()
+		webhookmw.New(newCountingStore(), webhookmw.Options{Logf: func(string, ...any) {}}).
+			Handler(handled()).ServeHTTP(unconfigured, delivery("msg_1", `{"a":1}`))
+		tooLarge := httptest.NewRecorder()
+		webhookmw.New(newCountingStore(), webhookmw.Options{MaxRequestBytes: 8, Verify: func(*http.Request, []byte) (bool, error) { return true, nil }}).
+			Handler(handled()).ServeHTTP(tooLarge, delivery("msg_1", strings.Repeat("x", 64)))
+		missingID := httptest.NewRecorder()
+		webhookmw.New(newCountingStore(), webhookmw.Options{Verify: func(*http.Request, []byte) (bool, error) { return true, nil }}).
+			Handler(handled()).ServeHTTP(missingID, delivery("", `{"a":1}`))
+		for _, tc := range []struct {
+			name string
+			want int
+			rec  *httptest.ResponseRecorder
+		}{
+			{"configuration-error", http.StatusInternalServerError, unconfigured},
+			{"payload-too-large", http.StatusRequestEntityTooLarge, tooLarge},
+			{"missing-key", http.StatusBadRequest, missingID},
+		} {
+			if tc.rec.Code != tc.want {
+				t.Fatalf("%s: status = %d, want %d", tc.name, tc.rec.Code, tc.want)
+			}
+			if got := tc.rec.Header().Get("WWW-Authenticate"); got != "" {
+				t.Fatalf("%s: WWW-Authenticate = %q, want none", tc.name, got)
+			}
+		}
+	})
+
 	t.Run("REQ-WH-2: an oversized body is 413 before verification and never calls Begin", func(t *testing.T) {
 		store := newCountingStore()
 		verified := false

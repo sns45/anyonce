@@ -262,6 +262,15 @@ The webhook receiver is an HTTP door built on `runIdempotent`, so the replay, 40
 Recommended resolution: P4b runs the whole suite through the receiver in both languages with `idHeader` set to `Idempotency-Key`, `verify` returning true (the vectors carry no signatures, and the gate is proven by its own tests), `required: true`, and a `skip` predicate for the runner's control paths `/reset` and `/counter` so the runner can reset and read the counter. Every vector that does not pass is listed in `conformance/README.md` with the reason it does not apply to this door, and is never made to pass by weakening the receiver. The expectation recorded up front is that all core and all profile vectors pass, because the receiver changes only where the key comes from, what the scope is and what runs before the store.
 
 **Decision: pending.** P4b proceeds on the recommendation.
+
+## Q29: a 401 with no `WWW-Authenticate` is not a conformant 401
+
+Q23 recommended 401 for `signature-invalid` and said nothing about the challenge that goes with it. RFC 9110 section 15.5.2 says a server generating a 401 MUST send a `WWW-Authenticate` header field containing at least one challenge, and nothing in either language set one, so every `signature-invalid` response this project produced was a non-conformant 401. That matters more here than it would elsewhere, because this project ships a conformance suite that grades other implementations against the standards it cites.
+
+Recommended resolution: both webhook doors send `WWW-Authenticate: Signature` alongside the `signature-invalid` problem, set before an `onError` override renders the body so the header survives a custom renderer. The scheme token is `Signature` because the credential being challenged is a Standard Webhooks signature, which is the only credential this door reads. The challenge carries no parameters: a `realm` would name nothing a sender could act on, and a webhook sender has no interactive way to present a different credential. No other problem code is a 401, so no other response gains the header, and the HTTP door is untouched. `docs/problems.md` records the header in the `signature-invalid` row.
+
+**Decision: pending.** P4b proceeds on the recommendation.
+
 ## Q40: anyq's park is not identity preserving on the two adapters that support it natively
 
 D15 maps an in-flight duplicate to a park for the lease remainder, and Q2 makes that a `{ action: 'park', delayMs }` decision returned by the companion strategy. Reading the published adapters shows what park actually does:
