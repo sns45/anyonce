@@ -6,7 +6,7 @@ import {
 } from '../engine';
 import type { KeySyntax } from '../key';
 import type { Store, StoredResult } from '../types';
-import { DEFAULT_PROBLEM_BASE_URI, type Problem } from './problems';
+import { DEFAULT_PROBLEM_BASE_URI, type Problem, type ProblemTitles } from './problems';
 
 export type FingerprintMode = 'body' | 'jcs';
 export type FingerprintFn = (req: Request, body: Uint8Array) => Promise<string> | string;
@@ -61,6 +61,8 @@ export interface HttpIdempotencyOptions {
   problemBaseUri?: string;
   /** REQ-HTTP-3: the Link target on a 400 missing-key. Default problemBaseUri plus missing-key. */
   docsUrl?: string;
+  /** Q23: overrides the title of one or more problem codes, for a door whose key is not an Idempotency-Key. */
+  problemTitles?: ProblemTitles;
   /** REQ-HTTP-13: render a problem differently. Status and code must not change. */
   onError?: (problem: Problem, req: Request) => Response | Promise<Response>;
   /** REQ-HTTP-15: per-request opt-out. */
@@ -82,6 +84,7 @@ export interface ResolvedHttpOptions {
   policy: ExecutePolicy;
   problemBaseUri: string;
   docsUrl: string;
+  problemTitles?: ProblemTitles;
   onError?: (problem: Problem, req: Request) => Response | Promise<Response>;
   skip?: (req: Request) => boolean;
 }
@@ -122,6 +125,7 @@ export function resolveHttpOptions(options: HttpIdempotencyOptions): ResolvedHtt
   };
   if (options.scope !== undefined) resolved.scope = options.scope;
   if (options.principal !== undefined) resolved.principal = options.principal;
+  if (options.problemTitles !== undefined) resolved.problemTitles = options.problemTitles;
   if (options.onError !== undefined) resolved.onError = options.onError;
   if (options.skip !== undefined) resolved.skip = options.skip;
   return resolved;

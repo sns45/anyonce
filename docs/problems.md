@@ -11,6 +11,10 @@ Every error anyonce returns over HTTP is an RFC 9457 problem details document wi
 | `payload-too-large` | 413 | The request body exceeds `maxRequestBytes` (default 1 MiB) | none |
 | `store-unavailable` | 503 | The store failed and the adapter runs fail-closed (D13) | `Retry-After: 1` |
 | `missing-principal` | 500 | `requirePrincipal` is set and the principal function returned nothing for this request (Q18) | none |
+| `configuration-error` | 500 | The webhook receiver was built with neither a `verify` callback nor a `verifiedMarker`, so it can never establish that a delivery is genuine (REQ-WH-2, D16) | none |
+| `signature-invalid` | 401 | The webhook signature did not verify, or the upstream verified marker was absent (D16) | none |
+
+A receiver may override any title with `problemTitles` so it names the header its senders actually send; the status and the `code` member never change.
 
 ## Example bodies
 
@@ -91,6 +95,30 @@ Every error anyonce returns over HTTP is an RFC 9457 problem details document wi
   "code": "missing-principal"
 }
 ```
+
+`configuration-error`
+
+```json
+{
+  "type": "https://in8.sh/anyonce/problems/configuration-error",
+  "title": "This endpoint is not configured correctly and cannot accept the request",
+  "status": 500,
+  "code": "configuration-error"
+}
+```
+
+`signature-invalid`
+
+```json
+{
+  "type": "https://in8.sh/anyonce/problems/signature-invalid",
+  "title": "The request signature could not be verified",
+  "status": 401,
+  "code": "signature-invalid"
+}
+```
+
+The title is the catalogue default, which stays generic because `@anyonce/core/http` serves every door. The webhook receiver overrides it through `problemTitles` so a sender reads "The webhook signature could not be verified".
 
 ## Overriding
 
