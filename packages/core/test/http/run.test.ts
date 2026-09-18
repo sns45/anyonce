@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { idempotencyOf, withIdempotency } from '../../src/http';
+import { idempotencyOf, resolveHttpOptions, runIdempotent, withIdempotency } from '../../src/http';
 import { MemoryStore } from '../../src/memory';
 import type { Store } from '../../src/types';
 
@@ -496,5 +496,22 @@ describe('withIdempotency', () => {
     expect(retry.headers.get('Idempotency-Replayed')).toBeNull();
     expect(await retry.text()).toBe('r2');
     expect(state.calls).toBe(2);
+  });
+
+  test('REQ-WH-2: problemTitles reaches the problem the bridge renders', async () => {
+    const options = resolveHttpOptions({
+      store: new MemoryStore(),
+      required: true,
+      problemTitles: { 'missing-key': 'The webhook-id header is required for this request' },
+    });
+    const res = await runIdempotent(
+      new Request('https://example.test/hook', { method: 'POST', body: 'x' }),
+      async () => new Response('never'),
+      options,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { title: string; code: string };
+    expect(body.title).toBe('The webhook-id header is required for this request');
+    expect(body.code).toBe('missing-key');
   });
 });

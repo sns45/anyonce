@@ -68,7 +68,7 @@ export async function runIdempotent(
     detail?: string,
     headers: [string, string][] = [],
   ): Promise<Response> => {
-    const p = problem(code, options.problemBaseUri, detail);
+    const p = problem(code, options.problemBaseUri, detail, options.problemTitles?.[code]);
     if (options.onError !== undefined) {
       const res = await options.onError(p, req);
       return withProtocolHeaders(res, [...headers, ['Cache-Control', 'no-store']]);

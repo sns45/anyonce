@@ -16,6 +16,8 @@ describe('problem details', () => {
       'payload-too-large': 413,
       'store-unavailable': 503,
       'missing-principal': 500,
+      'configuration-error': 500,
+      'signature-invalid': 401,
     });
   });
 
@@ -46,5 +48,22 @@ describe('problem details', () => {
       status: 400,
       code: 'missing-key',
     });
+  });
+
+  test('REQ-WH-2: configuration-error is a 500 and signature-invalid is a 401', () => {
+    expect(PROBLEM_STATUS['configuration-error']).toBe(500);
+    expect(PROBLEM_STATUS['signature-invalid']).toBe(401);
+    expect(problem('configuration-error', DEFAULT_PROBLEM_BASE_URI).type).toBe(
+      'https://in8.sh/anyonce/problems/configuration-error',
+    );
+    expect(problem('signature-invalid', DEFAULT_PROBLEM_BASE_URI).code).toBe('signature-invalid');
+  });
+
+  test('REQ-WH-2: a title override replaces the title and leaves the status and the code alone', () => {
+    const p = problem('conflict', DEFAULT_PROBLEM_BASE_URI, undefined, 'A delivery with this webhook-id is still in progress');
+    expect(p.title).toBe('A delivery with this webhook-id is still in progress');
+    expect(p.status).toBe(409);
+    expect(p.code).toBe('conflict');
+    expect(p.type).toBe('https://in8.sh/anyonce/problems/conflict');
   });
 });
