@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Operation, Store } from '@anyonce/core';
 import { MemoryStore } from '@anyonce/core';
+import type { Problem } from '@anyonce/core/http';
 import { markVerified, webhookReceiver } from '../src/index';
 
 function countingStore(): { store: Store; begins: Operation[] } {
@@ -175,6 +176,38 @@ describe('verification gate', () => {
     expect(res.status).toBe(500);
     expect(((await res.json()) as { code: string }).code).toBe('configuration-error');
     expect(begins).toEqual([]);
+  });
+
+  test('REQ-WH-2: a custom onError still carries Cache-Control no-store on every gate problem', async () => {
+    // Ruling 21: the receiver renders the gate's problems itself, so without the protocol header merge a
+    // custom renderer produced cacheable 401, 500 and 413 responses while the bridge's own problems on the
+    // same receiver were no-store. The renderer sets neither header, which is the whole point.
+    const onError = (p: Problem): Response =>
+      new Response(`custom:${p.code}`, { status: p.status });
+    const unconfigured = webhookReceiver({
+      store: countingStore().store,
+      logger: () => {},
+      onError,
+    })(async () => new Response('handled'));
+    const invalid = webhookReceiver({ store: countingStore().store, verify: () => false, onError })(
+      async () => new Response('handled'),
+    );
+    const tooLarge = webhookReceiver({
+      store: countingStore().store,
+      verify: () => true,
+      maxRequestBytes: 8,
+      onError,
+    })(async () => new Response('handled'));
+
+    for (const [status, res] of [
+      [500, await unconfigured(delivery())],
+      [401, await invalid(delivery())],
+      [413, await tooLarge(delivery('x'.repeat(64)))],
+    ] as const) {
+      expect(res.status).toBe(status);
+      expect(await res.text()).toStartWith('custom:');
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
+    }
   });
 
   test('REQ-WH-2: an oversized body is 413 before verification and never calls begin', async () => {

@@ -11,6 +11,7 @@ import {
   readBody,
   resolveHttpOptions,
   runIdempotent,
+  withProtocolHeaders,
 } from '@anyonce/core/http';
 import { isVerified } from './marker';
 
@@ -148,10 +149,20 @@ export function webhookReceiver(options: WebhookReceiverOptions) {
 
   return <Rest extends unknown[]>(handler: FetchLikeHandler<Rest>) => {
     return async (req: Request, ...rest: Rest): Promise<Response> => {
-      const fail = async (code: ProblemCode, detail?: string): Promise<Response> => {
+      // Ruling 21: the receiver renders its own gate problems before the bridge runs, so it owes an onError
+      // override the same protocol headers the bridge's own fail merges on. Without this a custom renderer
+      // produced cacheable 401, 500 and 413 responses while every problem the bridge rendered was no-store.
+      const fail = async (
+        code: ProblemCode,
+        detail?: string,
+        headers: [string, string][] = [],
+      ): Promise<Response> => {
         const p = problem(code, resolved.problemBaseUri, detail, titles[code]);
-        if (resolved.onError !== undefined) return resolved.onError(p, req);
-        return problemResponse(p);
+        if (resolved.onError !== undefined) {
+          const res = await resolved.onError(p, req);
+          return withProtocolHeaders(res, [...headers, ['Cache-Control', 'no-store']]);
+        }
+        return problemResponse(p, headers);
       };
 
       // D16: the configuration check is first, so a receiver that can never verify anything never runs a handler.
