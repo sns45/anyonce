@@ -210,4 +210,34 @@ describe('standardWebhooksVerify', () => {
   test('REQ-WH-6: a secret whose base64 does not decode throws at construction, not per request', () => {
     expect(() => standardWebhooksVerify('whsec_!!!')).toThrow();
   });
+
+  test('REQ-WH-6: an empty secret throws at construction, not per request', () => {
+    expect(() => standardWebhooksVerify('')).toThrow();
+    expect(() => standardWebhooksVerify('whsec_')).toThrow();
+  });
+
+  test('REQ-WH-6: an empty secrets array throws', () => {
+    expect(() => standardWebhooksVerify([])).toThrow();
+  });
+
+  test('REQ-WH-6: a non default toleranceSeconds narrows or widens the window', async () => {
+    const v = VECTORS[0] as Vector;
+    const narrower = standardWebhooksVerify(v.secrets[0] as string, {
+      clock: () => (v.timestamp + 100) * 1000,
+      toleranceSeconds: 60,
+    });
+    expect(await narrower(signed(v), encoder.encode(v.payload))).toBe(false);
+
+    const wider = standardWebhooksVerify(v.secrets[0] as string, {
+      clock: () => (v.timestamp + 301) * 1000,
+      toleranceSeconds: 1000,
+    });
+    expect(await wider(signed(v), encoder.encode(v.payload))).toBe(true);
+  });
+
+  test('REQ-WH-6: a signature made with a different secret fails', async () => {
+    const v = VECTORS[0] as Vector;
+    const verify = standardWebhooksVerify(SECRET_B, { clock: () => v.timestamp * 1000 });
+    expect(await verify(signed(v), encoder.encode(v.payload))).toBe(false);
+  });
 });

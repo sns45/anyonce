@@ -30,11 +30,17 @@ function base64ToBytes(value: string): Uint8Array | undefined {
   }
 }
 
-/** Strips the whsec_ prefix and decodes the standard base64 remainder. Throws on a secret that cannot decode. */
+/**
+ * Strips the whsec_ prefix and decodes the standard base64 remainder. Throws on a secret that
+ * cannot decode, and throws separately on a secret that decodes to zero bytes (an empty string or
+ * the bare prefix), since an empty HMAC key is a configuration error the same way, not a request
+ * that should ever reach crypto.subtle.importKey.
+ */
 export function parseSecret(secret: string): Uint8Array {
   const raw = secret.startsWith(SECRET_PREFIX) ? secret.slice(SECRET_PREFIX.length) : secret;
   const bytes = base64ToBytes(raw);
   if (bytes === undefined) throw new TypeError('anyonce: the webhook secret is not valid base64');
+  if (bytes.byteLength === 0) throw new TypeError('anyonce: the webhook secret is empty');
   return bytes;
 }
 
