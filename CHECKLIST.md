@@ -55,9 +55,9 @@ Each gate is run with `verification-before-completion`. Paste the raw command ou
 
 ## P4b webhook door
 
-- [ ] Webhook verification gate test precedes happy path in git history (REQ-WH-2)
-- [ ] anyhook sign → anyonce receive interop test green; Standard Webhooks vectors green
-- [ ] Mismatch fires `onSuspicious` (REQ-WH-5)
+- [x] Webhook verification gate test precedes happy path in git history (REQ-WH-2)
+- [x] anyhook sign → anyonce receive interop test green; Standard Webhooks vectors green
+- [x] Mismatch fires `onSuspicious` (REQ-WH-5)
 
 ## P5 cross-implementation report
 
