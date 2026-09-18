@@ -328,9 +328,9 @@ func TestGate(t *testing.T) {
 		if rec.Body.String() != "handled" {
 			t.Fatalf("body = %q, want handled", rec.Body.String())
 		}
-		// Zero, not one: this change is the gate only, so even a verified delivery is handed straight to
-		// next. The store arrives with key resolution in the next change and this becomes one then.
-		if matched.count() != 0 {
+		// One, now that key resolution has landed: a delivery that passes the gate is deduplicated, so the
+		// verified request reaches the store exactly once.
+		if matched.count() != 1 {
 			t.Fatalf("Begin was called %d times", matched.count())
 		}
 
