@@ -65,6 +65,15 @@ describe('webhook receiver', () => {
     expect(((await res.json()) as { code: string }).code).toBe('invalid-key');
   });
 
+  test('REQ-WH-1: an empty webhook-id header is treated as missing, the same as no header at all', async () => {
+    const handler = webhookReceiver({ store: store(), verify: () => true })(
+      async () => new Response('never'),
+    );
+    const res = await handler(delivery('', '{"a":1}'));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe('missing-key');
+  });
+
   test('REQ-WH-1: the scope is the route pattern alone when no sourceId is configured', async () => {
     const s = store();
     const handler = webhookReceiver({
@@ -87,6 +96,43 @@ describe('webhook receiver', () => {
     await handler(delivery('msg_scope', '{"a":1}'));
     expect(
       await s.get({ scope: '/hooks/:provider/acct_42', key: 'msg_scope' }, Date.now()),
+    ).not.toBeNull();
+  });
+
+  test('REQ-WH-1: a sourceId function that returns nothing falls back to the route alone', async () => {
+    const s = store();
+    const handler = webhookReceiver({
+      store: s,
+      verify: () => true,
+      routePattern: '/hooks/:provider',
+      sourceId: () => undefined,
+    })(async () => new Response('handled'));
+    await handler(delivery('msg_scope', '{"a":1}'));
+    expect(await s.get({ scope: '/hooks/:provider', key: 'msg_scope' }, Date.now())).not.toBeNull();
+  });
+
+  test('REQ-WH-1: a sourceId function that returns an empty string falls back to the route alone', async () => {
+    const s = store();
+    const handler = webhookReceiver({
+      store: s,
+      verify: () => true,
+      routePattern: '/hooks/:provider',
+      sourceId: () => '',
+    })(async () => new Response('handled'));
+    await handler(delivery('msg_scope', '{"a":1}'));
+    expect(await s.get({ scope: '/hooks/:provider', key: 'msg_scope' }, Date.now())).not.toBeNull();
+  });
+
+  test('REQ-WH-1: a routePattern function computes the route from the request', async () => {
+    const s = store();
+    const handler = webhookReceiver({
+      store: s,
+      verify: () => true,
+      routePattern: (req) => `/dynamic${new URL(req.url).pathname}`,
+    })(async () => new Response('handled'));
+    await handler(delivery('msg_scope', '{"a":1}', '/hooks/github'));
+    expect(
+      await s.get({ scope: '/dynamic/hooks/github', key: 'msg_scope' }, Date.now()),
     ).not.toBeNull();
   });
 
@@ -207,16 +253,43 @@ describe('webhook receiver', () => {
 
   test('REQ-WH-5: an onSuspicious hook that throws does not change the 422', async () => {
     const s = store();
+    let calls = 0;
     const handler = webhookReceiver({
       store: s,
       verify: () => true,
       onSuspicious: () => {
+        calls += 1;
         throw new Error('hook exploded');
       },
     })(async () => new Response('handled'));
-    await handler(delivery('msg_throwing', '{"a":1}'));
+    const first = await handler(delivery('msg_throwing', '{"a":1}'));
+    // Drain before redelivering: completion is pull driven.
+    await first.text();
     const second = await handler(delivery('msg_throwing', '{"a":2}'));
     expect(second.status).toBe(422);
+    expect(calls).toBe(1);
+  });
+
+  test('REQ-WH-5: a throwing user onMismatch hook still fires onSuspicious', async () => {
+    const s = store();
+    const suspicious: string[] = [];
+    const handler = webhookReceiver({
+      store: s,
+      verify: () => true,
+      hooks: {
+        onMismatch: () => {
+          throw new Error('onMismatch exploded');
+        },
+      },
+      onSuspicious: (_req, record) => {
+        suspicious.push(record.key);
+      },
+    })(async () => new Response('handled'));
+    const first = await handler(delivery('msg_both_hooks', '{"a":1}'));
+    await first.text();
+    const second = await handler(delivery('msg_both_hooks', '{"a":2}'));
+    expect(second.status).toBe(422);
+    expect(suspicious).toEqual(['msg_both_hooks']);
   });
 
   test('REQ-WH-1: a GET passes through untouched because the receiver applies to POST only', async () => {

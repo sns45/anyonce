@@ -18,7 +18,10 @@ import { isVerified } from './marker';
 export const DEFAULT_ID_HEADER = 'webhook-id';
 
 export interface WebhookReceiverOptions
-  extends Omit<HttpIdempotencyOptions, 'headerName' | 'problemTitles'> {
+  extends Omit<
+    HttpIdempotencyOptions,
+    'headerName' | 'problemTitles' | 'scope' | 'principal' | 'keySyntax'
+  > {
   /** REQ-WH-1: the header the delivery id arrives in. Default webhook-id. */
   idHeader?: string;
   /** REQ-WH-1: a body derived id (Stripe event.id, a GitHub delivery header). Wins over idHeader. */
@@ -141,23 +144,38 @@ export function webhookReceiver(options: WebhookReceiverOptions) {
       const keyLookup = resolveKey(req, read.body, idHeader, options.key);
       const routeScope = webhookScope(req, read.body, options.routePattern, options.sourceId);
 
-      // REQ-WH-5: the hook wants the request, and the engine's onMismatch only carries the operation, so the
-      // policy is rebuilt per request with the request closed over. Hooks never throw into the engine.
-      const perRequest: ResolvedHttpOptions = {
-        ...resolved,
-        policy: {
-          ...resolved.policy,
-          hooks: {
-            ...resolved.policy.hooks,
-            onMismatch(op, record) {
-              resolved.policy.hooks?.onMismatch?.(op, record);
-              options.onSuspicious?.(req, record);
-            },
-          },
-        },
-      };
+      // REQ-WH-5: onSuspicious wants the request, and the engine's onMismatch only carries the operation, so
+      // the policy is rebuilt per request with the request closed over. Rebuilding costs three allocations
+      // per delivery, so it only happens when there is an onSuspicious hook to wire; otherwise resolved is
+      // used unchanged. The two calls each get their own try/catch, so a throwing user onMismatch can never
+      // suppress the security relevant onSuspicious call, or the reverse.
+      const runOptions: ResolvedHttpOptions =
+        options.onSuspicious === undefined
+          ? resolved
+          : {
+              ...resolved,
+              policy: {
+                ...resolved.policy,
+                hooks: {
+                  ...resolved.policy.hooks,
+                  onMismatch(op, record) {
+                    try {
+                      options.onSuspicious?.(req, record);
+                    } catch {
+                      // onSuspicious never throws into the receiver; the engine's own safely() would catch
+                      // this too, but a dedicated catch here keeps it from suppressing the call below.
+                    }
+                    try {
+                      resolved.policy.hooks?.onMismatch?.(op, record);
+                    } catch {
+                      // Same rule for a user supplied onMismatch: it never suppresses onSuspicious above.
+                    }
+                  },
+                },
+              },
+            };
 
-      return runIdempotent(req, (r) => Promise.resolve(handler(r, ...rest)), perRequest, {
+      return runIdempotent(req, (r) => Promise.resolve(handler(r, ...rest)), runOptions, {
         routeScope,
         keyLookup,
         body: read.body,
