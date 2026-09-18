@@ -246,13 +246,6 @@ Adapter overrides (Go):
 | kafka | false | default | default |
 | redis | false | default | default |
 
-## 4. Corrections found against the published packages (2026-09-18)
-
-The sections above were transcribed from the anyq source at `b49d41f`. Two rows do not match the published 0.5.0 artifacts and are corrected here rather than edited above, so the transcription stays verbatim:
-
-- TypeScript adapter table, `sqs` `parkMessage`: the published `@anyq/sqs` 0.5.0 does not change visibility. It acks the received message and publishes a new one with `SendMessage` and `DelaySeconds`, carrying `MessageBody` only, so the parked copy has a new `MessageId` and no message attributes. `@anyq/memory` `parkMessage` likewise re-enqueues and mints a fresh id, keeping `key` and `headers`. See `docs/superpowers/questions.md` Q23.
-- Built-in strategies are re-exported from the `@anyq/core` root. The published `exports` map has no `./strategies` subpath.
-
 ### Errors
 
 ```go
@@ -273,3 +266,10 @@ anyonce Go typed errors: `anyqmw.ErrInFlight` (wrapped with lease info), `anyqmw
 | Redis Streams | `@anyq/redis-streams` | `go/redis` | Redis 7 (shared with the Redis store) |
 | SQS | `@anyq/sqs` | `go/sqs` | ElasticMQ |
 | Kafka | `@anyq/kafka` | `go/kafka` | Redpanda |
+
+## 4. Corrections found against the published packages (2026-09-18)
+
+The sections above were transcribed from the anyq source at `b49d41f`. Two rows do not match the published 0.5.0 artifacts and are corrected here rather than edited above, so the transcription stays verbatim:
+
+- TypeScript adapter table, `sqs` `parkMessage`: the published `@anyq/sqs` 0.5.0 does not change visibility. It acks the received message and publishes a new one with `SendMessage` and `DelaySeconds`, carrying `MessageBody` only, so the parked copy has a new `MessageId` and no message attributes. `@anyq/memory` `parkMessage` likewise re-enqueues and mints a fresh id, keeping `key` and `headers`. See `docs/superpowers/questions.md` Q23.
+- Built-in strategies are re-exported from the `@anyq/core` root. The published `exports` map has no `./strategies` subpath.
