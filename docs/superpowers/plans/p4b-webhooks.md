@@ -265,11 +265,13 @@ and two example bodies in the "Example bodies" section:
 ```json
 {
   "type": "https://in8.sh/anyonce/problems/signature-invalid",
-  "title": "The webhook signature could not be verified",
+  "title": "The request signature could not be verified",
   "status": 401,
   "code": "signature-invalid"
 }
 ```
+
+The title is the catalogue default, which stays generic because `@anyonce/core/http` serves every door. The webhook receiver overrides it through `problemTitles` so a sender reads "The webhook signature could not be verified".
 ```
 
 Add a sentence under the table: "A receiver may override any title with `problemTitles` so it names the header its senders actually send; the status and the `code` member never change."
