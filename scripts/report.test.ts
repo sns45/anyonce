@@ -346,8 +346,9 @@ describe('scripts/report', () => {
     }
   });
 
-  // The following six tests read conformance/results/*.json and conformance/REPORT.md, which Task 6 produces.
-  // Bodies are written now so Task 6 only has to remove `.todo`.
+  // These read the committed conformance/results/*.json and conformance/REPORT.md. Together they are the
+  // cheap gate: the ts job runs them with no container up, so a hand edit to either fails CI there rather
+  // than waiting for the services job to re-collect every row.
 
   test('REQ-CONF-8: every manifest row has a committed result', () => {
     const results = readResults(RESULTS_DIR);
@@ -372,7 +373,7 @@ describe('scripts/report', () => {
     expect(containsAny(committed, EM_OR_EN_DASH)).toBe(false);
   });
 
-  test('REQ-CONF-9: every failing core vector in the committed results has an issue draft file', () => {
+  test('REQ-CONF-8: every failing core vector in the committed results has an issue draft file', () => {
     const results = readResults(RESULTS_DIR);
     for (const [rowId, summary] of results) {
       for (const result of summary.results) {
@@ -385,7 +386,7 @@ describe('scripts/report', () => {
     }
   });
 
-  test('REQ-CONF-9: every issue draft names its vector id, the draft section and a reproduction command', () => {
+  test('REQ-CONF-8: every issue draft names its vector id, the draft section and a reproduction command', () => {
     const files = readdirSync(ISSUES_DIR).filter((name) => name.endsWith('.md'));
     expect(files.length).toBeGreaterThan(0);
     for (const file of files) {

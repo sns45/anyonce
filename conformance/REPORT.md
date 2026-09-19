@@ -86,7 +86,7 @@ Third-party implementations are graded on the `core` tier only. Their `profile` 
 - Fixture: conformance/third-party/hono-idempotency/
 - Image: node:22.23.2-alpine
 - Packages: hono-idempotency@0.9.1, hono@4.13.8, hono-problem-details@0.11.0, @hono/node-server@2.1.1
-- Notes: memoryStore({ ttl: 2000 }), against a library default of 24 hours, so the short-ttl capability can be declared and core/expiry-executes-again is graded rather than reported not-applicable. required: true, so the fixture matches core/key-missing-required. methods and dangerouslyAllowGlobalKeys are also set but are inert for this fixture: every route is POST, and the fixture never reuses a key across routes, so neither setting changes what the run measures.
+- Notes: memoryStore({ ttl: 2000, sweepInterval: 500 }), against library defaults of 24 hours and 60 seconds. The ttl is what lets the short-ttl capability be declared so core/expiry-executes-again is graded rather than reported not-applicable; the sweep only reclaims memory, because expiry is evaluated lazily on every read, so it cannot change a graded outcome. required: true, so the fixture matches core/key-missing-required. methods and dangerouslyAllowGlobalKeys are also set but are inert for this fixture: every route is POST, and the fixture never reuses a key across routes, so neither setting changes what the run measures.
 
 ### idempo
 

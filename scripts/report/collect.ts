@@ -15,7 +15,7 @@ import { createFixtureApp } from '@anyonce/fixture-hono';
 import { DynamoDbStore, ensureTable } from '@anyonce/stores/dynamodb';
 import { ensureSchema, PostgresStore } from '@anyonce/stores/postgres';
 import { fromIoredis, RedisStore } from '@anyonce/stores/redis';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DeleteTableCommand, DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import Redis from 'ioredis';
 import { Pool } from 'pg';
 import { CAPABILITY_TTL_MS, GO_REGRADED_VECTOR_ID, type ReportRow } from './rows';
@@ -161,6 +161,13 @@ async function buildStore(name: string): Promise<{ store: Store; cleanup: () => 
       return {
         store: new DynamoDbStore({ client, tableName: table }),
         cleanup: async () => {
+          // The table name carries a timestamp, so without this every run leaves another table behind in a
+          // long lived DynamoDB Local. Best effort: a failed delete must not fail the row it belongs to.
+          try {
+            await client.send(new DeleteTableCommand({ TableName: table }));
+          } catch {
+            // The row's result is what matters; a leftover table is a local housekeeping problem.
+          }
           client.destroy();
         },
       };

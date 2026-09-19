@@ -70,8 +70,8 @@ conformance.Run(t, handler, conformance.Options{Capabilities: []string{"short-tt
 Against a URL from the command line (Go):
 
 ```sh
-GOROOT= go run ./go/cmd/conformance -url http://localhost:3000 -tier core -report markdown
-GOROOT= go run ./go/cmd/conformance -url http://localhost:3000 -only core/header-name-case-insensitive -report json
+GOROOT= go run -C go ./cmd/conformance -url http://localhost:3000 -tier core -report markdown
+GOROOT= go run -C go ./cmd/conformance -url http://localhost:3000 -only core/header-name-case-insensitive -report json
 ```
 
 Flags mirror the TypeScript CLI flag for flag: `-url` (required), `-tier core|profile` (repeatable, default every tier), `-only <id>` (repeatable), `-capability short-ttl` (repeatable), `-ttl-ms <n>`, `-report json|markdown|junit` (default markdown), `-out <file>`. It exists because this runner sets the request header map directly, so it can put a non-canonical spelling on the wire; the TypeScript CLI cannot, because `fetch()`'s `Headers` class always lowercases what it is given. That makes this the only runner that can grade `core/header-name-case-insensitive` for real (Q52, `docs/superpowers/questions.md`).
