@@ -18,14 +18,14 @@ A request reaches a serverless system through one of three doors: an HTTP endpoi
 
 | Project | Scope | Stores | Language | Gap anyonce fills |
 |---|---|---|---|---|
-| `paveg/hono-idempotency` v0.9.0 (May 2026), official Hono third-party middleware | HTTP only, Hono only. Draft-conformant error codes, SHA-256 fingerprint, `Idempotency-Replayed`, non-2xx not cached | memory, Redis, KV, D1, Durable Objects | TypeScript | No queue or webhook door, no DynamoDB or Postgres, no conformance suite, KV store is not atomic across edge locations (documented by the author) |
-| `idempo` (Go, net/http) | HTTP only, Stripe semantics | in-memory (others unclear) | Go | Same as above, Go side |
-| Fiber `middleware/idempotency` | HTTP only, `X-Idempotency-Key`, cache semantics | Fiber storage | Go | Not draft-conformant header, no fingerprint/422 model |
+| `paveg/hono-idempotency` v0.9.1 (18 July 2026), official Hono third-party middleware | HTTP only, Hono only. Draft-conformant error codes, SHA-256 fingerprint, `Idempotency-Replayed`, non-2xx not cached | memory, Redis, Cloudflare KV, Cloudflare D1, Durable Objects | TypeScript | No queue or webhook door, no DynamoDB or Postgres, no conformance suite, KV store is not atomic across edge locations (documented by the author) |
+| `github.com/eben-vranken/idempo` v1.0.0 (2 June 2026), framework agnostic Go `net/http` middleware, Stripe-compatible semantics | HTTP only, Stripe semantics, RFC 9457 problem details, 409 and 422, `Idempotency-Replayed` | in-memory, Redis, Postgres | Go | HTTP door only, no queue or webhook door, no conformance suite, no TypeScript side |
+| Fiber `middleware/idempotency`, `github.com/gofiber/fiber/v3/middleware/idempotency` at fiber v3.5.0 (the same middleware also ships in v2.52.15) | HTTP only, `X-Idempotency-Key` default header, cache semantics | Fiber storage | Go | Not draft-conformant header, no fingerprint/422 model |
 | Watermill `middleware.Deduplicator`, MassTransit inbox, NATS `Nats-Msg-Id`, SQS FIFO `MessageDeduplicationId` | Queue door only, each bound to one broker or framework | broker-native | Go/.NET/broker | Not portable across brokers, no HTTP or webhook door, no stored result replay |
 | Stripe, Adyen, PayPal, Square API docs | Service-side policy descriptions | n/a | n/a | Descriptions, not reusable code or tests |
 | IETF `draft-ietf-httpapi-idempotency-key-header-07` | Specification. Expired 18 April 2026, no -08 posted. Still the HTTPAPI WG document; editor's copy last committed February 2025 (`dab060c`, draft 06); -07 published October 2025 without a repo commit | n/a | n/a | No conformance vectors exist for it anywhere |
 
-Search performed: GitHub topic `idempotency-key`, npm, pkg.go.dev, IETF datatracker, HTTPAPI WG repo. No project found that (a) applies one idempotency core across HTTP, queue consumer and webhook receiver, or (b) ships a conformance suite for the draft.
+Search performed: GitHub topic `idempotency-key`, npm, pkg.go.dev, IETF datatracker, HTTPAPI WG repo. No project found that (a) applies one idempotency core across HTTP, queue consumer and webhook receiver, or (b) ships a conformance suite for the draft. The versions, publication dates and store lists in the table above were re-verified against npm and `proxy.golang.org` on 18 September 2026; this correction is Q51.
 
 ### 0.3 The novelty claim (falsifiable)
 
