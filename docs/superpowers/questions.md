@@ -332,3 +332,35 @@ would be flaky by construction and would be testing anyq's SQS adapter rather th
 `docs/queue-ids.md` records the limitation in the SQS row's notes.
 
 **Decision: pending.** P4a proceeds on the recommendation.
+
+## Q50: the P5 issue drafts have two homes in the spec
+
+`CHECKLIST.md`'s P5 section says "S4 issue drafts in `docs/standards/issues/` (not opened)". REQ-CONF-8 (requirements.md 4.7) says each failing vector links to a filed issue, and that link lives in `conformance/REPORT.md`. `docs/standards/` is not created until P7, where it holds S1, S2 and S3, documents about the draft itself (the WG PR, the mailing list post, the draft issue writeups), not about a specific implementation under test. A `REPORT.md` written in P5 that links into a `docs/standards/issues/` directory that does not exist yet, and that belongs to a different phase's concern, is a broken link waiting to happen.
+
+Recommended resolution: the drafts live at `conformance/issues/<implementation>-<vector-name>.md`, so `REPORT.md` links to them with a relative path and the whole matrix, drafts included, reads from inside `conformance/` without walking up into `docs/`. `CHECKLIST.md` is amended to match.
+
+**Decision: pending.** P5 proceeds on the recommendation.
+
+## Q51: requirements 0.2 names versions and stores that the registries no longer show
+
+requirements.md 0.2's three third-party rows cite facts that a fresh check against npm and `proxy.golang.org` on 18 September 2026 shows are stale. `paveg/hono-idempotency` is at 0.9.1, published 18 July 2026; the table names 0.9.0 (May 2026). Its store list, memory, Cloudflare KV, Cloudflare D1, Durable Objects and Redis, is already correct in the table. `idempo` resolves to `github.com/eben-vranken/idempo` v1.0.0, tagged 2 June 2026; the table's "in-memory (others unclear)" undercounts its stores, which are in-memory, Redis and Postgres, and omits that it emits RFC 9457 problem details throughout and returns 409, 422 and an `Idempotency-Replayed` header. The Fiber `middleware/idempotency` row names no module path or version; its current home is `github.com/gofiber/fiber/v3/middleware/idempotency` at fiber v3.5.0 (the same middleware also ships in v2.52.15).
+
+Recommended resolution: correct the three rows to the versions, publication dates and store lists above, keep each row's existing "Gap anyonce fills" substance (none of the three has a queue or webhook door, none ships a conformance suite), and append a sentence to the "Search performed" paragraph recording that these facts were re-verified against npm and `proxy.golang.org` on 18 September 2026, as this question. Precedent: Q1's decision made the same kind of correction to the same table, there for the IETF draft's date.
+
+**Decision: pending.** P5 proceeds on the recommendation.
+
+## Q52: `core/header-name-case-insensitive` cannot be graded by the TypeScript runner
+
+`conformance/README.md` already records that the Fetch `Headers` class lowercases every header name it stores, so a conformance run driven by `bunx @anyonce/conformance --url` cannot put a differently spelled header name on the wire; whatever it sends arrives lowercase no matter what the vector asks for. Grading a third party on `core/header-name-case-insensitive` from that CLI alone would report a pass that proves nothing, since the target is never shown a non-lowercase spelling to normalize.
+
+Recommended resolution: build `go/cmd/conformance`, a URL-mode Go CLI whose HTTP client sets `req.Header[name]` directly rather than going through Go's canonicalizing header map, so it can put the requested casing on the wire. Take every third-party row's result for that one vector from the Go runner; take every other vector from the TypeScript CLI as REQ-CONF-7 requires. `conformance/REPORT.md` names the runner that produced that vector's result for each row.
+
+**Decision: pending.** P5 proceeds on the recommendation.
+
+## Q53: the Fiber middleware cannot be measured on its defaults
+
+Fiber's `idempotency.Config` defaults `KeyHeader` to `X-Idempotency-Key`, not `Idempotency-Key`, the field the draft defines, and defaults `KeyHeaderValidate` to a function that rejects any key that is not exactly 36 characters by returning a bare `error`, which Fiber's default error handler renders as an HTTP 500. Run the suite against the Fiber fixture on its defaults and every vector that supplies a key fails validation before the middleware's idempotency logic runs at all, so the result measures the fixture's rejection path, not the middleware, and would print "0/11 core, every vector errored", which is true and tells a reader nothing.
+
+Recommended resolution: configure the Fiber fixture with `KeyHeader: "Idempotency-Key"` and a permissive `KeyHeaderValidate` that accepts any non-empty key, and print both overrides in `conformance/REPORT.md`'s notes for that row so the departure from defaults is visible. Record the two defaults themselves as findings in the Fiber issue drafts: the header name is a draft-conformance gap, and the 500 in place of a 400 is an error-handling gap against draft section 2.7.
+
+**Decision: pending.** P5 proceeds on the recommendation.
