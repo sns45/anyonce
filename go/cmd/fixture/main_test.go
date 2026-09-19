@@ -16,18 +16,32 @@ import (
 	"github.com/sns45/anyonce/go/internal/servicetest"
 )
 
-// runFullSuite wires store behind httpmw exactly as main does with -idempotent and runs every core and
-// profile vector against it, failing the test unless all twenty pass.
-func runFullSuite(t *testing.T, store anyonce.Store) {
+// wiringVectors are the three vectors that prove -store really put a working store behind httpmw: a claim
+// that runs the handler once, a replay of the stored result, and a fingerprint mismatch. Between them they
+// exercise Begin, Complete and Get on the store under test.
+//
+// This is deliberately not the whole suite. Proving every vector against every store is the store packages'
+// own job (go/store/*/...) and the URL-mode runner's (packages/conformance/test/cli-go.test.ts); repeating
+// it here bought nothing and cost `go test -race ./...` three extra full suite runs, two of which sit in the
+// vectors' own 2500 ms expiry and 1500 ms concurrency waits.
+var wiringVectors = []string{
+	"core/post-executes-once",
+	"core/retry-replays",
+	"core/mismatch-422",
+}
+
+// runWiringSuite wires store behind httpmw exactly as main does with -idempotent and runs wiringVectors
+// against it, failing the test unless every one of them passes.
+func runWiringSuite(t *testing.T, store anyonce.Store) {
 	t.Helper()
 	f := fixture.New()
 	mw := httpmw.New(store, httpmw.Options{Required: true, Policy: anyonce.Policy{TTL: 2 * time.Second}})
 	mux := http.NewServeMux()
 	mux.Handle("POST /reset", f.Handler())
 	mux.Handle("/", mw.Handler(f.Handler()))
-	summary := conformance.Run(t, mux, conformance.Options{Capabilities: []string{"short-ttl"}})
-	if summary.Passed != len(summary.Results) || len(summary.Results) != 20 {
-		t.Fatalf("passed %d of %d", summary.Passed, len(summary.Results))
+	summary := conformance.Run(t, mux, conformance.Options{Only: wiringVectors})
+	if summary.Passed != len(wiringVectors) || len(summary.Results) != len(wiringVectors) {
+		t.Fatalf("passed %d of %d results, want %d", summary.Passed, len(summary.Results), len(wiringVectors))
 	}
 }
 
@@ -38,7 +52,7 @@ func TestNewStore(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer cleanup()
-		runFullSuite(t, store)
+		runWiringSuite(t, store)
 	})
 
 	t.Run("REQ-CONF-8: an empty -store name also builds the memory store", func(t *testing.T) {
@@ -47,7 +61,7 @@ func TestNewStore(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer cleanup()
-		runFullSuite(t, store)
+		runWiringSuite(t, store)
 	})
 
 	t.Run("REQ-CONF-8: an unknown -store name is an error, never a silent fallback", func(t *testing.T) {
@@ -64,7 +78,7 @@ func TestNewStore(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer cleanup()
-		runFullSuite(t, store)
+		runWiringSuite(t, store)
 	})
 
 	t.Run("REQ-CONF-8: -store redis builds a working store behind httpmw", func(t *testing.T) {
@@ -74,7 +88,7 @@ func TestNewStore(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer cleanup()
-		runFullSuite(t, store)
+		runWiringSuite(t, store)
 	})
 
 	t.Run("REQ-CONF-8: -store postgres builds a working store behind httpmw", func(t *testing.T) {
@@ -84,7 +98,7 @@ func TestNewStore(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer cleanup()
-		runFullSuite(t, store)
+		runWiringSuite(t, store)
 	})
 
 	t.Run("REQ-CONF-8: -store sqlite builds a working store behind httpmw and removes every temp file on cleanup", func(t *testing.T) {
@@ -113,7 +127,7 @@ func TestNewStore(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		runFullSuite(t, store)
+		runWiringSuite(t, store)
 
 		during := snapshot()
 		if len(during) == 0 {
