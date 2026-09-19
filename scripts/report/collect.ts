@@ -3,7 +3,8 @@
  * files under conformance/results/. No collector here is invoked by scripts/report.test.ts (Task 4); they run
  * for real from scripts/report.ts, which needs the compose stacks up.
  */
-import { readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { env as processEnv } from 'node:process';
 import type { RunSummary, VectorResult } from '@anyonce/conformance';
@@ -291,16 +292,50 @@ async function runTsConformanceCli(args: readonly string[], context: string): Pr
 /** REQ-CONF-8: the anyonce Go rows. Starts go/cmd/fixture on the row's own fixed port with -idempotent
  * -store <name>, drives it with go/cmd/conformance using the row's own capabilities (N9), then stops the
  * fixture. A fixed port (N6) means an unreachable-fixture error never embeds an ephemeral port. */
+/**
+ * Path of the compiled fixture binary, built once and reused by all five Go rows.
+ *
+ * The fixture is built and then run as a binary rather than driven with `go run`, and that is load bearing
+ * rather than an optimisation. `go run` compiles to a temporary binary and executes it as a CHILD process,
+ * so killing the `go run` process leaves the server it started holding the port. Observed exactly that: a
+ * completed collection left five `fixture` processes on 18901 to 18905, and the next run died with
+ * "listen tcp 127.0.0.1:18901: bind: address already in use". Spawning the binary directly means the process
+ * the collector kills is the server. packages/conformance/test/cli-go.test.ts builds first for the same
+ * reason.
+ */
+let fixtureBinary: Promise<string> | undefined;
+
+async function buildGoFixture(): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), 'anyonce-report-fixture-'));
+  const bin = join(dir, 'fixture');
+  const build = Bun.spawn({
+    cmd: ['go', 'build', '-o', bin, './cmd/fixture'],
+    cwd: GO_ROOT,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const [stdout, stderr] = await Promise.all([
+    readAllText(build.stdout),
+    readAllText(build.stderr),
+  ]);
+  const code = await build.exited;
+  if (code !== 0) {
+    rmSync(dir, { recursive: true, force: true });
+    throw new Error(`go build ./cmd/fixture failed with exit ${code}: ${stderr || stdout}`);
+  }
+  return bin;
+}
+
 export async function collectGoUrl(row: ReportRow): Promise<RunSummary> {
   if (row.port === undefined) {
     throw new Error(`go-url collector: row "${row.id}" has no fixed port`);
   }
   const addr = `127.0.0.1:${row.port}`;
+  fixtureBinary ??= buildGoFixture();
+  const bin = await fixtureBinary;
   const fixture = Bun.spawn({
     cmd: [
-      'go',
-      'run',
-      './cmd/fixture',
+      bin,
       '-idempotent',
       '-addr',
       addr,
@@ -318,6 +353,8 @@ export async function collectGoUrl(row: ReportRow): Promise<RunSummary> {
     return await runGoConformanceCli(buildGoUrlArgs(row, url), `row "${row.id}" (${url})`);
   } finally {
     fixture.kill();
+    // Awaiting the exit is what makes the port free for the next row rather than merely requested to be.
+    await fixture.exited;
   }
 }
 
@@ -340,8 +377,20 @@ function thirdPartyUrl(row: ReportRow): string {
  * discriminate. */
 export async function collectTsUrl(row: ReportRow): Promise<RunSummary> {
   const url = thirdPartyUrl(row);
-  const tsSummary = await runTsConformanceCli(buildTsUrlArgs(row, url), `row "${row.id}" (${url})`);
 
+  // The Go regrade runs FIRST, before the TypeScript pass, and the order is load bearing. Both passes drive
+  // the same live container, and GO_REGRADED_VECTOR_ID uses one fixed key on both of them. The fixture
+  // contract's POST /reset clears the handler counter but cannot clear the implementation's own idempotency
+  // store, and every third-party target here is configured with a 2000 ms TTL, so a second pass that lands
+  // inside that window finds the first pass's record still live and is answered by a replay: the target
+  // returns the expected status with the handler never running, and the vector fails on
+  // handlerInvocations rather than on anything the implementation did wrong.
+  //
+  // Observed, not theorised: with the TypeScript pass first, all three third parties failed this vector with
+  // "first: handlerInvocations: expected 1, got 0", and all three passed it when the Go CLI was pointed at
+  // the same container by hand. Publishing that would have been two false accusations against other people's
+  // projects. Running the Go pass first means it meets a clean store; the TypeScript pass then hits the
+  // replay instead, and its result for this one vector is the one being discarded anyway.
   const goSummary = await runGoConformanceCli(
     ['-url', url, '-only', GO_REGRADED_VECTOR_ID],
     `row "${row.id}" (${url})`,
@@ -350,6 +399,8 @@ export async function collectTsUrl(row: ReportRow): Promise<RunSummary> {
   if (goResult === undefined) {
     throw new Error(`go run ./cmd/conformance -only ${GO_REGRADED_VECTOR_ID} produced no result`);
   }
+
+  const tsSummary = await runTsConformanceCli(buildTsUrlArgs(row, url), `row "${row.id}" (${url})`);
   const results = tsSummary.results.map((r) => (r.id === GO_REGRADED_VECTOR_ID ? goResult : r));
   return {
     results,
