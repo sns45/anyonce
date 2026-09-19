@@ -109,6 +109,12 @@ jobs:
       - shell: bash
         run: bun run test:services 2>&1 | tee services.log
       - run: scripts/no-skips.sh services.log
+      - name: third-party conformance containers
+        run: docker compose -f conformance/third-party/compose.yml up -d --wait --build
+      - name: regenerate and diff the cross-implementation report
+        run: bun run report
+      - if: always()
+        run: docker compose -f conformance/third-party/compose.yml down -v
       - if: always()
         run: docker compose -f test/compose.yml down -v
 

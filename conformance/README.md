@@ -37,7 +37,7 @@ Execution rules:
 
 `requires: ["short-ttl"]` marks a vector that needs a TTL of at most 2000 ms on the target. Pass `capabilities: ['short-ttl']` (or `--capability short-ttl` on the CLI in P2) only when your target is configured that way. Otherwise the vector is reported as `not-applicable` and does not count as a pass or a fail.
 
-One vector depends on the runner rather than the target: `core/header-name-case-insensitive` spells the field name in lowercase, and the TypeScript runner cannot vary that spelling because the `Headers` class lowercases every name it is given, so the vector only discriminates when it is run from the Go runner, and a CLI run is not a substitute for that.
+One vector depends on the runner rather than the target: `core/header-name-case-insensitive` spells the field name in lowercase, and the TypeScript runner cannot vary that spelling because the `Headers` class lowercases every name it is given, so the vector only discriminates when it is run from the Go runner. `go/cmd/conformance` is that Go runner in URL mode; run it against the same target to grade this one vector for real.
 
 ## Running
 
@@ -67,12 +67,42 @@ conformance.Run(t, handler, conformance.Options{Capabilities: []string{"short-tt
 
 `handler` is an `http.Handler` (served by `httptest.NewServer` for the run) or a base URL string. `conformance.RunVectors` and `conformance.Format` are the library forms.
 
+Against a URL from the command line (Go):
+
+```sh
+GOROOT= go run ./go/cmd/conformance -url http://localhost:3000 -tier core -report markdown
+GOROOT= go run ./go/cmd/conformance -url http://localhost:3000 -only core/header-name-case-insensitive -report json
+```
+
+Flags mirror the TypeScript CLI flag for flag: `-url` (required), `-tier core|profile` (repeatable, default every tier), `-only <id>` (repeatable), `-capability short-ttl` (repeatable), `-ttl-ms <n>`, `-report json|markdown|junit` (default markdown), `-out <file>`. It exists because this runner sets the request header map directly, so it can put a non-canonical spelling on the wire; the TypeScript CLI cannot, because `fetch()`'s `Headers` class always lowercases what it is given. That makes this the only runner that can grade `core/header-name-case-insensitive` for real (Q52, `docs/superpowers/questions.md`).
+
 ## Adding a vector
 
 1. Create `vectors/<tier>/<name>.json`; the `id` must be `<tier>/<name>`.
 2. Core vectors must cite a `draftRef`; profile vectors must not use `requires`.
 3. Add the id to `CORE_IDS` or `PROFILE_IDS` in `packages/conformance/test/catalog.ts`, and to `BARE_PASS_IDS` there if it passes without an idempotency layer.
 4. Run `bun run vectors:validate` and `bun test packages/conformance`.
+
+## Cross-implementation report
+
+`conformance/REPORT.md` is generated, not hand written. It is a matrix of every anyonce store and language combination plus three third-party implementations (`hono-idempotency`, `idempo`, Fiber), each run through the vectors above. Per D17, third parties are graded on the `core` tier only; their `profile` numbers are printed alongside for information and are never a pass or fail judgement of that implementation. anyonce's own rows are graded on both tiers.
+
+Two gates keep the file honest:
+
+- A render-only check in the `ts` job, with no containers running: it renders `conformance/REPORT.md` from the committed `conformance/results/*.json` files and compares the result to what is committed (`scripts/report.test.ts`, run as part of `bun run test`).
+- A full re-run in the `services` job: both compose stacks are brought up, every row is collected again for real, and the fresh results and the fresh render are both compared against what is committed (`bun run report`).
+
+To regenerate everything locally, bring up both compose files and run the update flag:
+
+```sh
+docker compose -f test/compose.yml up -d --wait
+docker compose -f conformance/third-party/compose.yml up -d --wait --build
+bun run report -- --update
+```
+
+`conformance/results/*.json` are committed alongside `conformance/REPORT.md` so a reader can regenerate the rendered report from what is in the repository without standing up a single container; only `--update` (or the `services` job's plain `bun run report`) touches a live target.
+
+`conformance/issues/` holds unsent issue drafts for the third-party failures `conformance/REPORT.md` links to. Nothing in there has been filed, opened, posted or commented on any repository; each draft says so in its own first line.
 
 ## Running the suite through the webhook door
 
