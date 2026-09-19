@@ -8,8 +8,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -71,6 +73,23 @@ func newPostgresStore(ctx context.Context) (anyonce.Store, func(), error) {
 	return store, func() {}, nil
 }
 
+// sqliteTempPaths lists every file sqlite.Open can leave behind for a database at path. Open sets
+// journal_mode(WAL), so SQLite writes a "-wal" write ahead log and a "-shm" shared memory index next to the
+// database file. sqlstore.Store exposes no Close and sqlite.Open does not hand back the *sql.DB, so the
+// fixture cannot checkpoint the log away; it removes all three names instead. Removing only the ".db" name
+// leaks two files per run into the temp directory.
+func sqliteTempPaths(path string) []string {
+	return []string{path, path + "-wal", path + "-shm"}
+}
+
+func removeSQLiteTemp(path string) {
+	for _, p := range sqliteTempPaths(path) {
+		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			log.Printf("remove sqlite temp file %s: %v", p, err)
+		}
+	}
+}
+
 func newSQLiteStore(ctx context.Context) (anyonce.Store, func(), error) {
 	f, err := os.CreateTemp("", "anyonce-fixture-*.db")
 	if err != nil {
@@ -78,19 +97,19 @@ func newSQLiteStore(ctx context.Context) (anyonce.Store, func(), error) {
 	}
 	path := f.Name()
 	if err := f.Close(); err != nil {
-		_ = os.Remove(path)
+		removeSQLiteTemp(path)
 		return nil, nil, fmt.Errorf("close sqlite temp file: %w", err)
 	}
 	store, err := sqlite.Open(ctx, path)
 	if err != nil {
-		_ = os.Remove(path)
+		removeSQLiteTemp(path)
 		return nil, nil, fmt.Errorf("open sqlite store at %s: %w", path, err)
 	}
 	if err := store.EnsureSchema(ctx); err != nil {
-		_ = os.Remove(path)
+		removeSQLiteTemp(path)
 		return nil, nil, fmt.Errorf("ensure sqlite schema: %w", err)
 	}
-	return store, func() { _ = os.Remove(path) }, nil
+	return store, func() { removeSQLiteTemp(path) }, nil
 }
 
 // newStore builds the store named by -store: memory (the default, also chosen by an empty name), dynamodb,
@@ -130,11 +149,13 @@ func main() {
 
 	f := fixture.New()
 	handler := f.Handler()
+	cleanup := func() {}
 	if *idempotent {
-		store, cleanup, err := newStore(context.Background(), *storeName)
+		store, storeCleanup, err := newStore(context.Background(), *storeName)
 		if err != nil {
 			log.Fatalf("build store %q: %v", *storeName, err)
 		}
+		cleanup = storeCleanup
 		// SIGKILL cannot be caught, so this is best effort; it covers the ordinary case of a test harness or an
 		// operator stopping the process with SIGINT or SIGTERM, which is when a leaked sqlite temp file would
 		// otherwise accumulate.
@@ -152,7 +173,10 @@ func main() {
 		handler = mux
 	}
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
-	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		// log.Fatalf skips deferred calls, so the cleanup runs here explicitly. Without it a Serve that fails
+		// after the store was built leaks the sqlite temp files the signal path would have removed.
+		cleanup()
 		log.Fatalf("serve: %v", err)
 	}
 }

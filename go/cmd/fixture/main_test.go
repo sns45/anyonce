@@ -3,8 +3,9 @@ package main
 import (
 	"context"
 	"net/http"
-	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"testing"
 	"time"
 
@@ -86,34 +87,44 @@ func TestNewStore(t *testing.T) {
 		runFullSuite(t, store)
 	})
 
-	t.Run("REQ-CONF-8: -store sqlite builds a working store behind httpmw and removes its temp file on cleanup", func(t *testing.T) {
-		pattern := filepath.Join(os.TempDir(), "anyonce-fixture-*.db")
-		before, err := filepath.Glob(pattern)
-		if err != nil {
-			t.Fatal(err)
+	t.Run("REQ-CONF-8: -store sqlite builds a working store behind httpmw and removes every temp file on cleanup", func(t *testing.T) {
+		// os.CreateTemp("") resolves through os.TempDir(), which reads TMPDIR on every call, so pointing TMPDIR
+		// at this test's own directory isolates the assertion from anything else writing to the shared temp
+		// directory (packages/conformance/test/cli-go.test.ts creates "anyonce-fixture-*" entries there too).
+		dir := t.TempDir()
+		t.Setenv("TMPDIR", dir)
+		// The glob covers the WAL sidecars as well as the database file. Matching only "*.db" would pass while
+		// leaking "<name>.db-wal" and "<name>.db-shm", which is what journal_mode(WAL) actually writes.
+		snapshot := func() []string {
+			t.Helper()
+			names, err := filepath.Glob(filepath.Join(dir, "*"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			sort.Strings(names)
+			return names
 		}
+		before := snapshot()
+		if len(before) != 0 {
+			t.Fatalf("the isolated temp directory is not empty: %v", before)
+		}
+
 		store, cleanup, err := newStore(context.Background(), "sqlite")
 		if err != nil {
 			t.Fatal(err)
 		}
 		runFullSuite(t, store)
 
-		during, err := filepath.Glob(pattern)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(during) != len(before)+1 {
-			t.Fatalf("expected exactly one new temp file, before %v during %v", before, during)
+		during := snapshot()
+		if len(during) == 0 {
+			t.Fatal("expected the sqlite store to create at least one temp file")
 		}
 
 		cleanup()
 
-		after, err := filepath.Glob(pattern)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(after) != len(before) {
-			t.Fatalf("temp file not removed by cleanup: before %v after %v", before, after)
+		after := snapshot()
+		if !slices.Equal(after, before) {
+			t.Fatalf("temp files left behind by cleanup: %v (the store had created %v)", after, during)
 		}
 	})
 }
