@@ -11,6 +11,10 @@ Every error anyonce returns over HTTP is an RFC 9457 problem details document wi
 | `payload-too-large` | 413 | The request body exceeds `maxRequestBytes` (default 1 MiB) | none |
 | `store-unavailable` | 503 | The store failed and the adapter runs fail-closed (D13) | `Retry-After: 1` |
 | `missing-principal` | 500 | `requirePrincipal` is set and the principal function returned nothing for this request (Q18) | none |
+| `configuration-error` | 500 | The webhook receiver could not establish that a delivery is genuine, for either of two causes: it was built with neither a `verify` callback nor a `verifiedMarker`, or its `verify` callback itself failed and so could not decide. The `detail` member says which, `no verify callback or verifiedMarker is configured` or `the verify callback failed`, and each cause logs once per receiver instance (REQ-WH-2, D16) | none |
+| `signature-invalid` | 401 | The webhook signature did not verify, or the upstream verified marker was absent (D16) | `WWW-Authenticate: Signature` |
+
+A receiver may override any title with `problemTitles` so it names the header its senders actually send; the status and the `code` member never change.
 
 ## Example bodies
 
@@ -91,6 +95,32 @@ Every error anyonce returns over HTTP is an RFC 9457 problem details document wi
   "code": "missing-principal"
 }
 ```
+
+`configuration-error`
+
+```json
+{
+  "type": "https://in8.sh/anyonce/problems/configuration-error",
+  "title": "This endpoint is not configured correctly and cannot accept the request",
+  "status": 500,
+  "code": "configuration-error"
+}
+```
+
+`signature-invalid`
+
+```json
+{
+  "type": "https://in8.sh/anyonce/problems/signature-invalid",
+  "title": "The request signature could not be verified",
+  "status": 401,
+  "code": "signature-invalid"
+}
+```
+
+The title is the catalogue default, which stays generic because `@anyonce/core/http` serves every door. The webhook receiver overrides it through `problemTitles` so a sender reads "The webhook signature could not be verified".
+
+This is the only problem that is a 401, and RFC 9110 section 15.5.2 makes at least one challenge a MUST on a 401, so the response always carries `WWW-Authenticate: Signature` (Q29). The scheme token is `Signature` because the credential being challenged is a Standard Webhooks signature, and it carries no parameters: a realm would name nothing a sender could act on. The header is set whether or not the receiver renders problems through `onError`.
 
 ## Overriding
 

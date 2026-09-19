@@ -16,7 +16,7 @@ export {
   DEFAULT_STORED_HEADERS,
   resolveHttpOptions,
 } from './options';
-export type { Problem, ProblemCode } from './problems';
+export type { Problem, ProblemCode, ProblemTitles } from './problems';
 export {
   DEFAULT_PROBLEM_BASE_URI,
   PROBLEM_STATUS,
@@ -34,7 +34,7 @@ export {
   resolveScope,
 } from './request';
 export type { IdempotencyInfo, IdempotentRun, RunContext } from './run';
-export { idempotencyOf, runIdempotent } from './run';
+export { idempotencyOf, runIdempotent, withProtocolHeaders } from './run';
 
 export type FetchLikeHandler<Rest extends unknown[]> = (
   req: Request,

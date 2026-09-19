@@ -3,7 +3,7 @@ import type { Operation } from '../types';
 import { type Capture, captureResponse, replayResponse } from './capture';
 import type { ResolvedHttpOptions } from './options';
 import { type ProblemCode, problem, problemResponse } from './problems';
-import { lookupKey, readBody, requestFingerprint, resolveScope } from './request';
+import { type KeyLookup, lookupKey, readBody, requestFingerprint, resolveScope } from './request';
 
 /** REQ-HTTP-14: what a handler can learn about the claim it runs under. */
 export interface IdempotencyInfo {
@@ -23,6 +23,20 @@ export type IdempotentRun = (req: Request, info: IdempotencyInfo | undefined) =>
 export interface RunContext {
   /** A router's scope (METHOD plus pattern); used when the options carry no scope function. */
   routeScope?: string;
+  /**
+   * REQ-WH-1: a key the caller already resolved, for a door whose key does not come from one header read (the
+   * webhook door reads webhook-id or derives an id from the body). All three branches behave as if the bridge
+   * had read the header itself, so required, the Link header and the invalid-key detail are unchanged.
+   */
+  keyLookup?: KeyLookup;
+  /**
+   * Body bytes the caller already read. A door that must see the body before the store (signature verification,
+   * a body derived id) reads it once and hands the bytes over instead of making the bridge clone and read again.
+   * The caller owns the bound: REQ-HTTP-6's maxRequestBytes is not applied to bytes supplied this way, because
+   * the read that would have enforced it has already happened, so a door that injects the body enforces the cap
+   * on its own read (the webhook receiver does, with the same maxRequestBytes option).
+   */
+  body?: Uint8Array;
 }
 
 function retryAfterSeconds(leaseUntil: number, now: number): string {
@@ -32,9 +46,11 @@ function retryAfterSeconds(leaseUntil: number, now: number): string {
 /**
  * REQ-HTTP-13 follow-up: merges the protocol headers the bridge would otherwise have set onto an onError
  * response, without overriding any the handler already set itself. Response headers may be immutable, so a
- * missing header is applied to a copy built from the original body and init.
+ * missing header is applied to a copy built from the original body and init. Exported because every door that
+ * renders a problem of its own before the bridge runs (the webhook receiver's gate) owes an onError override
+ * the same headers, and one implementation is the only way they stay the same.
  */
-function withProtocolHeaders(res: Response, headers: [string, string][]): Response {
+export function withProtocolHeaders(res: Response, headers: [string, string][]): Response {
   const missing = headers.filter(([name]) => !res.headers.has(name));
   if (missing.length === 0) return res;
   if (res.bodyUsed) return res;
@@ -68,7 +84,7 @@ export async function runIdempotent(
     detail?: string,
     headers: [string, string][] = [],
   ): Promise<Response> => {
-    const p = problem(code, options.problemBaseUri, detail);
+    const p = problem(code, options.problemBaseUri, detail, options.problemTitles?.[code]);
     if (options.onError !== undefined) {
       const res = await options.onError(p, req);
       return withProtocolHeaders(res, [...headers, ['Cache-Control', 'no-store']]);
@@ -76,7 +92,7 @@ export async function runIdempotent(
     return problemResponse(p, headers);
   };
 
-  const lookup = lookupKey(req.headers, options.headerName, options.keySyntax);
+  const lookup = ctx.keyLookup ?? lookupKey(req.headers, options.headerName, options.keySyntax);
   if (lookup.kind === 'missing') {
     if (!options.required) return run(req, undefined);
     return fail('missing-key', undefined, [['Link', `<${options.docsUrl}>; rel="describedby"`]]);
@@ -86,7 +102,10 @@ export async function runIdempotent(
   const scope = resolveScope(req, options, ctx.routeScope);
   if (!scope.ok) return fail('missing-principal');
 
-  const body = await readBody(req, options.maxRequestBytes);
+  const body =
+    ctx.body !== undefined
+      ? ({ ok: true, body: ctx.body } as const)
+      : await readBody(req, options.maxRequestBytes);
   if (!body.ok) return fail('payload-too-large');
   const fingerprint = await requestFingerprint(req, body.body, options.fingerprint);
   const op: Operation = { scope: scope.scope, key: lookup.key, fingerprint };
