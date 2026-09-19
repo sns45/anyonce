@@ -215,6 +215,8 @@ export const ROWS: readonly ReportRow[] = [
       '@hono/node-server@2.1.1',
     ],
     notes:
+      'memoryStore({ ttl: 2000 }), against a library default of 24 hours, so the short-ttl capability can be ' +
+      'declared and core/expiry-executes-again is graded rather than reported not-applicable. ' +
       'required: true, so the fixture matches core/key-missing-required. methods and ' +
       'dangerouslyAllowGlobalKeys are also set but are inert for this fixture: every route is POST, and the ' +
       'fixture never reuses a key across routes, so neither setting changes what the run measures.',
@@ -231,7 +233,10 @@ export const ROWS: readonly ReportRow[] = [
     capabilities: SHORT_TTL,
     image: 'golang:1.26.8-alpine3.24',
     packages: ['github.com/eben-vranken/idempo@v1.0.0'],
-    notes: 'every idempo.Options field left at its default.',
+    notes:
+      'inmem.New(2s, 2s), the lock and retention lifetimes of the store, so the short-ttl capability can be ' +
+      'declared and core/expiry-executes-again is graded rather than reported not-applicable. Every ' +
+      'field of idempo.Options itself is left at its default; the middleware has no TTL option of its own.',
   },
   {
     id: 'fiber',
@@ -246,8 +251,10 @@ export const ROWS: readonly ReportRow[] = [
     image: 'golang:1.26.8-alpine3.24',
     packages: ['github.com/gofiber/fiber/v3@v3.5.0'],
     notes:
-      'KeyHeader overridden from the default X-Idempotency-Key to Idempotency-Key, and KeyHeaderValidate ' +
-      'overridden to accept every key, per Q53. Without both overrides every vector fails key validation ' +
-      'before the middleware runs at all.',
+      'Lifetime: 2s, against a library default of 30 minutes, so the short-ttl capability can be declared and ' +
+      'core/expiry-executes-again is graded rather than reported not-applicable. KeyHeader overridden ' +
+      'from the default X-Idempotency-Key to Idempotency-Key, and KeyHeaderValidate overridden to accept ' +
+      'every key, per Q53. Without both of those every vector fails key validation before the middleware ' +
+      'runs at all.',
   },
 ];

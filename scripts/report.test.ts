@@ -347,30 +347,30 @@ describe('scripts/report', () => {
   // The following six tests read conformance/results/*.json and conformance/REPORT.md, which Task 6 produces.
   // Bodies are written now so Task 6 only has to remove `.todo`.
 
-  test.todo('REQ-CONF-8: every manifest row has a committed result', () => {
+  test('REQ-CONF-8: every manifest row has a committed result', () => {
     const results = readResults(RESULTS_DIR);
     for (const row of ROWS) expect(results.has(row.id)).toBe(true);
   });
 
-  test.todo('REQ-CONF-8: every committed result belongs to a manifest row', () => {
+  test('REQ-CONF-8: every committed result belongs to a manifest row', () => {
     const results = readResults(RESULTS_DIR);
     const ids = new Set(ROWS.map((row) => row.id));
     for (const id of results.keys()) expect(ids.has(id)).toBe(true);
   });
 
-  test.todo('REQ-CONF-8: the committed REPORT.md is what renderReport produces from the committed results', () => {
+  test('REQ-CONF-8: the committed REPORT.md is what renderReport produces from the committed results', () => {
     const results = readResults(RESULTS_DIR);
     const rendered = renderReport(ROWS, results);
     const committed = readFileSync(REPORT_PATH, 'utf8');
     expect(rendered).toBe(committed);
   });
 
-  test.todo('REQ-CONF-8: REPORT.md contains no em or en dash', () => {
+  test('REQ-CONF-8: REPORT.md contains no em or en dash', () => {
     const committed = readFileSync(REPORT_PATH, 'utf8');
     expect(containsAny(committed, EM_OR_EN_DASH)).toBe(false);
   });
 
-  test.todo('REQ-CONF-9: every failing core vector in the committed results has an issue draft file', () => {
+  test('REQ-CONF-9: every failing core vector in the committed results has an issue draft file', () => {
     const results = readResults(RESULTS_DIR);
     for (const [rowId, summary] of results) {
       for (const result of summary.results) {
@@ -383,7 +383,7 @@ describe('scripts/report', () => {
     }
   });
 
-  test.todo('REQ-CONF-9: every issue draft names its vector id, the draft section and a reproduction command', () => {
+  test('REQ-CONF-9: every issue draft names its vector id, the draft section and a reproduction command', () => {
     const files = readdirSync(ISSUES_DIR).filter((name) => name.endsWith('.md'));
     expect(files.length).toBeGreaterThan(0);
     for (const file of files) {

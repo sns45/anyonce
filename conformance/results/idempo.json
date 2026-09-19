@@ -1,0 +1,334 @@
+{
+  "results": [
+    {
+      "id": "core/concurrent-409",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "original",
+          "failures": []
+        },
+        {
+          "stepId": "duplicate",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/expiry-executes-again",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "after-expiry",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/get-ignored",
+      "tier": "core",
+      "status": "fail",
+      "steps": [
+        {
+          "stepId": "get-before",
+          "failures": []
+        },
+        {
+          "stepId": "post",
+          "failures": []
+        },
+        {
+          "stepId": "get-after",
+          "failures": [
+            "body.count: expected 1, got 0"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "core/header-name-case-insensitive",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry-lowercase",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/key-missing-required",
+      "tier": "core",
+      "status": "fail",
+      "steps": [
+        {
+          "stepId": "missing",
+          "failures": [
+            "status: expected 400, got 201",
+            "handlerInvocations: expected 0, got 1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "core/mismatch-422",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "changed",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/mismatch-does-not-poison",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "changed",
+          "failures": []
+        },
+        {
+          "stepId": "corrected",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/post-executes-once",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/retry-replays",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/sf-string-quoted-key",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/two-keys-execute-twice",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "second",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/4xx-replayed",
+      "tier": "profile",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/5xx-not-stored",
+      "tier": "profile",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/empty-key-rejected",
+      "tier": "profile",
+      "status": "fail",
+      "steps": [
+        {
+          "stepId": "empty",
+          "failures": [
+            "status: expected 400, got 201",
+            "body: expected JSON object, got unparseable body",
+            "handlerInvocations: expected 0, got 1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "profile/key-too-long",
+      "tier": "profile",
+      "status": "fail",
+      "steps": [
+        {
+          "stepId": "too-long",
+          "failures": [
+            "body.code: expected \"invalid-key\", got undefined"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "profile/omitted-body-replay",
+      "tier": "profile",
+      "status": "fail",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry",
+          "failures": [
+            "header Idempotency-Replayed: expected \"true\", got absent",
+            "header Idempotency-Replay: expected \"omitted\", got absent",
+            "body: expected 0 bytes, got 1048577",
+            "handlerInvocations: expected 1, got 2"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "profile/problem-code-member",
+      "tier": "profile",
+      "status": "fail",
+      "steps": [
+        {
+          "stepId": "missing",
+          "failures": [
+            "status: expected 400, got 201",
+            "body: expected JSON object, got unparseable body"
+          ]
+        },
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "changed",
+          "failures": [
+            "body.code: expected \"fingerprint-mismatch\", got undefined"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "profile/problem-content-type",
+      "tier": "profile",
+      "status": "fail",
+      "steps": [
+        {
+          "stepId": "missing",
+          "failures": [
+            "status: expected 400, got 201",
+            "header Content-Type: expected /^application/problem\\+json/, got \"text/plain\""
+          ]
+        },
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "changed",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/replayed-header",
+      "tier": "profile",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/retry-after-on-409",
+      "tier": "profile",
+      "status": "fail",
+      "steps": [
+        {
+          "stepId": "original",
+          "failures": []
+        },
+        {
+          "stepId": "duplicate",
+          "failures": [
+            "header Retry-After: expected /^[1-9][0-9]*$/, got absent"
+          ]
+        }
+      ]
+    }
+  ],
+  "passed": 12,
+  "failed": 8,
+  "notApplicable": 0,
+  "errored": 0
+}
