@@ -453,6 +453,10 @@ export async function collectWorkerdUrl(row: ReportRow): Promise<RunSummary> {
     stdout: 'pipe',
     stderr: 'pipe',
   });
+  // stdout is drained by waitForWranglerUrl once it has the address; stderr needs the same treatment for the
+  // same reason. wrangler writes bundler and deprecation notices there, and a full OS pipe buffer would block
+  // the process mid-run with nothing to time it out.
+  void readAllText(wrangler.stderr).catch(() => {});
   try {
     const url = await waitForWranglerUrl(wrangler.stdout, `row "${row.id}"`);
     return await runTsConformanceCli(buildTsUrlArgs(row, url), `row "${row.id}" (${url})`);

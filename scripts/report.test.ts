@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { RunSummary, VectorResult, VectorStatus } from '@anyonce/conformance';
 import { capabilityArgs, normalize, readResults } from './report/collect';
 import { renderReport } from './report/render';
-import { type ReportRow, ROWS } from './report/rows';
+import { CAPABILITY_TTL_MS, type ReportRow, ROWS } from './report/rows';
 
 const ROOT = join(import.meta.dir, '..');
 const RESULTS_DIR = join(ROOT, 'conformance', 'results');
@@ -291,6 +291,20 @@ describe('scripts/report', () => {
 
   // N9 (subsumes B1): every collector is driven by row.capabilities rather than a hardcoded string, so a row
   // declaring short-ttl always asks its runner for it, with a matching --ttl-ms / -ttl-ms.
+  // conformance/report/worker/index.ts runs inside workerd and cannot import CAPABILITY_TTL_MS from
+  // scripts/, which pulls in node: builtins, so it repeats the number as a literal. If the two ever drift
+  // apart the workerd rows grade core/expiry-executes-again against a TTL the target does not have, and
+  // nothing else would notice. Read the literal back out of the worker source rather than trusting a comment.
+  test('REQ-CONF-8: the workerd target is configured with the TTL the short-ttl capability grades', () => {
+    const worker = readFileSync(join(ROOT, 'conformance', 'report', 'worker', 'index.ts'), 'utf8');
+    const match = /const TTL_MS = (\d+);/.exec(worker);
+    expect(
+      match?.[1],
+      'conformance/report/worker/index.ts must declare a TTL_MS literal',
+    ).toBeDefined();
+    expect(Number(match?.[1])).toBe(CAPABILITY_TTL_MS);
+  });
+
   test('REQ-CONF-8: every row declaring short-ttl produces a CLI argument list containing it', () => {
     const shortTtlRows = ROWS.filter((row) => row.capabilities.includes('short-ttl'));
     expect(shortTtlRows.length).toBeGreaterThan(0);
