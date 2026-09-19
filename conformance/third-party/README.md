@@ -23,10 +23,16 @@ The fixture registers `POST /reset` before mounting the middleware, so the contr
 stays outside the idempotency layer as the fixture contract requires. The middleware is
 configured with `memoryStore({ ttl: 2000, sweepInterval: 500 })` so the row can declare the
 `short-ttl` capability, `headerName: 'Idempotency-Key'` (already the library default; named here
-for clarity), `required: true` so a missing key is rejected, `methods: ['POST', 'PUT', 'PATCH',
-'DELETE']` so `GET /counter` is never subject to the layer, and `dangerouslyAllowGlobalKeys: true`
-because this fixture intentionally has no per-route scoping to defeat: every vector's key space is
-shared across the whole app on purpose, as the fixture contract lists a single flat set of routes.
+for clarity), and `required: true` so a missing key is rejected, which the fixture contract asks of
+every POST route and which is the same posture anyonce grades itself under.
+
+Two further options are set and neither can change a graded outcome. `methods: ['POST', 'PUT',
+'PATCH', 'DELETE']` is set for explicitness only: the library's default is `['POST', 'PATCH']`,
+which already excludes GET, so `core/get-ignored` passes on the middleware's merit and not because
+of this line, and no vector in the suite uses PUT, PATCH or DELETE at all.
+`dangerouslyAllowGlobalKeys: true` silences the library's construction-time multi-tenant warning;
+reading the shipped source, the flag is consumed only by that warning's gate and is never read
+again inside the middleware body, so it has no effect on request handling.
 
 ## idempo
 
@@ -58,10 +64,10 @@ draft, not fixture workarounds, per Q53 in `docs/superpowers/questions.md`:
   installs `KeyHeaderValidate: func(string) error { return nil }`, a permissive validator that
   accepts every key and adds no check the vectors' target does not already need.
 
-Both defaults are reported as findings in the Fiber issue drafts under `conformance/issues/`
-instead of being silently hidden: the non-draft header name is a draft-conformance gap, and the
-500-in-place-of-400 is an error-handling gap against draft section 2.7, which asks for 400 on an
-invalid key.
+Neither default is hidden by the override. Both are written up as findings in the Fiber issue
+drafts that P5 Task 6 adds under `conformance/issues/`: the non-draft header name is a
+draft-conformance gap, and the 500 in place of a 400 is an error-handling gap against draft
+section 2.7, which asks for 400 on an invalid key.
 
 ## Running one by hand
 
@@ -84,4 +90,5 @@ app.
 Add a directory here with its own `Dockerfile` and pinned lockfile, mount the fixture contract
 behind the new implementation with its options at their documented defaults except where the
 contract forces an override (and say why, as above), add a service to `compose.yml` with the next
-free host port in the 1300x range, and add a row to `scripts/report/rows.ts` (P5 Task 4).
+free host port in the 1300x range, and add a row to the report manifest
+that P5 Task 4 adds at `scripts/report/rows.ts`.
