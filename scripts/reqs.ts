@@ -13,7 +13,7 @@ const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', '.claude', '.wrangler
 // contain real REQ ids inside string literals (for example 'REQ-CONF-1: validates'), so scanning it as a
 // source file would report those ids as covered by a fixture rather than by a real test. Every other file
 // under scripts/, including scripts/report.test.ts, is scanned normally.
-const SKIP_FILES = new Set(['reqs.test.ts']);
+const SKIP_FILES = new Set(['scripts/reqs.test.ts']);
 
 export function parseDefinedIds(text: string): string[] {
   const out: string[] = [];
@@ -112,9 +112,11 @@ export function phaseScope(
 function walk(dir: string, out: string[], root?: string): void {
   if (!root) root = dir;
   for (const name of readdirSync(dir)) {
-    if (SKIP_DIRS.has(name) || SKIP_FILES.has(name)) continue;
+    if (SKIP_DIRS.has(name)) continue;
     const full = join(dir, name);
     const rel = relative(root, full);
+    // Matched on the path rather than the basename, so a file of the same name elsewhere is still scanned.
+    if (SKIP_FILES.has(rel)) continue;
     const pathSegments = rel.split('/');
     if (statSync(full).isDirectory()) walk(full, out, root);
     else if (
