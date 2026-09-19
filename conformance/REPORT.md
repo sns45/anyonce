@@ -86,7 +86,7 @@ Third-party implementations are graded on the `core` tier only. Their `profile` 
 - Fixture: conformance/third-party/hono-idempotency/
 - Image: node:22.23.2-alpine
 - Packages: hono-idempotency@0.9.1, hono@4.13.8, hono-problem-details@0.11.0, @hono/node-server@2.1.1
-- Notes: required: true, so the fixture matches core/key-missing-required. methods and dangerouslyAllowGlobalKeys are also set but are inert for this fixture: every route is POST, and the fixture never reuses a key across routes, so neither setting changes what the run measures.
+- Notes: memoryStore({ ttl: 2000 }), against a library default of 24 hours, so the short-ttl capability can be declared and core/expiry-executes-again is graded rather than reported not-applicable. required: true, so the fixture matches core/key-missing-required. methods and dangerouslyAllowGlobalKeys are also set but are inert for this fixture: every route is POST, and the fixture never reuses a key across routes, so neither setting changes what the run measures.
 
 ### idempo
 
@@ -94,7 +94,7 @@ Third-party implementations are graded on the `core` tier only. Their `profile` 
 - Fixture: conformance/third-party/idempo/
 - Image: golang:1.26.8-alpine3.24
 - Packages: github.com/eben-vranken/idempo@v1.0.0
-- Notes: every idempo.Options field left at its default.
+- Notes: inmem.New(2s, 2s), the lock and retention lifetimes of the store, so the short-ttl capability can be declared and core/expiry-executes-again is graded rather than reported not-applicable. Every field of idempo.Options itself is left at its default; the middleware has no TTL option of its own.
 
 ### fiber
 
@@ -102,7 +102,7 @@ Third-party implementations are graded on the `core` tier only. Their `profile` 
 - Fixture: conformance/third-party/fiber/
 - Image: golang:1.26.8-alpine3.24
 - Packages: github.com/gofiber/fiber/v3@v3.5.0
-- Notes: KeyHeader overridden from the default X-Idempotency-Key to Idempotency-Key, and KeyHeaderValidate overridden to accept every key, per Q53. Without both overrides every vector fails key validation before the middleware runs at all.
+- Notes: Lifetime: 2s, against a library default of 30 minutes, so the short-ttl capability can be declared and core/expiry-executes-again is graded rather than reported not-applicable. KeyHeader overridden from the default X-Idempotency-Key to Idempotency-Key, and KeyHeaderValidate overridden to accept every key, per Q53. Without both of those every vector fails key validation before the middleware runs at all.
 
 ## Per-vector detail
 

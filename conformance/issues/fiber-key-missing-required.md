@@ -12,7 +12,7 @@ Draft section: `draft-ietf-httpapi-idempotency-key-header-07`, section 2.7 (Erro
 
 > If the Idempotency-Key request header is missing for a documented idempotent operation requiring this header, the resource SHOULD reply with an HTTP 400 status code with body containing a link pointing to relevant documentation.
 
-The draft is cited here because `middleware/idempotency/idempotency.go` cites it itself, in the file's opening comment:
+The draft is cited here because `middleware/idempotency/idempotency.go` cites it itself, in the first comment in the file (it sits after the package clause and the imports and is attached to no declaration):
 
 ```go
 // Inspired by https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header-02

@@ -12,11 +12,11 @@ Vector: `core/mismatch-does-not-poison`. Three steps: a first POST with `payload
 
 Draft section: `draft-ietf-httpapi-idempotency-key-header-07`, section 2.7 (Error Handling) for the rejection, quoted verbatim:
 
-> If there is an attempt to reuse an idempotency key with a different request payload, the resource SHOULD reply with a HTTP 422 status code with body containing a link pointing to relevant documentation.
+> If there is an attempt to reuse an idempotency key with a different request payload, the resource SHOULD reply with a HTTP 422 status code with body containing a link pointing to relevant documentation. [...]
 
 and section 2.6 (Idempotency Enforcement) for what the corrected retry must still get, quoted verbatim:
 
-> The request was retried after the original request completed. The resource SHOULD respond with the result of the previously completed operation, success or an error.
+> The request was retried after the original request completed. The resource SHOULD respond with the result of the previously completed operation, success or an error. [...]
 
 Observed: step two returns 201 with the first request's body rather than 422, which is the single failure the runner reports. Step three passes: the corrected retry replays the original response byte for byte and the counter is still 1, so nothing was poisoned.
 

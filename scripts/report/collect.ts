@@ -44,6 +44,9 @@ const WRANGLER_READY_PATTERN = /Ready on (http:\S+)/;
  * typical. A hung start has to fail with a message rather than block the whole collection forever. */
 const WRANGLER_READY_TIMEOUT_MS = 120_000;
 
+/** The Go fixture is already built by the time it is spawned, so it should listen almost immediately. */
+const FIXTURE_READY_TIMEOUT_MS = 30_000;
+
 const PORT_PATTERN = /127\.0\.0\.1:\d+/g;
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping the SGR escapes wrangler emits is the point.
@@ -217,22 +220,40 @@ async function readAllText(stream: ReadableStream<Uint8Array> | null): Promise<s
   return await new Response(stream).text();
 }
 
+/**
+ * Waits for go/cmd/fixture's own "listening on http://ADDR" line, with the same guards the wrangler path
+ * uses: a deadline so a fixture that starts but never prints an address fails with a message instead of
+ * hanging the whole collection, and a background drain afterwards so a full stdout pipe can never stall the
+ * server mid-run. The fixture prints one line and logs nothing per request today, so the drain is
+ * belt and braces rather than load bearing, but the asymmetry with waitForWranglerUrl was not worth keeping.
+ */
 async function waitForListeningUrl(stream: ReadableStream<Uint8Array> | null): Promise<string> {
   if (stream === null) throw new Error('process produced no stdout');
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) throw new Error(`process exited before printing its listening address: ${buffer}`);
-    buffer += decoder.decode(value, { stream: true });
-    const match = /listening on (http:\S+)/.exec(buffer);
-    if (match) {
-      const url = match[1];
-      if (url === undefined) throw new Error('unreachable: regex match with no capture group');
-      reader.releaseLock();
-      return url;
+  const deadline = rejectAfter(
+    FIXTURE_READY_TIMEOUT_MS,
+    `fixture was not listening within ${FIXTURE_READY_TIMEOUT_MS} ms`,
+  );
+  try {
+    for (;;) {
+      const chunk = await Promise.race([reader.read(), deadline.promise]);
+      if (chunk.done) {
+        throw new Error(`process exited before printing its listening address: ${buffer}`);
+      }
+      buffer += decoder.decode(chunk.value, { stream: true });
+      const match = /listening on (http:\S+)/.exec(buffer);
+      if (match) {
+        const url = match[1];
+        if (url === undefined) throw new Error('unreachable: regex match with no capture group');
+        reader.releaseLock();
+        void readAllText(stream).catch(() => {});
+        return url;
+      }
     }
+  } finally {
+    deadline.cancel();
   }
 }
 
@@ -307,6 +328,9 @@ let fixtureBinary: Promise<string> | undefined;
 
 async function buildGoFixture(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'anyonce-report-fixture-'));
+  // Every Go row reuses this binary, so it cannot be removed after one row. Removing it when the process
+  // ends is what stops each run leaving roughly fourteen megabytes behind in the temp directory.
+  process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
   const bin = join(dir, 'fixture');
   const build = Bun.spawn({
     cmd: ['go', 'build', '-o', bin, './cmd/fixture'],
@@ -388,7 +412,7 @@ export async function collectTsUrl(row: ReportRow): Promise<RunSummary> {
   //
   // Observed, not theorised: with the TypeScript pass first, all three third parties failed this vector with
   // "first: handlerInvocations: expected 1, got 0", and all three passed it when the Go CLI was pointed at
-  // the same container by hand. Publishing that would have been two false accusations against other people's
+  // the same container by hand. Publishing that would have been three false accusations against other people's
   // projects. Running the Go pass first means it meets a clean store; the TypeScript pass then hits the
   // replay instead, and its result for this one vector is the one being discarded anyway.
   const goSummary = await runGoConformanceCli(

@@ -16,7 +16,7 @@ and section 2.7 (Error Handling), which says what that error is:
 
 > If the request is retried, while the original request is still being processed, the resource SHOULD reply with an HTTP 409 status code with body containing problem description.
 
-The draft is cited here because `middleware/idempotency/idempotency.go` cites it itself, in the file's opening comment:
+The draft is cited here because `middleware/idempotency/idempotency.go` cites it itself, in the first comment in the file (it sits after the package clause and the imports and is attached to no declaration):
 
 ```go
 // Inspired by https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header-02
@@ -97,6 +97,6 @@ invalid idempotency key: invalid length: 12 != 36
 
 Suggested fix: this is smaller than it might look, because the `Locker` interface already has the shape needed. Adding a `TryLock(key string) (bool, error)` to `Locker`, or a `ConflictOnConcurrent bool` on `Config` that makes the handler attempt a non blocking acquire and answer `fiber.NewError(fiber.StatusConflict, ...)` when it cannot get the lock, would give callers the draft's behavior without taking today's away. `NewMemoryLock` is backed by per key mutexes and could grow a non blocking path straightforwardly; a distributed `Locker` implementation would need its own, which is the part that makes this an interface change rather than a pure addition, so a default method or a type assertion for an optional `TryLocker` is probably the kinder migration.
 
-We would not argue for changing the default. Blocking is a legitimate profile choice and switching it would surprise existing users. What would help most is an option plus a sentence in the package docs saying that a concurrent duplicate waits rather than conflicting, so that someone reading the draft citation in the file header knows which of the two enforcement cases the middleware implements. If you do add the 409, `Retry-After` on it is worth considering: the draft does not mention one, which is a gap we have written up separately, but it is what makes the status actionable for a client.
+We would not argue for changing the default. Blocking is a legitimate profile choice and switching it would surprise existing users. What would help most is an option plus a sentence in the package docs saying that a concurrent duplicate waits rather than conflicting, so that someone reading that draft citation knows which of the two enforcement cases the middleware implements. If you do add the 409, `Retry-After` on it is worth considering: the draft does not mention one, which is one of the open points we are collecting in `conformance/DRAFT-GAPS.md` to raise against the draft itself, but it is what makes the status actionable for a client.
 
 The vectors are meant as a shared asset rather than a scorecard, and anyone can run them against their own build with no anyonce dependency: `bunx @anyonce/conformance --url http://localhost:3000 --tier core --report markdown`. If a vector looks wrong to you, that is genuinely useful feedback and we would rather fix the vector than be right about it.
