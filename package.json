@@ -22,7 +22,8 @@
     "test:deno": "deno test --no-check --config test/deno/deno.json --allow-read --allow-env --allow-net=127.0.0.1 test/deno/",
     "vectors:validate": "bun test packages/conformance/test/vectors-validate.test.ts",
     "conformance": "bun run packages/conformance/src/cli.ts",
-    "services:check": "bun run scripts/services-check.ts"
+    "services:check": "bun run scripts/services-check.ts",
+    "report": "bun run scripts/report.ts"
   },
   "devDependencies": {
     "@anyonce/conformance": "workspace:*",
