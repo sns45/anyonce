@@ -1,0 +1,32 @@
+name: anyonce-third-party
+
+services:
+  hono-idempotency:
+    build: ./hono-idempotency
+    ports:
+      - "13001:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/counter >/dev/null || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  idempo:
+    build: ./idempo
+    ports:
+      - "13002:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/counter >/dev/null || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  fiber:
+    build: ./fiber
+    ports:
+      - "13003:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/counter >/dev/null || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
