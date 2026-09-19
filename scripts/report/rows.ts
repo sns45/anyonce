@@ -20,8 +20,11 @@ export interface ReportRow {
   /** For a third-party row, its fixture app's path under conformance/third-party/. For an anyonce row, the
    * harness that drives it. Rendered in the Targets section (N10) instead of being derived by string surgery. */
   fixturePath: string;
-  /** The fixed port a go-url row's own go/cmd/fixture listens on, so the collector never depends on an
-   * ephemeral port an error message could leak (N6). Only the anyonce Go rows have one. */
+  /** The fixed port this row's own server listens on, so the collector never depends on an ephemeral port an
+   * error message could leak (N6): go/cmd/fixture for a go-url row, wrangler dev for a workerd-url row. Only
+   * those rows have one; the numbers are distinct across the manifest so two rows can never collide. The
+   * workerd rows sit at 18906 and 18907, continuing the Go rows' 18901 to 18905 block, rather than near
+   * wrangler's own default 8787, which any other wrangler project on the same machine is likely to be on. */
   port?: number;
   /** Graded tiers. Third parties are core only (D17). */
   graded: readonly ('core' | 'profile')[];
@@ -84,7 +87,8 @@ export const ROWS: readonly ReportRow[] = [
     language: 'TypeScript',
     store: 'durable-objects',
     kind: 'workerd-url',
-    fixturePath: 'conformance/report/worker/ (wrangler dev --local, Task 5)',
+    fixturePath: 'conformance/report/worker/ (wrangler dev --local, ANYONCE_STORE=durable-objects)',
+    port: 18906,
     graded: ANYONCE_GRADED,
     capabilities: SHORT_TTL,
   },
@@ -95,7 +99,8 @@ export const ROWS: readonly ReportRow[] = [
     language: 'TypeScript',
     store: 'd1',
     kind: 'workerd-url',
-    fixturePath: 'conformance/report/worker/ (wrangler dev --local, Task 5)',
+    fixturePath: 'conformance/report/worker/ (wrangler dev --local, ANYONCE_STORE=d1)',
+    port: 18907,
     graded: ANYONCE_GRADED,
     capabilities: SHORT_TTL,
   },

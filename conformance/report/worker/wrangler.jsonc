@@ -1,0 +1,16 @@
+{
+  // REQ-CONF-8: the config scripts/report/collect.ts runs "wrangler dev --local" against for the
+  // anyonce-ts-durable-objects and anyonce-ts-d1 rows. Modelled on test/workers/wrangler.jsonc, which is what
+  // the vitest workers pool uses to prove the same two stores. ANYONCE_STORE picks which store index.ts
+  // builds; the collector overrides it per row with --var, so one config serves both rows.
+  "name": "anyonce-report-worker",
+  "main": "./index.ts",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": { "ANYONCE_STORE": "durable-objects" },
+  "durable_objects": { "bindings": [{ "name": "IDEMPOTENCY", "class_name": "IdempotencyObject" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["IdempotencyObject"] }],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "anyonce-report", "database_id": "anyonce-report" }
+  ]
+}
