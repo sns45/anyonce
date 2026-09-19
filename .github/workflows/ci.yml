@@ -102,7 +102,7 @@ jobs:
         working-directory: go
         env:
           ANYONCE_REQUIRE_SERVICES: '1'
-        run: go test -race -count=1 ./store/...
+        run: go test -race -count=1 ./store/... ./anyqmw/...
       - shell: bash
         run: bun run test:services 2>&1 | tee services.log
       - run: scripts/no-skips.sh services.log

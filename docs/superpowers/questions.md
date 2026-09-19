@@ -214,3 +214,65 @@ The first P3 DynamoDB store keyed an item by `pk = scope`, `sk = key`. D8's defa
 Recommended resolution: one partition key, `pk = scope + <unit separator> + key`, and no sort key. `ensureTable` and `EnsureTable` create `pk` (S) as the only key; `itemKey`/`ItemKey` compose it and the row decoder splits on the first separator, which a scope never contains. Every claim is then a point write on its own partition and the table spreads across partitions the way DynamoDB expects. `docs/stores.md` records it in the Setup and Cost cells.
 
 **Decision: pending.** P3 proceeds on the recommendation.
+
+## Q40: anyq's park is not identity preserving on the two adapters that support it natively
+
+D15 maps an in-flight duplicate to a park for the lease remainder, and Q2 makes that a `{ action: 'park', delayMs }` decision returned by the companion strategy. Reading the published adapters shows what park actually does:
+
+- `@anyq/memory` `parkMessage` acks the original and re-enqueues `body`, `key` and `headers` after `delayMs` through `MemoryQueue.enqueue`, which mints a fresh message id. The id changes; the headers survive.
+- `@anyq/sqs` `parkMessage` acks the original and sends a new `SendMessage` with `DelaySeconds`, carrying `MessageBody` only. Both the `MessageId` and the message attributes change. `docs/reference/anyq-interfaces.md` records this hook as a "ChangeMessageVisibility style delay", which the published 0.5.0 does not do.
+
+So the key that REQ-Q-1 defaults to, the message id, does not survive the very park that D15 asks for, and on SQS neither does a producer supplied header. The parked copy would take a fresh claim and run the handler while the original claim holder is still running, which is the duplicate execution the door exists to prevent.
+
+Recommended resolution: keep D15's mapping and make the key source explicit and adapter aware. `idempotent` takes `key?: 'id' | 'header' | 'body' | ((message) => string)`, default `'id'` as REQ-Q-1 says. `docs/queue-ids.md` gains a "survives an anyq park" column: the memory adapter keeps headers so `'header'` is park stable there, and on SQS only `'body'` (the D9 fingerprint of the payload) is park stable. The README, both examples and the SQS tests use a park stable key source, and one test in each language pins the loss with the id source so the gap is executable rather than prose. `docs/reference/anyq-interfaces.md` gains a dated correction note for the SQS row; the rest of that file stays verbatim.
+
+**Decision: pending.** P4a proceeds on the recommendation.
+
+## Q41: REQ-DOC-9 says nine anyq adapters; anyq 0.5.0 publishes eleven
+
+The npm scope holds `@anyq/core` plus eleven adapters: memory, redis-streams, rabbitmq, sqs, sns, google-pubsub, kafka, nats, azure-servicebus, cloudflare-queues, pgmq. `@anyq/sns` ships a producer only (no `consumer.d.ts`), so ten have a consumer. The Go module has nine consumer packages: it has no cloudflare-queues, which is a Workers only runtime.
+
+Recommended resolution: read REQ-DOC-9's "all nine" as "every anyq consumer adapter" and give `docs/queue-ids.md` ten rows, one per TypeScript consumer adapter, with a Go column that marks cloudflare-queues as TypeScript only and a closing note that `@anyq/sns` is a producer and has no row. Amend requirements 4.8 REQ-DOC-9 to say "one row per anyq consumer adapter" instead of "all nine". The same sentence needs a second correction in the same edit: it says "the three adapters tested in P4a marked verified", and P4a tested four in TypeScript (memory, redis-streams, sqs, kafka) and three in Go (memory, sqs, kafka). `packages/anyq/test/queue-ids.test.ts` asserts four rows marked verified and six marked unverified, and `docs/queue-ids.md` marks verification per language because it differs, so the clause should read "the adapters tested in P4a marked verified, per language" rather than naming a count.
+
+**Decision: pending.** P4a proceeds on the recommendation.
+
+## Q42: D8's queue scope is not derivable from a message on every adapter
+
+D8 fixes the queue scope at `${queueName}/${consumerGroup}`. The wrapped handler receives a message, not the consumer, so the scope has to come from `metadata`. Reading `ProviderMetadata` in both languages: redis-streams carries both the stream and the consumer group; memory, sqs, kafka, pgmq, nats, google-pubsub and cloudflare-queues carry a queue, topic, stream or subscription name but no group; rabbitmq carries an exchange and a routing key but no queue name; azure-servicebus carries neither.
+
+Recommended resolution: `scope?: string | ((message) => string)` with a default that derives the queue half from provider metadata and appends a group only when one is known, either from the metadata (redis-streams) or from an explicit `consumerGroup` option. A provider with no derivable queue name (rabbitmq, azure-servicebus) throws a typed `QueueConfigurationError` at the first message naming the option to set, rather than silently sharing one scope across queues. `docs/queue-ids.md` records the derived scope per adapter. D8 is unchanged: the option produces exactly `${queueName}/${consumerGroup}` whenever both halves exist.
+
+**Decision: pending.** P4a proceeds on the recommendation.
+
+## Q43: D15's stored error arm is unreachable under REQ-Q-3
+
+D15 says the stored result for a queue operation is `{ outcome: 'ok' } | { outcome: 'error', name, message }`. REQ-Q-3 says a handler exception abandons the record and rethrows so anyq's retry and dead-letter policy apply unchanged. The engine only calls `complete` after `run` returns, so an abandoned claim stores nothing and the error arm is never written.
+
+Recommended resolution: the queue door stores only `{ kind: 'message', outcome: 'ok' }` and REQ-Q-5's test asserts exactly that record shape. The error arm stays in the `StoredResult` type from P1 for a future opt in. It is deliberately not made reachable now: replaying a stored failure for the whole 24 hour TTL takes the message out of anyq's retry and dead-letter policy, which is the behaviour REQ-Q-3 exists to preserve. If dedupe of permanent failures is wanted later it belongs behind an explicit option with its own REQ id.
+
+**Decision: pending.** P4a proceeds on the recommendation.
+
+## Q44: anyq's SQS park does not work against the ElasticMQ container
+
+REQ-Q-8's acceptance criteria name "strategy present on memory and SQS (native park)". Both adapters do
+declare `supportsNativeDelay` true, but the published `@anyq/sqs` 0.5.0 park path fails against the
+ElasticMQ 1.6.12 container that `test/compose.yml` provides. `parkMessage` sends a fresh `SendMessage`
+with `DelaySeconds`, ElasticMQ answers 400, and the AWS SDK bundled inside the adapter throws while
+decorating that response (`undefined is not an object (evaluating 'error.Error.Type')`). The adapter's own
+catch logs "Failed to park SQS message; returning to queue" and falls back to `nack(true)`, but the SDK's
+throw escapes as an unhandled rejection. A probe with a current `@aws-sdk/client-sqs` shows ElasticMQ
+accepts `SendMessage` with `DelaySeconds` normally, so this is the bundled SDK's error path against
+ElasticMQ rather than a missing ElasticMQ feature. Whether real AWS SQS behaves the same is not known from
+here, and this repository does not test against real cloud accounts (D20).
+
+Recommended resolution: keep REQ-Q-8's three acceptance cases and move the native park assertion entirely
+onto the memory adapter, which has a working native park. Kafka keeps the downgrade assertion, that the
+in-process retry does not call the handler before the lease expires, which is the case the lease exists
+for. The SQS suite asserts every outcome that does not involve park (a completed duplicate does not run
+the handler, an in-flight duplicate produces the typed error, a mismatch dead-letters with reason
+`fingerprint-mismatch`, the stored record has no payload bytes) plus the companion strategy's decision for
+an in-flight error, which is `{ action: 'park', delayMs }`. Asserting a successful SQS park end to end
+would be flaky by construction and would be testing anyq's SQS adapter rather than anyonce's door.
+`docs/queue-ids.md` records the limitation in the SQS row's notes.
+
+**Decision: pending.** P4a proceeds on the recommendation.
