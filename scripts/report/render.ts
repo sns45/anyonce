@@ -138,12 +138,13 @@ function renderHowGenerated(): string[] {
   return [
     '## How this file is generated',
     '',
-    'Two gates check this file. The `ts` job renders it from the committed `conformance/results/*.json` with ' +
-      `no containers running (\`bun run report -- --render-only\`) and compares the result to what is ` +
-      'committed. The `services` job brings up `test/compose.yml` and `conformance/third-party/compose.yml`, ' +
-      `re-runs every row for real, and compares both the fresh results and the fresh render against what is ` +
-      `committed (\`bun run report\`). Run \`${REGENERATE_COMMAND}\` locally with both compose files up to ` +
-      'regenerate everything.',
+    'Two gates check this file. The `ts` job runs no containers at all: `bun run test` includes ' +
+      '`scripts/report.test.ts`, which renders this file from the committed `conformance/results/*.json` ' +
+      'and asserts the result equals what is committed, so a hand edit here fails the cheap gate. The ' +
+      '`services` job brings up `test/compose.yml` and `conformance/third-party/compose.yml`, re-runs every ' +
+      `row for real, and compares both the fresh results and the fresh render against what is committed ` +
+      `(\`bun run report\`). Run \`${REGENERATE_COMMAND}\` locally with both compose files up to regenerate ` +
+      'everything.',
     '',
   ];
 }

@@ -61,10 +61,10 @@ Each gate is run with `verification-before-completion`. Paste the raw command ou
 
 ## P5 cross-implementation report
 
-- [ ] URL-mode runner executed against hono-idempotency, idempo, Fiber in Docker; commands and image tags recorded
-- [ ] `conformance/REPORT.md` generated via `-update`, committed, third parties graded on `core` only
-- [ ] `conformance/DRAFT-GAPS.md` lists every open point with anyonce's choice and proposed draft text
-- [ ] S4 issue drafts in `conformance/issues/` (not opened)
+- [x] URL-mode runner executed against hono-idempotency, idempo, Fiber in Docker; commands and image tags recorded
+- [x] `conformance/REPORT.md` generated via `-update`, committed, third parties graded on `core` only
+- [x] `conformance/DRAFT-GAPS.md` lists every open point with anyonce's choice and proposed draft text
+- [x] S4 issue drafts in `conformance/issues/` (not opened)
 
 ## P6 docs, examples, release
 
