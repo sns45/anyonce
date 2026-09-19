@@ -3,8 +3,9 @@
  * files under conformance/results/. No collector here is invoked by scripts/report.test.ts (Task 4); they run
  * for real from scripts/report.ts, which needs the compose stacks up.
  */
-import { readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { env as processEnv } from 'node:process';
 import type { RunSummary, VectorResult } from '@anyonce/conformance';
 import { runConformance } from '@anyonce/conformance';
 import { MemoryStore, type Store } from '@anyonce/core';
@@ -29,7 +30,23 @@ const CONFORMANCE_CLI = join(
   'cli.ts',
 );
 
+const REPO_ROOT = join(import.meta.dir, '..', '..');
+const WORKER_DIR = join(REPO_ROOT, 'conformance', 'report', 'worker');
+const WORKER_CONFIG = join(WORKER_DIR, 'wrangler.jsonc');
+const WRANGLER_BIN = join(REPO_ROOT, 'node_modules', '.bin', 'wrangler');
+
+/** wrangler dev prints "[wrangler:info] Ready on http://127.0.0.1:<port>" once workerd is listening. That
+ * line is the readiness signal: the collector never sleeps a fixed amount and never polls the port. */
+const WRANGLER_READY_PATTERN = /Ready on (http:\S+)/;
+
+/** Generous, because a cold wrangler dev bundles the worker before workerd starts; about ten seconds is
+ * typical. A hung start has to fail with a message rather than block the whole collection forever. */
+const WRANGLER_READY_TIMEOUT_MS = 120_000;
+
 const PORT_PATTERN = /127\.0\.0\.1:\d+/g;
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: stripping the SGR escapes wrangler emits is the point.
+const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
 
 /** N6: redacts an ephemeral or fixed port so a connection error never leaks one into a committed result. */
 function redactPorts(text: string): string {
@@ -245,6 +262,32 @@ async function runGoConformanceCli(args: readonly string[], context: string): Pr
   }
 }
 
+/** N7: the mirror of runGoConformanceCli for the TypeScript CLI. Shared by the ts-url rows and the
+ * workerd-url rows, so both name the row, the URL, the exact command and the start of stderr when the CLI
+ * fails or produces no valid JSON. */
+async function runTsConformanceCli(args: readonly string[], context: string): Promise<RunSummary> {
+  const proc = Bun.spawn({
+    cmd: ['bun', 'run', CONFORMANCE_CLI, ...args],
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const [stdout, stderr] = await Promise.all([readAllText(proc.stdout), readAllText(proc.stderr)]);
+  const code = await proc.exited;
+  const command = `bun run ${CONFORMANCE_CLI} ${args.join(' ')}`;
+  const stderrExcerpt = stderr.slice(0, 500) || '(empty)';
+  if (code !== 0 && code !== 1) {
+    throw new Error(`${context}: ${command} exited ${code}, stderr: ${stderrExcerpt}`);
+  }
+  try {
+    return JSON.parse(stdout) as RunSummary;
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(
+      `${context}: ${command} did not produce valid JSON (exit ${code}, stderr: ${stderrExcerpt}): ${message}`,
+    );
+  }
+}
+
 /** REQ-CONF-8: the anyonce Go rows. Starts go/cmd/fixture on the row's own fixed port with -idempotent
  * -store <name>, drives it with go/cmd/conformance using the row's own capabilities (N9), then stops the
  * fixture. A fixed port (N6) means an unreachable-fixture error never embeds an ephemeral port. */
@@ -297,16 +340,7 @@ function thirdPartyUrl(row: ReportRow): string {
  * discriminate. */
 export async function collectTsUrl(row: ReportRow): Promise<RunSummary> {
   const url = thirdPartyUrl(row);
-  const proc = Bun.spawn({
-    cmd: ['bun', 'run', CONFORMANCE_CLI, ...buildTsUrlArgs(row, url)],
-    stdout: 'pipe',
-    stderr: 'inherit',
-  });
-  const output = await readAllText(proc.stdout);
-  const code = await proc.exited;
-  if (code !== 0 && code !== 1)
-    throw new Error(`the conformance CLI exited ${code} against ${url}`);
-  const tsSummary = JSON.parse(output) as RunSummary;
+  const tsSummary = await runTsConformanceCli(buildTsUrlArgs(row, url), `row "${row.id}" (${url})`);
 
   const goSummary = await runGoConformanceCli(
     ['-url', url, '-only', GO_REGRADED_VECTOR_ID],
@@ -326,14 +360,107 @@ export async function collectTsUrl(row: ReportRow): Promise<RunSummary> {
   };
 }
 
-/** REQ-CONF-8 / Task 5: Durable Objects and D1 run inside workerd via wrangler dev, which this task does not
- * build. Left as a clear placeholder rather than a silent stub. */
-export function collectWorkerdUrl(row: ReportRow): Promise<RunSummary> {
-  return Promise.reject(
-    new Error(
-      `the workerd-url collector for "${row.id}" is not implemented in this task, see Task 5`,
-    ),
+/** A rejection that fires after `ms`, with `cancel` so the winner of a race never leaves a timer pending. */
+function rejectAfter(ms: number, message: string): { promise: Promise<never>; cancel: () => void } {
+  let handle: ReturnType<typeof setTimeout> | undefined;
+  const promise = new Promise<never>((_resolve, reject) => {
+    handle = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return {
+    promise,
+    cancel: () => {
+      if (handle !== undefined) clearTimeout(handle);
+    },
+  };
+}
+
+function tail(text: string): string {
+  const clean = text.replace(ANSI_PATTERN, '').trimEnd();
+  return clean.length > 1000 ? `...${clean.slice(-1000)}` : clean || '(no output)';
+}
+
+/**
+ * Waits for wrangler dev's own readiness line rather than sleeping or polling, so a slow bundle is waited out
+ * and a wrangler that dies (a port already bound, a bundle error) fails immediately with its output rather
+ * than after the full timeout. Once ready, stdout keeps being drained in the background: wrangler logs every
+ * request it serves, and a full pipe buffer would stall the server mid-run.
+ */
+async function waitForWranglerUrl(
+  stream: ReadableStream<Uint8Array> | null,
+  context: string,
+): Promise<string> {
+  if (stream === null) throw new Error(`${context}: wrangler dev produced no stdout`);
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  const timer = rejectAfter(
+    WRANGLER_READY_TIMEOUT_MS,
+    `${context}: wrangler dev was not ready within ${WRANGLER_READY_TIMEOUT_MS} ms`,
   );
+  let buffer = '';
+  try {
+    for (;;) {
+      const chunk = await Promise.race([reader.read(), timer.promise]);
+      if (chunk.done) {
+        throw new Error(`${context}: wrangler dev exited before it was ready: ${tail(buffer)}`);
+      }
+      buffer += decoder.decode(chunk.value, { stream: true });
+      const url = WRANGLER_READY_PATTERN.exec(buffer)?.[1];
+      if (url !== undefined) {
+        reader.releaseLock();
+        void readAllText(stream).catch(() => {});
+        return url;
+      }
+    }
+  } finally {
+    timer.cancel();
+  }
+}
+
+/**
+ * REQ-CONF-8: the anyonce Durable Objects and D1 rows. Both stores exist only inside workerd, and the vitest
+ * workers pool that proves them in packages/stores/workers/*.test.ts has no filesystem, so no run summary can
+ * be written from inside it. conformance/report/worker/ mounts the same wiring behind HTTP instead:
+ * wrangler dev --local serves it, the ordinary TypeScript URL runner drives it, and the process is killed in
+ * a finally so a failed run never leaks it.
+ *
+ * The row's own fixed port (N6) keeps the two rows off each other, and --persist-to a per-row directory that
+ * is cleared on both sides of the run keeps workerd's local state from carrying between runs, so a rerun on
+ * an unchanged tree produces the same summary.
+ */
+export async function collectWorkerdUrl(row: ReportRow): Promise<RunSummary> {
+  if (row.port === undefined) {
+    throw new Error(`workerd-url collector: row "${row.id}" has no fixed port`);
+  }
+  const state = join(WORKER_DIR, '.wrangler', 'report-state', row.id);
+  rmSync(state, { recursive: true, force: true });
+  const wrangler = Bun.spawn({
+    cmd: [
+      WRANGLER_BIN,
+      'dev',
+      '--config',
+      WORKER_CONFIG,
+      '--local',
+      '--ip',
+      '127.0.0.1',
+      '--port',
+      String(row.port),
+      '--var',
+      `ANYONCE_STORE:${row.store}`,
+      '--persist-to',
+      state,
+    ],
+    env: { ...processEnv, WRANGLER_SEND_METRICS: 'false' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  try {
+    const url = await waitForWranglerUrl(wrangler.stdout, `row "${row.id}"`);
+    return await runTsConformanceCli(buildTsUrlArgs(row, url), `row "${row.id}" (${url})`);
+  } finally {
+    wrangler.kill();
+    await wrangler.exited;
+    rmSync(state, { recursive: true, force: true });
+  }
 }
 
 /** Dispatches to the collector for a row's kind. */
