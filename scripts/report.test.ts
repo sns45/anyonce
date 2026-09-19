@@ -321,8 +321,9 @@ describe('scripts/report', () => {
     expect(capabilityArgs([], '--')).toEqual([]);
   });
 
-  // REQ-CONF-9: this test can run today and would fail today, since DRAFT-GAPS.md only has G1 to G3 (Task 7
-  // adds G4 to G17). Written now with its final name and body so Task 7 only has to remove `.todo`.
+  // REQ-CONF-9: DRAFT-GAPS.md carries G1 to G17 plus a closing section for the vectors that required no
+  // choice, so every one of the twenty ids has a home. A new vector with no gap entry fails here, which is
+  // the point: the gap list is the S3 input and must stay complete as the suite grows.
   test('REQ-CONF-9: every vector id appears in at least one DRAFT-GAPS entry', () => {
     const ids = readVectorIds();
     const gaps = readFileSync(DRAFT_GAPS_PATH, 'utf8');
@@ -330,8 +331,9 @@ describe('scripts/report', () => {
     expect(missing).toEqual([]);
   });
 
-  // REQ-CONF-9: same story as above; G1 to G3 already fit this shape, but the requirement is over every entry,
-  // so it is written now and flipped in Task 7 alongside the coverage test above.
+  // REQ-CONF-9: the requirement is over every entry, not just the ones written first, so the shape is checked
+  // for all of them. `Status: open` is asserted literally because no S3 issue has been filed; an entry that
+  // moves to `issue filed <url>` fails here and that is deliberate, it should be a reviewed change.
   test('REQ-CONF-9: every DRAFT-GAPS entry has a draft section, an anyonce choice, proposed draft text and a status', () => {
     const gaps = readFileSync(DRAFT_GAPS_PATH, 'utf8');
     const entries = gaps.split(/\n(?=### G\d+)/).filter((block) => block.startsWith('### G'));
