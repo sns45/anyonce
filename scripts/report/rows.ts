@@ -17,6 +17,12 @@ export interface ReportRow {
   language: 'TypeScript' | 'Go';
   store: string;
   kind: RowKind;
+  /** For a third-party row, its fixture app's path under conformance/third-party/. For an anyonce row, the
+   * harness that drives it. Rendered in the Targets section (N10) instead of being derived by string surgery. */
+  fixturePath: string;
+  /** The fixed port a go-url row's own go/cmd/fixture listens on, so the collector never depends on an
+   * ephemeral port an error message could leak (N6). Only the anyonce Go rows have one. */
+  port?: number;
   /** Graded tiers. Third parties are core only (D17). */
   graded: readonly ('core' | 'profile')[];
   capabilities: readonly 'short-ttl'[];
@@ -38,6 +44,10 @@ const SHORT_TTL = ['short-ttl'] as const;
  * instead. render.ts and collect.ts both key off this constant so the rule is stated once.
  */
 export const GO_REGRADED_VECTOR_ID = 'core/header-name-case-insensitive';
+
+/** REQ-CONF-8 / N9: the TTL every row declaring short-ttl is actually configured with. One constant so the
+ * store options, the fixture's -ttl-ms and the runner's --ttl-ms / -ttl-ms never drift apart. */
+export const CAPABILITY_TTL_MS = 2000;
 
 /** The runner that actually produced a vector's result for this row (Q52). Every other vector is 'ts'. */
 export function runnerFor(row: Pick<ReportRow, 'kind'>, vectorId: string): 'ts' | 'go' {
@@ -63,6 +73,7 @@ export const ROWS: readonly ReportRow[] = [
     language: 'TypeScript',
     store: 'memory',
     kind: 'ts-in-process',
+    fixturePath: 'conformance/fixtures/hono (in-process, via scripts/report/collect.ts)',
     graded: ANYONCE_GRADED,
     capabilities: SHORT_TTL,
   },
@@ -73,6 +84,7 @@ export const ROWS: readonly ReportRow[] = [
     language: 'TypeScript',
     store: 'durable-objects',
     kind: 'workerd-url',
+    fixturePath: 'conformance/report/worker/ (wrangler dev --local, Task 5)',
     graded: ANYONCE_GRADED,
     capabilities: SHORT_TTL,
   },
@@ -83,6 +95,7 @@ export const ROWS: readonly ReportRow[] = [
     language: 'TypeScript',
     store: 'd1',
     kind: 'workerd-url',
+    fixturePath: 'conformance/report/worker/ (wrangler dev --local, Task 5)',
     graded: ANYONCE_GRADED,
     capabilities: SHORT_TTL,
   },
@@ -93,6 +106,7 @@ export const ROWS: readonly ReportRow[] = [
     language: 'TypeScript',
     store: 'dynamodb',
     kind: 'ts-in-process',
+    fixturePath: 'conformance/fixtures/hono (in-process) behind packages/stores/src/dynamodb.ts',
     graded: ANYONCE_GRADED,
     capabilities: SHORT_TTL,
   },
@@ -103,6 +117,7 @@ export const ROWS: readonly ReportRow[] = [
     language: 'TypeScript',
     store: 'redis',
     kind: 'ts-in-process',
+    fixturePath: 'conformance/fixtures/hono (in-process) behind packages/stores/src/redis.ts',
     graded: ANYONCE_GRADED,
     capabilities: SHORT_TTL,
   },
@@ -113,6 +128,7 @@ export const ROWS: readonly ReportRow[] = [
     language: 'TypeScript',
     store: 'postgres',
     kind: 'ts-in-process',
+    fixturePath: 'conformance/fixtures/hono (in-process) behind packages/stores/src/postgres.ts',
     graded: ANYONCE_GRADED,
     capabilities: SHORT_TTL,
   },
@@ -123,6 +139,8 @@ export const ROWS: readonly ReportRow[] = [
     language: 'Go',
     store: 'memory',
     kind: 'go-url',
+    fixturePath: 'go/cmd/fixture -idempotent -store memory',
+    port: 18901,
     graded: ANYONCE_GRADED,
     capabilities: SHORT_TTL,
   },
@@ -133,6 +151,8 @@ export const ROWS: readonly ReportRow[] = [
     language: 'Go',
     store: 'dynamodb',
     kind: 'go-url',
+    fixturePath: 'go/cmd/fixture -idempotent -store dynamodb',
+    port: 18902,
     graded: ANYONCE_GRADED,
     capabilities: SHORT_TTL,
   },
@@ -143,6 +163,8 @@ export const ROWS: readonly ReportRow[] = [
     language: 'Go',
     store: 'redis',
     kind: 'go-url',
+    fixturePath: 'go/cmd/fixture -idempotent -store redis',
+    port: 18903,
     graded: ANYONCE_GRADED,
     capabilities: SHORT_TTL,
   },
@@ -153,6 +175,8 @@ export const ROWS: readonly ReportRow[] = [
     language: 'Go',
     store: 'postgres',
     kind: 'go-url',
+    fixturePath: 'go/cmd/fixture -idempotent -store postgres',
+    port: 18904,
     graded: ANYONCE_GRADED,
     capabilities: SHORT_TTL,
   },
@@ -163,6 +187,8 @@ export const ROWS: readonly ReportRow[] = [
     language: 'Go',
     store: 'sqlite',
     kind: 'go-url',
+    fixturePath: 'go/cmd/fixture -idempotent -store sqlite',
+    port: 18905,
     graded: ANYONCE_GRADED,
     capabilities: SHORT_TTL,
   },
@@ -173,6 +199,7 @@ export const ROWS: readonly ReportRow[] = [
     language: 'TypeScript',
     store: 'memory',
     kind: 'ts-url',
+    fixturePath: 'conformance/third-party/hono-idempotency/',
     graded: THIRD_PARTY_GRADED,
     capabilities: SHORT_TTL,
     image: 'node:22.23.2-alpine',
@@ -194,6 +221,7 @@ export const ROWS: readonly ReportRow[] = [
     language: 'Go',
     store: 'in-memory',
     kind: 'ts-url',
+    fixturePath: 'conformance/third-party/idempo/',
     graded: THIRD_PARTY_GRADED,
     capabilities: SHORT_TTL,
     image: 'golang:1.26.8-alpine3.24',
@@ -207,6 +235,7 @@ export const ROWS: readonly ReportRow[] = [
     language: 'Go',
     store: 'fiber storage',
     kind: 'ts-url',
+    fixturePath: 'conformance/third-party/fiber/',
     graded: THIRD_PARTY_GRADED,
     capabilities: SHORT_TTL,
     image: 'golang:1.26.8-alpine3.24',

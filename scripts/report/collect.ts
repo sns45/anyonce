@@ -3,9 +3,9 @@
  * files under conformance/results/. No collector here is invoked by scripts/report.test.ts (Task 4); they run
  * for real from scripts/report.ts, which needs the compose stacks up.
  */
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { RunSummary } from '@anyonce/conformance';
+import type { RunSummary, VectorResult } from '@anyonce/conformance';
 import { runConformance } from '@anyonce/conformance';
 import { MemoryStore, type Store } from '@anyonce/core';
 import { withIdempotency } from '@anyonce/core/http';
@@ -16,8 +16,7 @@ import { fromIoredis, RedisStore } from '@anyonce/stores/redis';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import Redis from 'ioredis';
 import { Pool } from 'pg';
-import type { ReportRow } from './rows';
-import { GO_REGRADED_VECTOR_ID } from './rows';
+import { CAPABILITY_TTL_MS, GO_REGRADED_VECTOR_ID, type ReportRow } from './rows';
 
 const GO_ROOT = join(import.meta.dir, '..', '..', 'go');
 const CONFORMANCE_CLI = join(
@@ -30,12 +29,33 @@ const CONFORMANCE_CLI = join(
   'cli.ts',
 );
 
+const PORT_PATTERN = /127\.0\.0\.1:\d+/g;
+
+/** N6: redacts an ephemeral or fixed port so a connection error never leaks one into a committed result. */
+function redactPorts(text: string): string {
+  return text.replace(PORT_PATTERN, '127.0.0.1:PORT');
+}
+
+function redactResult(result: VectorResult): VectorResult {
+  const steps = result.steps.map((step) => ({
+    ...step,
+    failures: step.failures.map(redactPorts),
+  }));
+  const withSteps: VectorResult = { ...result, steps };
+  return result.error === undefined
+    ? withSteps
+    : { ...withSteps, error: redactPorts(result.error) };
+}
+
 /**
  * REQ-CONF-8: strips anything not in the RunSummary shape (in particular the CLI's `target` and
- * `generatedAt`) and sorts `results` by id so the committed JSON is deterministic.
+ * `generatedAt`), sorts `results` by id so the committed JSON is deterministic, and redacts any
+ * `127.0.0.1:<port>` in an error or failure string (N6) so a committed result never leaks an ephemeral port.
  */
 export function normalize(summary: RunSummary): RunSummary {
-  const results = [...summary.results].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const results = [...summary.results]
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map(redactResult);
   return {
     results,
     passed: summary.passed,
@@ -62,6 +82,47 @@ export function writeResults(dir: string, results: ReadonlyMap<string, RunSummar
   for (const [id, summary] of results) {
     writeFileSync(join(dir, `${id}.json`), `${JSON.stringify(summary, null, 2)}\n`);
   }
+}
+
+/** N12: removes every committed conformance/results/<id>.json whose id is not in `keep`, returning the file
+ * names removed so the caller can report them. */
+export function pruneStaleResultFiles(dir: string, keep: ReadonlySet<string>): string[] {
+  const removed: string[] = [];
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith('.json')) continue;
+    const id = name.slice(0, -'.json'.length);
+    if (!keep.has(id)) {
+      unlinkSync(join(dir, name));
+      removed.push(name);
+    }
+  }
+  return removed;
+}
+
+/**
+ * REQ-CONF-8 / N9: turns a row's capabilities into the flags a runner needs, in that runner's flag style
+ * ('--' for the TypeScript CLI, '-' for the Go CLI). Pure, so a test can assert on the argv without spawning a
+ * process. short-ttl always carries a matching --ttl-ms / -ttl-ms so a runner never grades a capability the
+ * target was not actually configured with (B1).
+ */
+export function capabilityArgs(
+  capabilities: readonly ReportRow['capabilities'][number][],
+  style: '--' | '-',
+): string[] {
+  const flags: string[] = [];
+  for (const capability of capabilities) flags.push(`${style}capability`, capability);
+  if (capabilities.includes('short-ttl')) flags.push(`${style}ttl-ms`, String(CAPABILITY_TTL_MS));
+  return flags;
+}
+
+/** Pure: the argv the TypeScript CLI is invoked with for a ts-url row. */
+export function buildTsUrlArgs(row: ReportRow, url: string): string[] {
+  return ['--url', url, '--report', 'json', ...capabilityArgs(row.capabilities, '--')];
+}
+
+/** Pure: the argv go/cmd/conformance is invoked with for a go-url row. */
+export function buildGoUrlArgs(row: ReportRow, url: string): string[] {
+  return ['-url', url, ...capabilityArgs(row.capabilities, '-')];
 }
 
 async function buildStore(name: string): Promise<{ store: Store; cleanup: () => Promise<void> }> {
@@ -111,7 +172,7 @@ async function buildStore(name: string): Promise<{ store: Store; cleanup: () => 
 
 /**
  * REQ-CONF-8: the anyonce TypeScript rows on memory, DynamoDB, Redis and Postgres. Wires withIdempotency
- * exactly as packages/stores/services/*.conformance.test.ts do.
+ * exactly as packages/stores/services/*.conformance.test.ts do, driven by the row's own capabilities (N9).
  */
 export async function collectTsInProcess(row: ReportRow): Promise<RunSummary> {
   const { store, cleanup } = await buildStore(row.store);
@@ -119,12 +180,12 @@ export async function collectTsInProcess(row: ReportRow): Promise<RunSummary> {
     const handler = withIdempotency(createFixtureApp().fetch, {
       store,
       required: true,
-      ttlMs: 2000,
+      ttlMs: CAPABILITY_TTL_MS,
       skip: (req) => new URL(req.url).pathname === '/reset',
     });
     const { summary } = await runConformance({
       target: handler,
-      capabilities: ['short-ttl'],
+      capabilities: [...row.capabilities],
       report: 'json',
     });
     return summary;
@@ -157,32 +218,61 @@ async function waitForListeningUrl(stream: ReadableStream<Uint8Array> | null): P
   }
 }
 
-/** Runs go/cmd/conformance against a running URL and parses its JSON report. */
-async function runGoConformanceCli(args: readonly string[]): Promise<RunSummary> {
+/** N7: runs go/cmd/conformance against a running URL and parses its JSON report, naming `context` (the row and
+ * the URL), the exact command and the start of stderr when the process fails or produces no valid JSON, rather
+ * than surfacing a bare SyntaxError. */
+async function runGoConformanceCli(args: readonly string[], context: string): Promise<RunSummary> {
   const proc = Bun.spawn({
     cmd: ['go', 'run', './cmd/conformance', ...args, '-report', 'json'],
     cwd: GO_ROOT,
     stdout: 'pipe',
-    stderr: 'inherit',
+    stderr: 'pipe',
   });
-  const output = await readAllText(proc.stdout);
+  const [stdout, stderr] = await Promise.all([readAllText(proc.stdout), readAllText(proc.stderr)]);
   const code = await proc.exited;
-  if (code !== 0 && code !== 1) throw new Error(`go run ./cmd/conformance exited ${code}`);
-  return JSON.parse(output) as RunSummary;
+  const command = `go run ./cmd/conformance ${args.join(' ')}`;
+  const stderrExcerpt = stderr.slice(0, 500) || '(empty)';
+  if (code !== 0 && code !== 1) {
+    throw new Error(`${context}: ${command} exited ${code}, stderr: ${stderrExcerpt}`);
+  }
+  try {
+    return JSON.parse(stdout) as RunSummary;
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(
+      `${context}: ${command} did not produce valid JSON (exit ${code}, stderr: ${stderrExcerpt}): ${message}`,
+    );
+  }
 }
 
-/** REQ-CONF-8: the anyonce Go rows. Starts go/cmd/fixture with -idempotent -store <name>, drives it with
- * go/cmd/conformance, then stops the fixture. */
+/** REQ-CONF-8: the anyonce Go rows. Starts go/cmd/fixture on the row's own fixed port with -idempotent
+ * -store <name>, drives it with go/cmd/conformance using the row's own capabilities (N9), then stops the
+ * fixture. A fixed port (N6) means an unreachable-fixture error never embeds an ephemeral port. */
 export async function collectGoUrl(row: ReportRow): Promise<RunSummary> {
+  if (row.port === undefined) {
+    throw new Error(`go-url collector: row "${row.id}" has no fixed port`);
+  }
+  const addr = `127.0.0.1:${row.port}`;
   const fixture = Bun.spawn({
-    cmd: ['go', 'run', './cmd/fixture', '-idempotent', '-store', row.store, '-ttl-ms', '2000'],
+    cmd: [
+      'go',
+      'run',
+      './cmd/fixture',
+      '-idempotent',
+      '-addr',
+      addr,
+      '-store',
+      row.store,
+      '-ttl-ms',
+      String(CAPABILITY_TTL_MS),
+    ],
     cwd: GO_ROOT,
     stdout: 'pipe',
     stderr: 'inherit',
   });
   try {
     const url = await waitForListeningUrl(fixture.stdout);
-    return await runGoConformanceCli(['-url', url, '-ttl-ms', '2000', '-capability', 'short-ttl']);
+    return await runGoConformanceCli(buildGoUrlArgs(row, url), `row "${row.id}" (${url})`);
   } finally {
     fixture.kill();
   }
@@ -202,12 +292,13 @@ function thirdPartyUrl(row: ReportRow): string {
   return `http://127.0.0.1:${port}`;
 }
 
-/** Shells out to the TypeScript CLI with --report json, then splices in the Go runner's result for
- * core/header-name-case-insensitive (Q52), which the Fetch Headers class cannot discriminate. */
+/** Shells out to the TypeScript CLI with the row's own capabilities (N9, fixes B1), then splices in the Go
+ * runner's result for core/header-name-case-insensitive (Q52), which the Fetch Headers class cannot
+ * discriminate. */
 export async function collectTsUrl(row: ReportRow): Promise<RunSummary> {
   const url = thirdPartyUrl(row);
   const proc = Bun.spawn({
-    cmd: ['bun', 'run', CONFORMANCE_CLI, '--url', url, '--report', 'json'],
+    cmd: ['bun', 'run', CONFORMANCE_CLI, ...buildTsUrlArgs(row, url)],
     stdout: 'pipe',
     stderr: 'inherit',
   });
@@ -217,7 +308,10 @@ export async function collectTsUrl(row: ReportRow): Promise<RunSummary> {
     throw new Error(`the conformance CLI exited ${code} against ${url}`);
   const tsSummary = JSON.parse(output) as RunSummary;
 
-  const goSummary = await runGoConformanceCli(['-url', url, '-only', GO_REGRADED_VECTOR_ID]);
+  const goSummary = await runGoConformanceCli(
+    ['-url', url, '-only', GO_REGRADED_VECTOR_ID],
+    `row "${row.id}" (${url})`,
+  );
   const goResult = goSummary.results.find((r) => r.id === GO_REGRADED_VECTOR_ID);
   if (goResult === undefined) {
     throw new Error(`go run ./cmd/conformance -only ${GO_REGRADED_VECTOR_ID} produced no result`);

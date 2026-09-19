@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RunSummary, VectorResult, VectorStatus } from '@anyonce/conformance';
-import { normalize, readResults } from './report/collect';
+import { capabilityArgs, normalize, readResults } from './report/collect';
 import { renderReport } from './report/render';
 import { type ReportRow, ROWS } from './report/rows';
 
@@ -17,6 +17,22 @@ const THIRD_PARTY_IDS = new Set(['hono-idempotency', 'idempo', 'fiber']);
 const IMAGE_TAG = /:\d+\.\d+\.\d+[\w.-]*$/;
 const EXACT_VERSION = /^v?\d+\.\d+\.\d+/;
 const EM_OR_EN_DASH = [String.fromCharCode(0x2013), String.fromCharCode(0x2014)];
+
+/** A minimal, valid ReportRow for tests that don't care about the manifest's real content. */
+function testRow(overrides: Partial<ReportRow> = {}): ReportRow {
+  return {
+    id: 'row-x',
+    implementation: 'Row X',
+    version: '1.0.0',
+    language: 'TypeScript',
+    store: 'memory',
+    kind: 'ts-in-process',
+    fixturePath: 'conformance/fixtures/hono (in-process)',
+    graded: ['core', 'profile'],
+    capabilities: ['short-ttl'],
+    ...overrides,
+  };
+}
 
 function vectorResult(
   id: string,
@@ -84,26 +100,20 @@ describe('scripts/report', () => {
 
   test('REQ-CONF-8: renderReport gives every row one matrix line with core, profile and not-applicable counts', () => {
     const rows: ReportRow[] = [
-      {
+      testRow({
         id: 'row-a',
         implementation: 'Row A',
         version: '1.0.0',
         language: 'TypeScript',
-        store: 'memory',
         kind: 'ts-in-process',
-        graded: ['core', 'profile'],
-        capabilities: ['short-ttl'],
-      },
-      {
+      }),
+      testRow({
         id: 'row-b',
         implementation: 'Row B',
         version: '2.0.0',
         language: 'Go',
-        store: 'memory',
         kind: 'go-url',
-        graded: ['core', 'profile'],
-        capabilities: ['short-ttl'],
-      },
+      }),
     ];
     const results = new Map<string, RunSummary>([
       [
@@ -125,22 +135,42 @@ describe('scripts/report', () => {
     const output = renderReport(rows, results);
     const lines = output.split('\n').filter((line) => line.startsWith('| Row '));
     expect(lines).toEqual([
-      '| Row A | 1.0.0 | TypeScript | memory | 1/11 | 1/9 | 1 | [core/get-ignored](issues/row-a-get-ignored.md) |',
-      '| Row B | 2.0.0 | Go | memory | 1/11 | 0/9 | 0 | none |',
+      '| Row A | 1.0.0 | TypeScript | memory | 1/11 | 1/9 | 1 | ' +
+        'core/concurrent-409 (missing), [core/get-ignored](issues/row-a-get-ignored.md), ' +
+        'core/header-name-case-insensitive (missing), core/key-missing-required (missing), ' +
+        'core/mismatch-422 (missing), core/mismatch-does-not-poison (missing), ' +
+        'core/retry-replays (missing), core/sf-string-quoted-key (missing), ' +
+        'core/two-keys-execute-twice (missing) |',
+      '| Row B | 2.0.0 | Go | memory | 1/11 | 0/9 | 0 | ' +
+        'core/concurrent-409 (missing), core/expiry-executes-again (missing), ' +
+        'core/get-ignored (missing), core/header-name-case-insensitive (missing), ' +
+        'core/key-missing-required (missing), core/mismatch-422 (missing), ' +
+        'core/mismatch-does-not-poison (missing), core/retry-replays (missing), ' +
+        'core/sf-string-quoted-key (missing), core/two-keys-execute-twice (missing) |',
     ]);
   });
 
+  // B2: the numerator is computed by walking the catalog and looking each id up, never by filtering
+  // summary.results directly, so a stale result carrying a duplicated or off-catalog vector id can never push
+  // a count past the catalog's own denominator.
+  test('REQ-CONF-8: a duplicated or off-catalog result id never inflates a matrix count', () => {
+    const row = testRow({ id: 'acme' });
+    const results = new Map<string, RunSummary>([
+      [
+        'acme',
+        summaryOf([
+          vectorResult('core/post-executes-once', 'core', 'pass'),
+          vectorResult('core/post-executes-once', 'core', 'pass'),
+          vectorResult('core/not-a-real-vector', 'core', 'pass'),
+        ]),
+      ],
+    ]);
+    const output = renderReport([row], results);
+    expect(output).toContain('| Row X | 1.0.0 | TypeScript | memory | 1/11 |');
+  });
+
   test('REQ-CONF-8: a failing core vector renders as a link to its issue draft', () => {
-    const row: ReportRow = {
-      id: 'acme',
-      implementation: 'Acme',
-      version: '1.0.0',
-      language: 'TypeScript',
-      store: 'memory',
-      kind: 'ts-url',
-      graded: ['core'],
-      capabilities: ['short-ttl'],
-    };
+    const row = testRow({ id: 'acme', implementation: 'Acme', kind: 'ts-url', graded: ['core'] });
     const results = new Map<string, RunSummary>([
       ['acme', summaryOf([vectorResult('core/mismatch-422', 'core', 'fail')])],
     ]);
@@ -148,27 +178,54 @@ describe('scripts/report', () => {
     expect(output).toContain('[core/mismatch-422](issues/acme-mismatch-422.md)');
   });
 
+  // N11: a core vector with no result at all (never reported, not merely failed) is named as missing rather
+  // than silently omitted from the failing-core cell, and for every row, not only rows with a per-vector table.
+  test('REQ-CONF-8: a core vector missing from the results entirely renders as missing, not as a pass', () => {
+    const row = testRow({ id: 'acme', graded: ['core', 'profile'] });
+    const allButOne = [
+      'core/concurrent-409',
+      'core/get-ignored',
+      'core/header-name-case-insensitive',
+      'core/key-missing-required',
+      'core/mismatch-422',
+      'core/mismatch-does-not-poison',
+      'core/post-executes-once',
+      'core/retry-replays',
+      'core/sf-string-quoted-key',
+      'core/two-keys-execute-twice',
+    ];
+    const results = new Map<string, RunSummary>([
+      ['acme', summaryOf(allButOne.map((id) => vectorResult(id, 'core', 'pass')))],
+    ]);
+    const output = renderReport([row], results);
+    expect(output).toContain('| Row X | 1.0.0 | TypeScript | memory | 10/11 |');
+    expect(output).toContain('core/expiry-executes-again (missing)');
+    expect(output).not.toContain('[core/expiry-executes-again]');
+  });
+
   test("REQ-CONF-8: a third-party row's profile count is marked as information", () => {
-    const thirdParty: ReportRow = {
+    const thirdParty = testRow({
       id: 'acme',
       implementation: 'Acme',
-      version: '1.0.0',
-      language: 'TypeScript',
-      store: 'memory',
       kind: 'ts-url',
       graded: ['core'],
-      capabilities: ['short-ttl'],
-    };
+    });
     const anyonce: ReportRow = { ...thirdParty, id: 'anyonce-x', graded: ['core', 'profile'] };
     const results = new Map<string, RunSummary>([
       ['acme', summaryOf([vectorResult('profile/replayed-header', 'profile', 'pass')])],
       ['anyonce-x', summaryOf([vectorResult('profile/replayed-header', 'profile', 'pass')])],
     ]);
     const output = renderReport([thirdParty, anyonce], results);
-    expect(output).toContain(
-      '| Acme | 1.0.0 | TypeScript | memory | 0/11 | 1/9 (info) | 0 | none |',
-    );
-    expect(output).toContain('| Acme | 1.0.0 | TypeScript | memory | 0/11 | 1/9 | 0 | none |');
+    expect(output).toContain('| Acme | 1.0.0 | TypeScript | memory | 0/11 | 1/9 (info) | 0 |');
+    expect(output).toContain('| Acme | 1.0.0 | TypeScript | memory | 0/11 | 1/9 | 0 |');
+  });
+
+  // N10: the Targets section names the fixture path from the manifest rather than deriving it by string
+  // surgery on the row id.
+  test('REQ-CONF-8: renderReport names each row fixture path in the Targets section', () => {
+    const row = testRow({ id: 'acme', fixturePath: 'conformance/third-party/acme/' });
+    const output = renderReport([row], new Map([['acme', summaryOf([])]]));
+    expect(output).toContain('- Fixture: conformance/third-party/acme/');
   });
 
   test('REQ-CONF-8: renderReport is deterministic and emits no timestamp', () => {
@@ -206,6 +263,48 @@ describe('scripts/report', () => {
     expect(Object.keys(normalized).sort()).toEqual(
       ['errored', 'failed', 'notApplicable', 'passed', 'results'].sort(),
     );
+  });
+
+  // N6: a connection error against an ephemeral or fixed port must never land verbatim in a committed
+  // result, since a byte diff on the next run would then depend on which port happened to be free.
+  test('REQ-CONF-8: normalize redacts 127.0.0.1:<port> in error and failure strings', () => {
+    const withPorts: RunSummary = {
+      results: [
+        {
+          id: 'core/post-executes-once',
+          tier: 'core',
+          status: 'error',
+          steps: [{ stepId: 'first', failures: ['connect to 127.0.0.1:54321 refused'] }],
+          error: 'dial tcp 127.0.0.1:54321: connect: connection refused',
+        },
+      ],
+      passed: 0,
+      failed: 0,
+      notApplicable: 0,
+      errored: 1,
+    };
+    const normalized = normalize(withPorts);
+    const result = normalized.results[0];
+    expect(result?.error).toBe('dial tcp 127.0.0.1:PORT: connect: connection refused');
+    expect(result?.steps[0]?.failures[0]).toBe('connect to 127.0.0.1:PORT refused');
+  });
+
+  // N9 (subsumes B1): every collector is driven by row.capabilities rather than a hardcoded string, so a row
+  // declaring short-ttl always asks its runner for it, with a matching --ttl-ms / -ttl-ms.
+  test('REQ-CONF-8: every row declaring short-ttl produces a CLI argument list containing it', () => {
+    const shortTtlRows = ROWS.filter((row) => row.capabilities.includes('short-ttl'));
+    expect(shortTtlRows.length).toBeGreaterThan(0);
+    for (const row of shortTtlRows) {
+      const tsArgs = capabilityArgs(row.capabilities, '--');
+      expect(tsArgs).toContain('--capability');
+      expect(tsArgs).toContain('short-ttl');
+      expect(tsArgs).toContain('--ttl-ms');
+      const goArgs = capabilityArgs(row.capabilities, '-');
+      expect(goArgs).toContain('-capability');
+      expect(goArgs).toContain('short-ttl');
+      expect(goArgs).toContain('-ttl-ms');
+    }
+    expect(capabilityArgs([], '--')).toEqual([]);
   });
 
   // REQ-CONF-9: this test can run today and would fail today, since DRAFT-GAPS.md only has G1 to G3 (Task 7

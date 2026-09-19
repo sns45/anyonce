@@ -3,11 +3,12 @@
  * markdown. No timestamps, no host names, no ports, no durations: rows render in ROWS order and vectors render
  * in catalog order, so a rerun on an unchanged tree is byte identical. No em or en dash anywhere in the output.
  */
-import type { RunSummary, Tier, VectorResult, VectorStatus } from '@anyonce/conformance';
+import type { RunSummary, VectorResult } from '@anyonce/conformance';
 import { CORE_IDS, PROFILE_IDS } from '../../packages/conformance/test/catalog';
 import { isThirdParty, type ReportRow, runnerFor } from './rows';
 
 const REGENERATE_COMMAND = 'bun run report -- --update';
+const ALL_CATALOG_IDS: readonly string[] = [...CORE_IDS, ...PROFILE_IDS];
 
 function escapeCell(text: string): string {
   return text.replace(/\|/g, '\\|').replace(/\n/g, ' ');
@@ -17,12 +18,17 @@ function resultFor(summary: RunSummary, vectorId: string): VectorResult | undefi
   return summary.results.find((r) => r.id === vectorId);
 }
 
-function countByTierStatus(summary: RunSummary, tier: Tier, status: VectorStatus): number {
-  return summary.results.filter((r) => r.tier === tier && r.status === status).length;
+/**
+ * B2: counts over the catalog, one lookup per catalog id, never over `summary.results` directly. A stale
+ * result carrying a duplicated or renamed vector id can therefore never inflate a count past the catalog's own
+ * length: the numerator is structurally at most the denominator.
+ */
+function countPassed(summary: RunSummary, ids: readonly string[]): number {
+  return ids.filter((id) => resultFor(summary, id)?.status === 'pass').length;
 }
 
-function totalNotApplicable(summary: RunSummary): number {
-  return summary.results.filter((r) => r.status === 'not-applicable').length;
+function countNotApplicable(summary: RunSummary, ids: readonly string[]): number {
+  return ids.filter((id) => resultFor(summary, id)?.status === 'not-applicable').length;
 }
 
 function vectorName(vectorId: string): string {
@@ -33,12 +39,20 @@ function issueLink(row: ReportRow, vectorId: string): string {
   return `[${vectorId}](issues/${row.id}-${vectorName(vectorId)}.md)`;
 }
 
+/**
+ * N11: walks the core catalog itself, not `summary.results`, so a vector with no result at all is named as
+ * missing rather than silently rendering as a pass. A failing or errored vector links to its issue draft; a
+ * missing one is named in plain text since there is no result to write an issue draft from.
+ */
 function failingCoreCell(row: ReportRow, summary: RunSummary): string {
-  const failing = summary.results.filter(
-    (r) => r.tier === 'core' && (r.status === 'fail' || r.status === 'error'),
-  );
-  if (failing.length === 0) return 'none';
-  return failing.map((r) => issueLink(row, r.id)).join(', ');
+  const entries: string[] = [];
+  for (const vectorId of CORE_IDS) {
+    const result = resultFor(summary, vectorId);
+    if (result === undefined) entries.push(`${vectorId} (missing)`);
+    else if (result.status === 'fail' || result.status === 'error')
+      entries.push(issueLink(row, vectorId));
+  }
+  return entries.length === 0 ? 'none' : entries.join(', ');
 }
 
 function requireSummary(results: ReadonlyMap<string, RunSummary>, row: ReportRow): RunSummary {
@@ -50,10 +64,10 @@ function requireSummary(results: ReadonlyMap<string, RunSummary>, row: ReportRow
 }
 
 function matrixRow(row: ReportRow, summary: RunSummary): string {
-  const core = `${countByTierStatus(summary, 'core', 'pass')}/${CORE_IDS.length}`;
-  const profileCount = `${countByTierStatus(summary, 'profile', 'pass')}/${PROFILE_IDS.length}`;
+  const core = `${countPassed(summary, CORE_IDS)}/${CORE_IDS.length}`;
+  const profileCount = `${countPassed(summary, PROFILE_IDS)}/${PROFILE_IDS.length}`;
   const profile = isThirdParty(row) ? `${profileCount} (info)` : profileCount;
-  const notApplicable = String(totalNotApplicable(summary));
+  const notApplicable = String(countNotApplicable(summary, ALL_CATALOG_IDS));
   const failing = failingCoreCell(row, summary);
   return `| ${escapeCell(row.implementation)} | ${escapeCell(row.version)} | ${row.language} | ${escapeCell(row.store)} | ${core} | ${profile} | ${notApplicable} | ${failing} |`;
 }
@@ -74,7 +88,7 @@ function renderMatrix(
 }
 
 function renderTargetSection(row: ReportRow): string[] {
-  const lines = [`### ${row.id}`, '', `- Runner: ${row.kind}`];
+  const lines = [`### ${row.id}`, '', `- Runner: ${row.kind}`, `- Fixture: ${row.fixturePath}`];
   if (row.image !== undefined) lines.push(`- Image: ${row.image}`);
   if (row.packages !== undefined) lines.push(`- Packages: ${row.packages.join(', ')}`);
   if (row.notes !== undefined) lines.push(`- Notes: ${row.notes}`);
