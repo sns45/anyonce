@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "anyonce-monorepo",
@@ -9,6 +10,7 @@
         "@anyonce/fixture-hono": "workspace:*",
         "@anyonce/hono": "workspace:*",
         "@anyonce/stores": "workspace:*",
+        "@anyonce/webhooks": "workspace:*",
         "@biomejs/biome": "^2.5.14",
         "@changesets/cli": "^3.0.3",
         "@cloudflare/vitest-pool-workers": "0.12.21",
@@ -116,9 +118,25 @@
         "redis",
       ],
     },
+    "packages/webhooks": {
+      "name": "@anyonce/webhooks",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@anyhook/signing": "0.2.2",
+        "@anyonce/conformance": "workspace:*",
+        "@anyonce/core": "workspace:*",
+        "@anyonce/fixture-hono": "workspace:*",
+        "hono": "^4.13.8",
+      },
+      "peerDependencies": {
+        "@anyonce/core": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@ampproject/remapping": ["@ampproject/remapping@2.3.0", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.5", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw=="],
+
+    "@anyhook/signing": ["@anyhook/signing@0.2.2", "", { "peerDependencies": { "typescript": "^5.0.0" } }, "sha512-sVps0wCKMoaVBA6lfRi9aTIF5DFekddwV7oHGHDTC/Z8ySp3TX+QDvZKjgL+x7xrCJzFvMNlOhdRuDnp7G+aCQ=="],
 
     "@anyonce/anyq": ["@anyonce/anyq@workspace:packages/anyq"],
 
@@ -131,6 +149,8 @@
     "@anyonce/hono": ["@anyonce/hono@workspace:packages/hono"],
 
     "@anyonce/stores": ["@anyonce/stores@workspace:packages/stores"],
+
+    "@anyonce/webhooks": ["@anyonce/webhooks@workspace:packages/webhooks"],
 
     "@anyq/core": ["@anyq/core@0.5.0", "", { "peerDependencies": { "typescript": "^5.0.0" } }, "sha512-XM+YLdA8kRj35Wplo3DAy8Fwnwdmneolt9VSEIC+U/TCk860qPebGvaYMAsddNFL2UftWKOrGETHYiLoh1+KXQ=="],
 
