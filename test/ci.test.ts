@@ -12,6 +12,7 @@ type Job = {
     with?: Record<string, unknown>;
     env?: Record<string, string>;
     'working-directory'?: string;
+    if?: string;
   }>;
   strategy?: { matrix?: Record<string, unknown[]> };
 };
@@ -191,6 +192,33 @@ describe('ci workflow', () => {
     const testAt = steps.findIndex((s) => s.includes('bun run test:services'));
     expect(buildAt).toBeGreaterThan(-1);
     expect(testAt).toBeGreaterThan(buildAt);
+  });
+
+  test('REQ-CONF-8: the services job builds the third-party containers and diffs the report', () => {
+    const job = ci.jobs.services as Job;
+    const names = job.steps.map((s) => s.name ?? '');
+    expect(names).toContain('third-party conformance containers');
+    expect(names).toContain('regenerate and diff the cross-implementation report');
+    const steps = job.steps.map((s) => s.run ?? '');
+    const composeUpAt = steps.indexOf(
+      'docker compose -f conformance/third-party/compose.yml up -d --wait --build',
+    );
+    const buildAt = steps.indexOf('bun run build');
+    const reportAt = steps.indexOf('bun run report');
+    const composeDownAt = steps.indexOf(
+      'docker compose -f conformance/third-party/compose.yml down -v',
+    );
+    expect(composeUpAt).toBeGreaterThan(-1);
+    expect(reportAt).toBeGreaterThan(-1);
+    expect(composeDownAt).toBeGreaterThan(-1);
+    expect(buildAt).toBeGreaterThan(-1);
+    expect(composeUpAt).toBeLessThan(reportAt);
+    expect(buildAt).toBeLessThan(reportAt);
+    expect(reportAt).toBeLessThan(composeDownAt);
+    const teardown = job.steps.find(
+      (s) => s.run === 'docker compose -f conformance/third-party/compose.yml down -v',
+    );
+    expect(teardown?.if).toBe('always()');
   });
 
   test('REQ-REL-4: every test job fails on skipped tests, the workers job included', () => {

@@ -1,0 +1,308 @@
+{
+  "results": [
+    {
+      "id": "core/concurrent-409",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "original",
+          "failures": []
+        },
+        {
+          "stepId": "duplicate",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/expiry-executes-again",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "after-expiry",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/get-ignored",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "get-before",
+          "failures": []
+        },
+        {
+          "stepId": "post",
+          "failures": []
+        },
+        {
+          "stepId": "get-after",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/header-name-case-insensitive",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry-lowercase",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/key-missing-required",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "missing",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/mismatch-422",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "changed",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/mismatch-does-not-poison",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "changed",
+          "failures": []
+        },
+        {
+          "stepId": "corrected",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/post-executes-once",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/retry-replays",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/sf-string-quoted-key",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "core/two-keys-execute-twice",
+      "tier": "core",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "second",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/4xx-replayed",
+      "tier": "profile",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/5xx-not-stored",
+      "tier": "profile",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/empty-key-rejected",
+      "tier": "profile",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "empty",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/key-too-long",
+      "tier": "profile",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "too-long",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/omitted-body-replay",
+      "tier": "profile",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/problem-code-member",
+      "tier": "profile",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "missing",
+          "failures": []
+        },
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "changed",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/problem-content-type",
+      "tier": "profile",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "missing",
+          "failures": []
+        },
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "changed",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/replayed-header",
+      "tier": "profile",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "first",
+          "failures": []
+        },
+        {
+          "stepId": "retry",
+          "failures": []
+        }
+      ]
+    },
+    {
+      "id": "profile/retry-after-on-409",
+      "tier": "profile",
+      "status": "pass",
+      "steps": [
+        {
+          "stepId": "original",
+          "failures": []
+        },
+        {
+          "stepId": "duplicate",
+          "failures": []
+        }
+      ]
+    }
+  ],
+  "passed": 20,
+  "failed": 0,
+  "notApplicable": 0,
+  "errored": 0
+}

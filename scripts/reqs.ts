@@ -8,15 +8,12 @@ import { join, relative } from 'node:path';
 
 const ID_PATTERN = /\b((?:REQ-[A-Z0-9]+(?:-[A-Z0-9]+)*-\d+)|(?:NFR-\d+))\b/;
 const DEFINITION = /\*\*((?:REQ-[A-Z0-9]+(?:-[A-Z0-9]+)*-\d+)|(?:NFR-\d+))\*\*/g;
-const SKIP_DIRS = new Set([
-  'node_modules',
-  'dist',
-  '.git',
-  '.claude',
-  '.wrangler',
-  'coverage',
-  'scripts',
-]);
+const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', '.claude', '.wrangler', 'coverage']);
+// reqs.test.ts exercises this script's own id-collection logic against synthetic fixture sources that
+// contain real REQ ids inside string literals (for example 'REQ-CONF-1: validates'), so scanning it as a
+// source file would report those ids as covered by a fixture rather than by a real test. Every other file
+// under scripts/, including scripts/report.test.ts, is scanned normally.
+const SKIP_FILES = new Set(['scripts/reqs.test.ts']);
 
 export function parseDefinedIds(text: string): string[] {
   const out: string[] = [];
@@ -118,6 +115,8 @@ function walk(dir: string, out: string[], root?: string): void {
     if (SKIP_DIRS.has(name)) continue;
     const full = join(dir, name);
     const rel = relative(root, full);
+    // Matched on the path rather than the basename, so a file of the same name elsewhere is still scanned.
+    if (SKIP_FILES.has(rel)) continue;
     const pathSegments = rel.split('/');
     if (statSync(full).isDirectory()) walk(full, out, root);
     else if (
