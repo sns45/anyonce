@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
+
+	// The pgx database/sql driver, registered as "pgx".
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/sns45/anyonce/go/anyonce"
 	"github.com/sns45/anyonce/go/httpmw"
@@ -20,16 +24,23 @@ type order struct {
 	Item string `json:"item"`
 }
 
-// openStore connects to Postgres and applies the idempotency schema, which is safe to repeat on every start.
-func openStore(ctx context.Context, dsn string) (anyonce.Store, error) {
-	store, err := postgres.Open(ctx, dsn, postgres.Options{})
+// openStore connects to Postgres, applies the idempotency schema (safe to repeat on every start), and returns
+// the store with the connection pool behind it, which the caller closes on shutdown.
+func openStore(ctx context.Context, dsn string) (anyonce.Store, *sql.DB, error) {
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("open store: %w", err)
+		return nil, nil, fmt.Errorf("open postgres: %w", err)
 	}
-	if err := store.EnsureSchema(ctx); err != nil {
-		return nil, fmt.Errorf("ensure schema: %w", err)
+	db.SetMaxOpenConns(postgres.DefaultMaxOpenConns)
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("ping postgres: %w", err)
 	}
-	return store, nil
+	if err := postgres.EnsureSchema(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("ensure schema: %w", err)
+	}
+	return postgres.New(db), db, nil
 }
 
 // options is the middleware configuration. A zero ttl keeps the anyonce default of 24 hours.

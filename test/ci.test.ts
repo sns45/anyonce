@@ -249,7 +249,10 @@ describe('ci workflow', () => {
     expect(bunTests).toBeGreaterThan(composeUp);
     expect(job.steps[bunTests]?.shell).toBe('bash');
     expect(at('scripts/no-skips.sh examples.log')).toBeGreaterThan(bunTests);
-    expect(at('bun run test:examples:workers')).toBeGreaterThan(at('bun run build'));
+    const workerTests = at('bun run test:examples:workers 2>&1 | tee examples-workers.log');
+    expect(workerTests).toBeGreaterThan(at('bun run build'));
+    expect(job.steps[workerTests]?.shell).toBe('bash');
+    expect(at('scripts/no-skips.sh examples-workers.log')).toBeGreaterThan(workerTests);
 
     // Every nested Go module under examples/ gets its own vet and race test step with services required.
     const examplesDir = join(import.meta.dir, '../examples');
@@ -268,6 +271,12 @@ describe('ci workflow', () => {
       expect(step?.run, name).toContain('go test -race -count=1 ./...');
       expect(step?.env?.ANYONCE_REQUIRE_SERVICES, name).toBe('1');
       expect(index, name).toBeGreaterThan(composeUp);
+      const lint = job.steps.find(
+        (s) =>
+          s.uses?.startsWith('golangci/golangci-lint-action@') &&
+          s.with?.['working-directory'] === `examples/${name}`,
+      );
+      expect(lint?.with?.version, name).toBe('v2.13.2');
     }
 
     const composeDown = job.steps.findIndex(

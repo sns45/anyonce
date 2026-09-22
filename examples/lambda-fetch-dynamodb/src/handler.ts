@@ -25,7 +25,13 @@ export interface AppDeps {
 export async function routes(req: Request): Promise<Response> {
   const url = new URL(req.url);
   if (req.method === 'POST' && url.pathname === '/payments') {
-    const { amount, currency } = (await req.json()) as { amount: number; currency: string };
+    let payment: { amount: number; currency: string };
+    try {
+      payment = (await req.json()) as { amount: number; currency: string };
+    } catch {
+      return new Response('body must be JSON with an amount and a currency', { status: 400 });
+    }
+    const { amount, currency } = payment;
     // Runs once per key: a retry with the same key and body gets this exact response back, id included.
     return Response.json({ id: crypto.randomUUID(), amount, currency }, { status: 201 });
   }

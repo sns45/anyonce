@@ -35,10 +35,11 @@ func requirePostgres(t *testing.T) anyonce.Store {
 		t.Skipf("postgres not reachable on %s; run docker compose -f test/compose.yml up -d --wait postgres", addr)
 	}
 	_ = conn.Close()
-	store, err := openStore(context.Background(), testDSN)
+	store, db, err := openStore(context.Background(), testDSN)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = db.Close() })
 	return store
 }
 

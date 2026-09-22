@@ -108,6 +108,27 @@ describe('webhook-receiver-standard-webhooks', () => {
     expect(forged.status).toBe(401);
     expect(forged.headers.get('WWW-Authenticate')).toBe('Signature');
 
+    // A correctly signed delivery to a path the example does not serve is 404 without a record either.
+    const secret = generateSecret();
+    const { store: routedStore, calls: routedCalls } = countingStore(new MemoryStore());
+    const routed = createApp({
+      store: routedStore,
+      secret,
+      onEvent: (event) => received.push(event),
+    });
+    const elsewhere = await routed(
+      new Request('https://example.test/elsewhere', {
+        method: 'POST',
+        headers: {
+          ...new Signer(secret).headers('msg_unknown_path', payload),
+          'Content-Type': 'application/json',
+        },
+        body: payload,
+      }),
+    );
+    expect(elsewhere.status).toBe(404);
+    expect(routedCalls()).toBe(0);
+
     expect(calls()).toBe(0);
     expect(received).toHaveLength(0);
   });

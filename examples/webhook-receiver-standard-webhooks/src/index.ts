@@ -25,13 +25,16 @@ export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
     store: deps.store,
     verify: standardWebhooksVerify(deps.secret),
   });
-  return receive(async (req) => {
-    if (new URL(req.url).pathname !== '/webhooks')
-      return new Response('not found', { status: 404 });
+  const handle = receive(async (req) => {
     const event = (await req.json()) as WebhookEvent;
     onEvent(event);
     return Response.json({ received: true });
   });
+  // The path is checked before the receiver, so a delivery to an unknown path never claims a record.
+  return async (req) =>
+    new URL(req.url).pathname === '/webhooks'
+      ? handle(req)
+      : new Response('not found', { status: 404 });
 }
 
 if (import.meta.main) {

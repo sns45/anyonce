@@ -1,10 +1,12 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { connect } from 'node:net';
 import { runConformance } from '@anyonce/conformance';
+import { MemoryStore } from '@anyonce/core';
 import { createFixtureApp } from '@anyonce/fixture-hono';
 import { DynamoDbStore, ensureTable } from '@anyonce/stores/dynamodb';
+import { DeleteTableCommand } from '@aws-sdk/client-dynamodb';
 import { fromResult, toEvent, toRequest, toResult } from '../src/function-url';
-import { createApp, functionUrlHandler, MAX_RESULT_BYTES } from '../src/handler';
+import { createApp, functionUrlHandler, handler, idempotencyOptions } from '../src/handler';
 import { localClient, serveFunctionUrl } from '../src/local';
 
 const DYNAMODB_PORT = 18000;
@@ -76,8 +78,8 @@ describe('lambda-fetch-dynamodb function URL conversion', () => {
     expect(plain.body).toBeNull();
   });
 
-  test('REQ-HTTP-17: the example caps maxResultBytes at 300 KiB for the DynamoDB item limit', () => {
-    expect(MAX_RESULT_BYTES).toBe(300 * 1024);
+  test('REQ-HTTP-17: the example configures maxResultBytes at 300 KiB for the DynamoDB item limit', () => {
+    expect(idempotencyOptions({ store: new MemoryStore() }).maxResultBytes).toBe(300 * 1024);
   });
 });
 
@@ -88,16 +90,23 @@ if (!up) {
   describe('lambda-fetch-dynamodb over DynamoDB Local', () => {
     const client = localClient(`http://127.0.0.1:${DYNAMODB_PORT}`);
     const servers: Array<{ stop: (force?: boolean) => unknown }> = [];
-    afterAll(() => {
+    const tables: string[] = [];
+    afterAll(async () => {
       for (const server of servers) server.stop(true);
+      for (const TableName of tables) await client.send(new DeleteTableCommand({ TableName }));
       // An open client socket would keep bun from exiting.
       client.destroy();
     });
 
-    async function freshStore(): Promise<DynamoDbStore> {
+    async function freshTable(): Promise<string> {
       const tableName = `anyonce_example_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
       await ensureTable(client, tableName);
-      return new DynamoDbStore({ client, tableName });
+      tables.push(tableName);
+      return tableName;
+    }
+
+    async function freshStore(): Promise<DynamoDbStore> {
+      return new DynamoDbStore({ client, tableName: await freshTable() });
     }
 
     test('REQ-DOC-7: lambda-fetch-dynamodb replays a completed POST through the function URL harness', async () => {
@@ -125,6 +134,53 @@ if (!up) {
       const changed = await pay('{"amount":9900,"currency":"EUR"}');
       expect(changed.status).toBe(422);
       expect(((await changed.json()) as { code: string }).code).toBe('fingerprint-mismatch');
+    });
+
+    test('REQ-DOC-7: the exported Lambda handler builds its own client from the environment and replays', async () => {
+      const names = [
+        'AWS_ENDPOINT_URL_DYNAMODB',
+        'AWS_REGION',
+        'AWS_ACCESS_KEY_ID',
+        'AWS_SECRET_ACCESS_KEY',
+        'TABLE_NAME',
+      ] as const;
+      const saved = new Map(names.map((name) => [name, process.env[name]]));
+      try {
+        // What the Lambda runtime would provide, pointed at DynamoDB Local.
+        process.env.AWS_ENDPOINT_URL_DYNAMODB = `http://127.0.0.1:${DYNAMODB_PORT}`;
+        process.env.AWS_REGION = 'us-east-1';
+        process.env.AWS_ACCESS_KEY_ID = 'local';
+        process.env.AWS_SECRET_ACCESS_KEY = 'local';
+        process.env.TABLE_NAME = await freshTable();
+        const server = serveFunctionUrl({ handler, port: 0 });
+        servers.push(server);
+        const pay = (body: string) =>
+          fetch(new URL('/payments', server.url), {
+            method: 'POST',
+            headers: { 'Idempotency-Key': 'payment-entry-1', 'Content-Type': 'application/json' },
+            body,
+          });
+
+        const first = await pay('{"amount":500,"currency":"USD"}');
+        expect(first.status).toBe(201);
+        const created = await first.json();
+        const second = await pay('{"amount":500,"currency":"USD"}');
+        expect(second.status).toBe(201);
+        expect(second.headers.get('Idempotency-Replayed')).toBe('true');
+        expect(await second.json()).toEqual(created);
+
+        const malformed = await fetch(new URL('/payments', server.url), {
+          method: 'POST',
+          headers: { 'Idempotency-Key': 'payment-entry-2', 'Content-Type': 'application/json' },
+          body: '{"amount":',
+        });
+        expect(malformed.status).toBe(400);
+      } finally {
+        for (const [name, value] of saved) {
+          if (value === undefined) delete process.env[name];
+          else process.env[name] = value;
+        }
+      }
     });
 
     test('REQ-HTTP-17: lambda-fetch-dynamodb passes the core and profile tiers over a local function URL harness', async () => {

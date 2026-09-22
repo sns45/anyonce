@@ -23,7 +23,8 @@ const store = new DynamoDbStore({
   tableName: process.env.TABLE_NAME ?? 'anyonce_records',
 });
 
-// routes is the plain fetch handler: POST /payments answers 201 with a new payment id.
+// routes is the plain fetch handler: POST /payments answers 201 with a new payment id, or 400 for a
+// body that is not JSON.
 const app = withIdempotency(routes, {
   store,
   required: true,
@@ -82,7 +83,7 @@ curl -i -X POST http://127.0.0.1:3000/payments \
 
 The first response is `201` with a new payment id. The second is the same `201` with the same id and
 `Idempotency-Replayed: true`: the payment was not created twice. The same key with a different amount is
-`422` with the `fingerprint-mismatch` problem.
+`422` with the `fingerprint-mismatch` problem. A body that is not JSON is `400`.
 
 ## Smoke test
 

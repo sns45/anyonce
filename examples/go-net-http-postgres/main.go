@@ -22,11 +22,14 @@ func main() {
 	if addr == "" {
 		addr = "127.0.0.1:8080"
 	}
-	store, err := openStore(context.Background(), dsn)
+	store, db, err := openStore(context.Background(), dsn)
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer func() { _ = db.Close() }()
 	srv := &http.Server{Addr: addr, Handler: newHandler(store), ReadHeaderTimeout: 10 * time.Second}
 	log.Printf("listening on http://%s", addr)
-	log.Fatal(srv.ListenAndServe())
+	if err := srv.ListenAndServe(); err != nil {
+		log.Print(err)
+	}
 }

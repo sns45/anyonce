@@ -6,18 +6,22 @@ gets the stored response instead of creating a second order.
 
 ## What it shows
 
-- [`app.go`](./app.go): `openStore` opens Postgres with `postgres.Open` and applies the schema with
-  `EnsureSchema` (safe on every start); `newHandler(store)` is the mux behind the middleware.
-- [`main.go`](./main.go): reads `DATABASE_URL`, calls `openStore`, and serves `newHandler(store)`.
+- [`app.go`](./app.go): `openStore` opens a `database/sql` pool on the pgx driver, applies the schema with
+  `postgres.EnsureSchema` (safe on every start) and returns `postgres.New(db)`; `newHandler(store)` is the mux
+  behind the middleware.
+- [`main.go`](./main.go): reads `DATABASE_URL`, calls `openStore`, serves `newHandler(store)`, and closes
+  the pool on the way out.
 
 ```go
-store, err := postgres.Open(ctx, os.Getenv("DATABASE_URL"), postgres.Options{})
+db, err := sql.Open("pgx", os.Getenv("DATABASE_URL"))
 if err != nil {
 	log.Fatal(err)
 }
-if err := store.EnsureSchema(ctx); err != nil {
+defer db.Close()
+if err := postgres.EnsureSchema(ctx, db); err != nil {
 	log.Fatal(err)
 }
+store := postgres.New(db)
 
 mw := httpmw.New(store, httpmw.Options{Required: true})
 log.Fatal(http.ListenAndServe("127.0.0.1:8080", mw.Handler(routes())))
@@ -55,7 +59,7 @@ curl -i -X POST http://127.0.0.1:8080/orders \
 
 The first response is `201` with a new order id. The second is the same `201` with the same id and
 `Idempotency-Replayed: true`: the handler did not run again. The same key with a different body
-(`{"item":"lamp"}`) is `422` with the `fingerprint-mismatch` problem. The record lives in Postgres, so the same
+(`{"item":"lamp"}`) is `422` with the `fingerprint-mismatch` problem. A body that is not JSON is `400`. The record lives in Postgres, so the same
 key keeps replaying across a restart of the service until the TTL ends.
 
 ## Smoke test

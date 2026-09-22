@@ -12,6 +12,8 @@ redelivery gets the first answer back.
 - Verification runs before the store: an unsigned or forged delivery is `401` with
   `WWW-Authenticate: Signature` and never creates a record, so nobody can burn a delivery id they did not
   sign.
+- The path is checked before the receiver, so a delivery to a path the service does not serve is `404`
+  and claims no record.
 - The memory store (`MemoryStore` from `@anyonce/core`) keeps the example self contained. A receiver with
   more than one instance needs a shared store; see [docs/stores.md](../../docs/stores.md).
 

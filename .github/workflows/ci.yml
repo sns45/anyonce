@@ -166,7 +166,9 @@ jobs:
       - shell: bash
         run: bun run test:examples 2>&1 | tee examples.log
       - run: scripts/no-skips.sh examples.log
-      - run: bun run test:examples:workers
+      - shell: bash
+        run: bun run test:examples:workers 2>&1 | tee examples-workers.log
+      - run: scripts/no-skips.sh examples-workers.log
       - name: go-net-http-postgres
         working-directory: examples/go-net-http-postgres
         env:
@@ -174,5 +176,10 @@ jobs:
         run: |
           go vet ./...
           go test -race -count=1 ./...
+      - name: go-net-http-postgres lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          working-directory: examples/go-net-http-postgres
+          version: v2.13.2
       - if: always()
         run: docker compose -f test/compose.yml down -v
