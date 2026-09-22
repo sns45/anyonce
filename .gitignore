@@ -8,3 +8,4 @@ coverage/
 .worktrees/
 .superpowers/
 packages/conformance/.cli-out.xml
+test/.tmp/
