@@ -412,3 +412,27 @@ CHECKLIST's dry-run line starts with `bunx changeset version`. Running it on the
 Recommended resolution: the dry run exports `HEAD` into a scratch directory with `git archive` and runs `changeset version` there; nothing it writes reaches the branch. The version commit is the first step of the real release, in its own PR, after the owner's go.
 
 **Decision: pending.** P6 proceeds on the recommendation.
+
+## Q66: a client disconnect on Cloudflare Workers leaves the claim in flight
+
+The HTTP capture completes the record in the response stream's pull path (Q19); when the client cancels, the remaining body is drained and complete runs afterwards with nothing keeping the Worker alive (no ctx.waitUntil), so the runtime can end that work, the record stays in_flight until the lease expires, and a retry after that runs the handler again. docs/semantics.md already describes this.
+
+Recommended resolution: add an optional waitUntil?: (p: Promise<unknown>) => void option to withIdempotency and the Hono middleware (the Hono binding passes c.executionCtx.waitUntil when present) that the capture hands its drain-and-complete promise to on cancel. This is a public API change with a changeset, targeted at 0.1.x after the owner decides; until then the lease bounds the damage.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q67: the Go webhook door has no Skip option
+
+TS webhookReceiver accepts skip, Go webhookmw.Options has no Skip, so a Go receiver cannot exempt a path the way the TS one can (Q28 used skip for the conformance control paths in TS).
+
+Recommended resolution: add Skip func(*http.Request) bool to webhookmw.Options with the same semantics as the TS option (checked before verification, a skipped request goes straight to next), with a test, in 0.1.x; documented as a parity gap in docs/semantics.md until then (it already is).
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q68: npm provenance needs a public source repository
+
+REQ-REL-2 publishes with --provenance from GitHub Actions OIDC; npm only accepts provenance statements from public repositories, and sns45/anyonce is private; the release workflow and every package's repository field are ready (P6 Task 8).
+
+Recommended resolution: make the repository public before the first tag push (part of the explicit release go, Q64); do not drop --provenance to publish from a private repo, because REQ-REL-2 requires it.
+
+**Decision: pending.** P6 proceeds on the recommendation.
