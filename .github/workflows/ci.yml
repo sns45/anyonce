@@ -181,5 +181,17 @@ jobs:
         with:
           working-directory: examples/go-net-http-postgres
           version: v2.13.2
+      - name: anyq-consumer-go
+        working-directory: examples/anyq-consumer-go
+        env:
+          ANYONCE_REQUIRE_SERVICES: '1'
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+      - name: anyq-consumer-go lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          working-directory: examples/anyq-consumer-go
+          version: v2.13.2
       - if: always()
         run: docker compose -f test/compose.yml down -v
