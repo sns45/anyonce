@@ -37,7 +37,7 @@ const consumer = new MemoryConsumer<Order>({
 });
 await consumer.connect();
 await consumer.subscribe(
-  idempotent<Order>(
+  idempotent(
     async (message) => {
       // Runs once per idempotency-key header.
     },

@@ -45,7 +45,7 @@ export async function createConsumer(deps: ConsumerDeps): Promise<MemoryConsumer
 
   await consumer.connect();
   await consumer.subscribe(
-    idempotent<Order>(async (message) => {
+    idempotent(async (message) => {
       await onOrder(message.body);
     }, options),
   );

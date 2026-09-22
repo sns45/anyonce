@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
+import { goExamples } from './examples';
 
 type Job = {
   steps: Array<{
@@ -255,16 +256,9 @@ describe('ci workflow', () => {
     expect(at('scripts/no-skips.sh examples-workers.log')).toBeGreaterThan(workerTests);
 
     // Every nested Go module under examples/ gets its own vet and race test step with services required.
-    const examplesDir = join(import.meta.dir, '../examples');
-    const goExamples = readdirSync(examplesDir).filter((name) => {
-      try {
-        return readFileSync(join(examplesDir, name, 'go.mod'), 'utf8').startsWith('module ');
-      } catch {
-        return false;
-      }
-    });
-    expect(goExamples).toContain('go-net-http-postgres');
-    for (const name of goExamples) {
+    const goModules = goExamples();
+    expect(goModules).toContain('go-net-http-postgres');
+    for (const name of goModules) {
       const index = job.steps.findIndex((s) => s['working-directory'] === `examples/${name}`);
       const step = job.steps[index];
       expect(step?.run, name).toContain('go vet ./...');
