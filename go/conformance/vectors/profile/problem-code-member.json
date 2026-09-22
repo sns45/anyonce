@@ -1,0 +1,39 @@
+{
+  "id": "profile/problem-code-member",
+  "tier": "profile",
+  "title": "Problem details carry a stable code member",
+  "description": "anyonce profile (D10, D11): every error body is RFC 9457 problem details with a code member: missing-key for 400, fingerprint-mismatch for 422.",
+  "fixture": "echo",
+  "steps": [
+    {
+      "id": "missing",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Content-Type": "text/plain" },
+        "body": "no key"
+      },
+      "expect": { "status": 400, "bodyJson": { "code": "missing-key" } }
+    },
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-code-1", "Content-Type": "text/plain" },
+        "body": "payload-a"
+      },
+      "expect": { "status": 201 }
+    },
+    {
+      "id": "changed",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-code-1", "Content-Type": "text/plain" },
+        "body": "payload-b"
+      },
+      "expect": { "status": 422, "bodyJson": { "code": "fingerprint-mismatch" } }
+    }
+  ]
+}

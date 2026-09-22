@@ -20,7 +20,7 @@ func TestRunVectors(t *testing.T) {
 	t.Run("REQ-CONF-6: against the bare fixture only the execution-only vectors pass and nothing errors", func(t *testing.T) {
 		srv := httptest.NewServer(fixture.New().Handler())
 		defer srv.Close()
-		vectors, err := LoadVectors(DefaultVectorsDir())
+		vectors, err := DefaultVectors()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -50,7 +50,7 @@ func TestRunVectors(t *testing.T) {
 	t.Run("REQ-CONF-6: a vector with an undeclared capability is not-applicable and tiers and only narrow the run", func(t *testing.T) {
 		srv := httptest.NewServer(fixture.New().Handler())
 		defer srv.Close()
-		vectors, _ := LoadVectors(DefaultVectorsDir())
+		vectors, _ := DefaultVectors()
 		summary, err := RunVectors(context.Background(), srv.URL, vectors, Options{Tiers: []string{"core"}, Only: []string{"core/expiry-executes-again", "core/post-executes-once", "profile/replayed-header"}})
 		if err != nil {
 			t.Fatal(err)

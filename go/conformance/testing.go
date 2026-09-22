@@ -23,11 +23,13 @@ func Run(t *testing.T, target any, opts Options) Summary {
 	default:
 		t.Fatalf("conformance.Run: target must be an http.Handler or a base URL string, got %T", target)
 	}
-	dir := opts.VectorsDir
-	if dir == "" {
-		dir = DefaultVectorsDir()
+	var vectors []Vector
+	var err error
+	if opts.VectorsDir != "" {
+		vectors, err = LoadVectors(opts.VectorsDir)
+	} else {
+		vectors, err = DefaultVectors()
 	}
-	vectors, err := LoadVectors(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

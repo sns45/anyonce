@@ -1,0 +1,19 @@
+{
+  "id": "profile/empty-key-rejected",
+  "tier": "profile",
+  "title": "An empty quoted key yields 400 invalid-key",
+  "description": "anyonce profile (D7): an empty quoted key is not a key; the resource replies 400 invalid-key and does not run the handler. The draft does not say whether an empty string is a valid key; recorded as a draft gap.",
+  "fixture": "echo",
+  "steps": [
+    {
+      "id": "empty",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "\"\"", "Content-Type": "text/plain" },
+        "body": "e"
+      },
+      "expect": { "status": 400, "bodyJson": { "code": "invalid-key" }, "handlerInvocations": 0 }
+    }
+  ]
+}

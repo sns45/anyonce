@@ -1,0 +1,33 @@
+{
+  "id": "core/mismatch-422",
+  "tier": "core",
+  "title": "Reusing a key with a different payload yields 422",
+  "draftRef": "section-2.7",
+  "description": "The idempotency key MUST NOT be reused with a different request payload; the resource replies 422 and does not run the handler again.",
+  "fixture": "echo",
+  "steps": [
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-mismatch-1", "Content-Type": "text/plain" },
+        "body": "payload-a"
+      },
+      "expect": { "status": 201, "handlerInvocations": 1 }
+    },
+    {
+      "id": "changed",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-mismatch-1", "Content-Type": "text/plain" },
+        "body": "payload-b"
+      },
+      "expect": {
+        "status": 422,
+        "handlerInvocations": 1
+      }
+    }
+  ]
+}

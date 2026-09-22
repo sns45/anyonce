@@ -1,10 +1,17 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Vector } from './types';
 
-/** Computed lazily, not at module load, so the CJS bundle (with an empty import.meta unless shimmed) doesn't throw on import. */
+/**
+ * The vectors next to dist (`vectors/`, copied from the repository's conformance/vectors by the package build
+ * and shipped in the tarball), else the repository's conformance/vectors for in-repo use before a build.
+ * Computed lazily, not at module load, so the CJS bundle (with an empty import.meta unless shimmed) doesn't
+ * throw on import.
+ */
 function defaultVectorsDir(): string {
+  const packaged = fileURLToPath(new URL('../vectors', import.meta.url));
+  if (existsSync(join(packaged, 'core'))) return packaged;
   return fileURLToPath(new URL('../../../conformance/vectors', import.meta.url));
 }
 

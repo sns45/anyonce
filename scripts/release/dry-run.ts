@@ -13,10 +13,12 @@
  *   3. copies the root LICENSE into every non-private workspace package, packs it with `bun pm pack` into
  *      tarballs/, and checks each packed package.json and file listing (checkPackedManifest,
  *      checkPackedFiles; Q60);
- *   4. runs `go mod tidy -diff` in work/go;
- *   5. per tarball: an SBOM from the unpacked package and its runtime lockfile closure (lockfile.ts), then a
+ *   4. unpacks the @anyonce/conformance tarball into a temporary directory outside the repository and checks
+ *      that its `loadVectors()` finds every vector (packed-vectors.ts; REQ-CONF-7);
+ *   5. runs `go mod tidy -diff` in work/go;
+ *   6. per tarball: an SBOM from the unpacked package and its runtime lockfile closure (lockfile.ts), then a
  *      keyed signature over the tarball and over the SBOM, each verified against the throwaway CA;
- *   6. writes summary.json and prints one line per tarball.
+ *   7. writes summary.json and prints one line per tarball.
  * Git commands inside work/ run with GIT_CEILING_DIRECTORIES set, so they can never reach the real repo.
  */
 import { createHash } from 'node:crypto';
@@ -37,6 +39,7 @@ import {
   listPackedFiles,
   readPackedManifest,
 } from './manifest';
+import { checkPackedVectors } from './packed-vectors';
 
 const FORGESEAL_MODULE = 'github.com/sns45/forgeseal/cmd/forgeseal@v0.5.1';
 const EXPECTED_VERSION = '0.1.0';
@@ -66,6 +69,7 @@ type Summary = {
   versions: Record<string, string>;
   tarballs: TarballSummary[];
   goModTidyClean: boolean;
+  conformanceVectors: { packed: number; expected: number };
 };
 
 const rel = (path: string) => relative(out, path);
@@ -172,7 +176,7 @@ function publishNotes(name: string, listing: string[]): string[] {
   return listing.some((f) => /^package\/readme/i.test(f)) ? [] : [`${name}: no README file`];
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const failures: string[] = [];
   const notes: string[] = [];
 
@@ -248,6 +252,18 @@ function main(): void {
     notes.push(...publishNotes(pkg.name, listing));
     packed.push({ pkg, tarball });
   }
+
+  step('packed conformance vectors, loaded outside the repository');
+  const conformance = packed.find((p) => p.pkg.name === '@anyonce/conformance');
+  if (conformance === undefined) throw new Error('@anyonce/conformance was not packed');
+  const vectorCheck = await checkPackedVectors(conformance.tarball, dirs.work);
+  console.log(
+    `${rel(conformance.tarball)}: loadVectors() found ${vectorCheck.packed} vectors, unpacked at ${vectorCheck.unpackedAt} (outside the repository), repository has ${vectorCheck.expected}`,
+  );
+  if (vectorCheck.packed !== vectorCheck.expected)
+    failures.push(
+      `@anyonce/conformance: the packed tarball loads ${vectorCheck.packed} vectors, expected ${vectorCheck.expected}`,
+    );
 
   step('go mod tidy');
   const go = goBinary();
@@ -345,7 +361,12 @@ function main(): void {
   if (exported !== readFileSync(caCert, 'utf8'))
     failures.push('forgeseal ca export does not match the throwaway CA');
 
-  const summary: Summary = { versions, tarballs, goModTidyClean };
+  const summary: Summary = {
+    versions,
+    tarballs,
+    goModTidyClean,
+    conformanceVectors: { packed: vectorCheck.packed, expected: vectorCheck.expected },
+  };
   writeFileSync(join(out, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
 
   if (!keepWork) {
@@ -362,6 +383,9 @@ function main(): void {
     );
   }
   console.log(`go mod tidy clean: ${goModTidyClean}`);
+  console.log(
+    `packed conformance vectors: ${vectorCheck.packed} of ${vectorCheck.expected}, loaded outside the repository`,
+  );
   console.log(`summary: ${relative(repo, join(out, 'summary.json'))}`);
   console.log('nothing was published, tagged, pushed or signed keyless');
   if (notes.length > 0) {
@@ -377,4 +401,4 @@ function main(): void {
   console.log('\nDRY RUN OK');
 }
 
-main();
+await main();

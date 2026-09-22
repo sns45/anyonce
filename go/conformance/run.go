@@ -17,8 +17,10 @@ type Options struct {
 	Only         []string
 	ResetPath    string
 	CounterPath  string
-	VectorsDir   string
-	Client       *http.Client
+	// VectorsDir, when set, makes Run load the vectors from this directory instead of the embedded copy
+	// (DefaultVectors).
+	VectorsDir string
+	Client     *http.Client
 }
 
 // StepOutcome is the result of evaluating one step's response against its expectation.

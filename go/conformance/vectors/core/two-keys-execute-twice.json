@@ -1,0 +1,30 @@
+{
+  "id": "core/two-keys-execute-twice",
+  "tier": "core",
+  "title": "Two different keys with the same payload execute twice",
+  "draftRef": "section-2.2",
+  "description": "Uniqueness is defined by the key, not the payload. The same body under two keys is two operations.",
+  "fixture": "echo",
+  "steps": [
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-two-1", "Content-Type": "text/plain" },
+        "body": "same"
+      },
+      "expect": { "status": 201, "handlerInvocations": 1 }
+    },
+    {
+      "id": "second",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-two-2", "Content-Type": "text/plain" },
+        "body": "same"
+      },
+      "expect": { "status": 201, "handlerInvocations": 2 }
+    }
+  ]
+}

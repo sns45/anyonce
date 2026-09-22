@@ -1,0 +1,22 @@
+{
+  "id": "profile/key-too-long",
+  "tier": "profile",
+  "title": "A key longer than 255 bytes yields 400 invalid-key",
+  "description": "anyonce profile (D7): keys are 1 to 255 bytes of printable ASCII. The draft sets no maximum; this is recorded as a draft gap.",
+  "fixture": "echo",
+  "steps": [
+    {
+      "id": "too-long",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": {
+          "Idempotency-Key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "Content-Type": "text/plain"
+        },
+        "body": "long"
+      },
+      "expect": { "status": 400, "bodyJson": { "code": "invalid-key" }, "handlerInvocations": 0 }
+    }
+  ]
+}

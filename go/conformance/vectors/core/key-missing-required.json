@@ -1,0 +1,23 @@
+{
+  "id": "core/key-missing-required",
+  "tier": "core",
+  "title": "Missing Idempotency-Key on a documented idempotent operation yields 400",
+  "draftRef": "section-2.7",
+  "description": "The fixture's POST routes require the header. The resource replies 400 and does not run the handler.",
+  "fixture": "echo",
+  "steps": [
+    {
+      "id": "missing",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Content-Type": "text/plain" },
+        "body": "no key"
+      },
+      "expect": {
+        "status": 400,
+        "handlerInvocations": 0
+      }
+    }
+  ]
+}

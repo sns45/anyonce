@@ -1,27 +1,42 @@
 package conformance
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
-	"path/filepath"
-	"runtime"
+	"path"
 	"sort"
 	"strings"
 )
 
-// DefaultVectorsDir is conformance/vectors at the repository root, resolved from this file's location. Callers
-// outside the repository pass Options.VectorsDir.
-func DefaultVectorsDir() string {
-	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "..", "..", "conformance", "vectors")
+// embedded holds go/conformance/vectors, a byte for byte copy of the repository's conformance/vectors kept inside
+// the module so the module zip carries it. A parity test fails when the two trees differ.
+//
+//go:embed vectors
+var embedded embed.FS
+
+// DefaultVectors returns every core and profile vector embedded in this package, sorted by id. It works wherever
+// the module is used, inside the repository or from the module cache. Options.VectorsDir overrides it in Run.
+func DefaultVectors() ([]Vector, error) {
+	sub, err := fs.Sub(embedded, "vectors")
+	if err != nil {
+		return nil, fmt.Errorf("conformance: embedded vectors: %w", err)
+	}
+	return LoadVectorsFS(sub)
 }
 
 // LoadVectors reads every core and profile vector under dir, sorted by id.
 func LoadVectors(dir string) ([]Vector, error) {
+	return LoadVectorsFS(os.DirFS(dir))
+}
+
+// LoadVectorsFS reads every core and profile vector under the core and profile directories of fsys, sorted by id.
+func LoadVectorsFS(fsys fs.FS) ([]Vector, error) {
 	var vectors []Vector
 	for _, tier := range []string{"core", "profile"} {
-		entries, err := os.ReadDir(filepath.Join(dir, tier))
+		entries, err := fs.ReadDir(fsys, tier)
 		if err != nil {
 			return nil, fmt.Errorf("conformance: read %s: %w", tier, err)
 		}
@@ -29,7 +44,7 @@ func LoadVectors(dir string) ([]Vector, error) {
 			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 				continue
 			}
-			data, err := os.ReadFile(filepath.Join(dir, tier, entry.Name()))
+			data, err := fs.ReadFile(fsys, path.Join(tier, entry.Name()))
 			if err != nil {
 				return nil, fmt.Errorf("conformance: read %s: %w", entry.Name(), err)
 			}
