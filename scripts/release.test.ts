@@ -22,6 +22,7 @@ type Step = {
 };
 type Job = {
   if?: string;
+  environment?: string;
   permissions?: Record<string, string>;
   defaults?: { run?: { 'working-directory'?: string } };
   steps: Step[];
@@ -317,7 +318,8 @@ describe('release: workflow', () => {
 
   test('REQ-REL-2: release.yml verifies each keyless bundle with cosign against the workflow identity', () => {
     const job = readWorkflow().jobs.npm as Job;
-    expect(job.steps.some((s) => s.uses?.startsWith('sigstore/cosign-installer@'))).toBe(true);
+    const installers = job.steps.filter((s) => s.uses?.startsWith('sigstore/cosign-installer@'));
+    expect(installers.map((s) => s.uses)).toEqual(['sigstore/cosign-installer@v4.1.2']);
     const script = runs(job);
     const cosign = /cosign verify-blob --bundle "([^"]+)"[^\n]*/g;
     const lines = [...script.matchAll(cosign)].map((m) => m[0]);
@@ -325,12 +327,62 @@ describe('release: workflow', () => {
       ['$base.cdx.json.sigstore.json', '$tgz.sigstore.json'].sort(),
     );
     for (const line of lines) {
-      expect(line).toContain("--certificate-identity-regexp '^https://github.com/sns45/anyonce/'");
+      expect(line).toContain(
+        String.raw`--certificate-identity-regexp '^https://github\.com/sns45/anyonce/\.github/workflows/release\.yml@'`,
+      );
       expect(line).toContain(
         '--certificate-oidc-issuer https://token.actions.githubusercontent.com',
       );
     }
     expect(script.indexOf('cosign verify-blob')).toBeLessThan(script.indexOf('npm publish'));
+  });
+
+  test('REQ-REL-2: release.yml publishes only a commit on main, behind the npm-release environment', () => {
+    const job = readWorkflow().jobs.npm as Job;
+    expect(job.environment).toBe('npm-release');
+    const checkout = job.steps.find((s) => s.uses?.startsWith('actions/checkout@')) as Step;
+    expect(checkout.with?.['fetch-depth']).toBe(0);
+    const publish = job.steps.find((s) => (s.run ?? '').includes('npm publish')) as Step;
+    const onMain = job.steps.find((s) => (s.run ?? '').includes('git merge-base')) as Step;
+    expect(onMain.if).toBe(publish.if);
+    expect(onMain.run).toContain(
+      'git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main',
+    );
+    expect(onMain.run).toContain('git merge-base --is-ancestor "$GITHUB_SHA" origin/main');
+    expect(onMain.run).toContain('exit 1');
+    expect(job.steps.indexOf(onMain)).toBeLessThan(job.steps.indexOf(publish));
+    // Repository settings are the owner's job; the workflow says so next to the environment.
+    const text = readFileSync(join(root, '.github/workflows/release.yml'), 'utf8');
+    expect(text).toMatch(/required reviewers on the npm-release environment/);
+  });
+
+  test('REQ-REL-2: release.yml publishes @anyonce/core first and skips a version already on npm', () => {
+    const job = readWorkflow().jobs.npm as Job;
+    const publish = (job.steps.find((s) => (s.run ?? '').includes('npm publish')) as Step)
+      .run as string;
+    const coreLoop = publish.indexOf('for tgz in dist-release/anyonce-core-*.tgz');
+    const restLoop = publish.indexOf('for tgz in dist-release/*.tgz');
+    expect(coreLoop).toBeGreaterThan(-1);
+    expect(restLoop).toBeGreaterThan(coreLoop);
+    expect(publish).toContain('dist-release/anyonce-core-*) continue');
+    expect(publish).toContain('npm view "$name@$version" version');
+    expect(publish.indexOf('npm view')).toBeLessThan(publish.indexOf('npm publish'));
+    expect(publish).toContain('return 0');
+  });
+
+  test('REQ-CONF-7: release.yml loads the packed conformance vectors outside the checkout before publishing', () => {
+    const job = readWorkflow().jobs.npm as Job;
+    const check = job.steps.find((s) =>
+      (s.run ?? '').includes('scripts/release/packed-vectors.ts'),
+    ) as Step;
+    expect(check.run).toBe(
+      'bun scripts/release/packed-vectors.ts dist-release/anyonce-conformance-*.tgz',
+    );
+    expect(check.if).toBeUndefined();
+    const pack = job.steps.find((s) => (s.run ?? '').includes('bun pm pack')) as Step;
+    const publish = job.steps.find((s) => (s.run ?? '').includes('npm publish')) as Step;
+    expect(job.steps.indexOf(pack)).toBeLessThan(job.steps.indexOf(check));
+    expect(job.steps.indexOf(check)).toBeLessThan(job.steps.indexOf(publish));
   });
 
   test('REQ-REL-2: release.yml never publishes through changesets and never signs the dry run way', () => {
