@@ -132,7 +132,7 @@ describe('ci workflow', () => {
     const text = runs(job);
     expect(text).toContain('rg -n "[\\x{2013}\\x{2014}]"');
     expect(text).toContain("--glob '!docs/reference/**'");
-    expect(text).toContain("rg -n 'console\\.(log|info|warn|error)\\(.*key' packages go");
+    expect(text).toContain("rg -n 'console\\.(log|info|warn|error)\\(.*key' packages go examples");
     for (const step of job.steps) {
       if (step.name === 'dash gate' || step.name === 'key-log gate') {
         expect(step.shell).toBe('bash');

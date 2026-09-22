@@ -27,7 +27,7 @@ jobs:
       - name: key-log gate
         shell: bash
         run: |
-          ! rg -n 'console\.(log|info|warn|error)\(.*key' packages go
+          ! rg -n 'console\.(log|info|warn|error)\(.*key' packages go examples
       - run: bun run build
       - run: bun run typecheck
       - run: bun run size

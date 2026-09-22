@@ -8,7 +8,7 @@ Each gate is run with `verification-before-completion`. Paste the raw command ou
 - [ ] `bun run lint` clean, `bun run build` clean, `bun run test` green, `bun run test:reqs` reports no uncovered REQ ids in this phase's scope
 - [ ] `cd go && go vet ./... && go test -race ./... && golangci-lint run` clean (once Go code exists)
 - [ ] No em or en dashes: `rg -n "[\x{2013}\x{2014}]" --glob '!node_modules' --glob '!*.lock' --glob '!docs/reference/**' .` returns nothing
-- [ ] No full keys logged: `rg -n "console\.(log|info|warn|error)\(.*key" packages go` reviewed, only `redactKey` usages
+- [ ] No full keys logged: `rg -n "console\.(log|info|warn|error)\(.*key" packages go examples` reviewed, only `redactKey` usages
 - [ ] Changeset present for any public API change
 - [ ] `docs/superpowers/questions.md` reviewed; every open question has a recommended resolution
 
