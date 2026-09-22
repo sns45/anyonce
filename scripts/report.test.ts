@@ -452,6 +452,20 @@ describe('scripts/report: wrangler readiness (REQ-CONF-8)', () => {
     expect(withSgr).toBe('http://127.0.0.1:18906');
   });
 
+  // wrangler's own colorizer can wrap the URL itself in an SGR sequence (an underline or a link hint), not
+  // only the "[wrangler:info]" prefix, so the stripped result must not retain any escape bytes glued to the
+  // captured URL either.
+  test('REQ-CONF-8: wrangler readiness strips SGR escapes that wrap the URL portion of the Ready line', async () => {
+    const neverReadyProbe = async () => statusResponse(503);
+
+    const url = await waitForWorkerReady(
+      asyncLines(['[wrangler:info] Ready on \x1b[4mhttp://127.0.0.1:18906\x1b[0m\n']),
+      neverReadyProbe,
+      baseOpts(),
+    );
+    expect(url).toBe('http://127.0.0.1:18906');
+  });
+
   test('REQ-CONF-8: wrangler readiness falls back to an HTTP probe of GET /counter once the port is announced but the Ready line never comes', async () => {
     const statuses = [503, 503, 200];
     let calls = 0;

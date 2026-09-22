@@ -37,17 +37,21 @@ const WORKER_CONFIG = join(WORKER_DIR, 'wrangler.jsonc');
 const WRANGLER_BIN = join(REPO_ROOT, 'node_modules', '.bin', 'wrangler');
 
 /** wrangler dev prints "[wrangler:info] Ready on http://127.0.0.1:<port>" once workerd is listening. That
- * line is the readiness signal: the collector never sleeps a fixed amount and never polls the port. */
+ * line is the primary readiness signal. waitForWorkerReady below also races a bounded HTTP probe of GET
+ * /counter against it (REQ-CONF-8 Step 2, WRANGLER_PROBE_ATTEMPTS/INTERVAL_MS), for the case where wrangler
+ * keeps running but never prints this line; the probe is a fixed number of attempts on a fixed interval,
+ * never an unbounded poll, and the collector still never sleeps a fixed amount waiting for either signal. */
 const WRANGLER_READY_PATTERN = /Ready on (http:\S+)/;
 
 /** Generous, because a cold wrangler dev bundles the worker before workerd starts; about ten seconds is
  * typical. A hung start has to fail with a message rather than block the whole collection forever. */
 const WRANGLER_READY_TIMEOUT_MS = 120_000;
 
-/** Bounded retry for waitForWorkerReady's HTTP probe fallback (REQ-CONF-8 Step 2): five attempts half a
- * second apart, so the worst case adds two and a half seconds on top of whatever the Ready line would have
- * taken. Never a fixed sleep on its own: WRANGLER_READY_TIMEOUT_MS above remains the ceiling if neither the
- * Ready line nor the probe ever succeeds. */
+/** Bounded retry for waitForWorkerReady's HTTP probe fallback (REQ-CONF-8 Step 2): five attempts, the first
+ * fired immediately and the rest half a second apart, so four gaps of half a second between them; the worst
+ * case adds two seconds on top of whatever the Ready line would have taken. Never a fixed sleep on its own:
+ * WRANGLER_READY_TIMEOUT_MS above remains the ceiling if neither the Ready line nor the probe ever succeeds.
+ */
 const WRANGLER_PROBE_ATTEMPTS = 5;
 const WRANGLER_PROBE_INTERVAL_MS = 500;
 
@@ -519,10 +523,17 @@ export async function waitForWorkerReady(
     timeoutMs,
     `${context}: wrangler dev was not ready within ${timeoutMs} ms`,
   );
+  // Set once either signal wins, so the loser stops doing further work of its own accord instead of running
+  // for the lifetime of the wrangler process it was racing against. Each loop only checks this at the top of
+  // an iteration, so the loser's already-pending operation (one more chunk read, one more probe in flight)
+  // still completes; that single extra step is harmless and is what "settled" is for; it is not, and does not
+  // need to be, instant cancellation.
+  let settled = false;
 
   async function watchReadyLine(): Promise<string> {
     let buffer = '';
     for await (const chunk of lines) {
+      if (settled) return neverResolves<string>();
       buffer += chunk;
       const found = parseReadyUrl(buffer);
       if (found !== undefined) return found;
@@ -532,6 +543,7 @@ export async function waitForWorkerReady(
 
   async function watchProbe(): Promise<string> {
     for (let attempt = 0; attempt < attempts; attempt++) {
+      if (settled) return neverResolves<string>();
       if (attempt > 0) await wait(intervalMs);
       try {
         const response = await probe();
@@ -543,14 +555,22 @@ export async function waitForWorkerReady(
     // Exhausted without a 200: never resolve or reject here. watchReadyLine may still succeed, wrangler may
     // exit (watchReadyLine's own rejection), or the timer will fire; a probe that gave up must not itself fail
     // a run that may still be legitimately starting.
-    return new Promise<string>(() => {});
+    return neverResolves<string>();
   }
 
   try {
-    return await Promise.race([watchReadyLine(), watchProbe(), timer.promise]);
+    const winner = await Promise.race([watchReadyLine(), watchProbe(), timer.promise]);
+    settled = true;
+    return winner;
   } finally {
     timer.cancel();
   }
+}
+
+/** A promise that never settles, for a losing branch of a race that must stop competing without itself
+ * resolving or rejecting. */
+function neverResolves<T>(): Promise<T> {
+  return new Promise<T>(() => {});
 }
 
 /** Adapts a stream reader into the AsyncIterable<string> waitForWorkerReady consumes, so the collector's real
