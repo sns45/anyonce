@@ -3,7 +3,6 @@ package webhookmw
 import (
 	"log"
 	"net/http"
-	"strings"
 
 	"github.com/sns45/anyonce/go/anyonce"
 	"github.com/sns45/anyonce/go/internal/httpx"
@@ -124,21 +123,7 @@ func webhookTitles(idHeader string, overrides map[Code]string) map[Code]string {
 
 // resolve applies the documented defaults and builds the methods and storeHeaders lookup sets.
 func (o Options) resolve() resolved {
-	r := resolved{Options: o, required: true, methods: map[string]bool{}, storeHeaders: map[string]bool{}}
-	methods := o.Methods
-	if len(methods) == 0 {
-		methods = DefaultMethods
-	}
-	for _, m := range methods {
-		r.methods[strings.ToUpper(m)] = true
-	}
-	headers := o.StoreHeaders
-	if headers == nil {
-		headers = DefaultStoreHeaders
-	}
-	for _, h := range headers {
-		r.storeHeaders[http.CanonicalHeaderKey(h)] = true
-	}
+	r := resolved{Options: o, required: true, methods: httpx.MethodSet(o.Methods, DefaultMethods), storeHeaders: httpx.HeaderSet(o.StoreHeaders, DefaultStoreHeaders)}
 	// Q25: a verified delivery with no id is a sender bug, so the default is true and Required is a pointer
 	// purely so that false can be told from unset.
 	if o.Required != nil {

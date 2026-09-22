@@ -2,7 +2,6 @@ package httpmw
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/sns45/anyonce/go/anyonce"
 	"github.com/sns45/anyonce/go/internal/httpx"
@@ -81,21 +80,7 @@ type resolved struct {
 
 // resolve applies the documented defaults and builds the methods and storeHeaders lookup sets.
 func (o Options) resolve() resolved {
-	r := resolved{Options: o, methods: map[string]bool{}, storeHeaders: map[string]bool{}}
-	methods := o.Methods
-	if len(methods) == 0 {
-		methods = DefaultMethods
-	}
-	for _, m := range methods {
-		r.methods[strings.ToUpper(m)] = true
-	}
-	headers := o.StoreHeaders
-	if headers == nil {
-		headers = DefaultStoreHeaders
-	}
-	for _, h := range headers {
-		r.storeHeaders[http.CanonicalHeaderKey(h)] = true
-	}
+	r := resolved{Options: o, methods: httpx.MethodSet(o.Methods, DefaultMethods), storeHeaders: httpx.HeaderSet(o.StoreHeaders, DefaultStoreHeaders)}
 	if r.HeaderName == "" {
 		r.HeaderName = DefaultHeaderName
 	}
