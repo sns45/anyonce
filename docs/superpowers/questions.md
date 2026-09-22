@@ -364,3 +364,51 @@ Fiber's `idempotency.Config` defaults `KeyHeader` to `X-Idempotency-Key`, not `I
 Recommended resolution: configure the Fiber fixture with `KeyHeader: "Idempotency-Key"` and a permissive `KeyHeaderValidate` that accepts every key (`func(string) error { return nil }`, so the fixture adds no validation Fiber does not have), and print both overrides in `conformance/REPORT.md`'s notes for that row so the departure from defaults is visible. Record the two defaults themselves as findings in the Fiber issue drafts: the header name is a draft-conformance gap, and the 500 in place of a 400 is an error-handling gap against draft section 2.7.
 
 **Decision: pending.** P5 proceeds on the recommendation.
+
+## Q60: `npm pack` publishes `workspace:*` peer ranges verbatim
+
+Every package that depends on `@anyonce/core` (`@anyonce/anyq`, `@anyonce/hono`, `@anyonce/stores`, `@anyonce/webhooks`) declares it as a peer with `workspace:*`. Checked on 22 September 2026: `npm pack` in `packages/hono` writes `"@anyonce/core": "workspace:*"` into the packed `package.json`, which npm cannot install, and `changeset publish` publishes through npm. `bun pm pack` rewrites the protocol (to the exact version for `workspace:*`).
+
+Recommended resolution: pack every package with `bun pm pack` and publish the tarball with `npm publish <tarball> --provenance --access public`, so provenance still comes from npm. Change the four peers to `workspace:^` so the packed range is `^0.1.0` rather than an exact pin. The dry run and the release workflow both check every packed manifest for a leftover `workspace:` specifier. CHECKLIST's "`npm pack` for every package" is read as "pack every package"; the command is `bun pm pack`.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q61: forgeseal keyless signing is an external action
+
+REQ-REL-2 asks for forgeseal SBOM plus Sigstore signing of the release tarballs. forgeseal v0.5.1 (`go install github.com/sns45/forgeseal/cmd/forgeseal@v0.5.1`, installable locally) signs keyless through Fulcio and records every signature in the public Rekor transparency log, which is a publication, and it needs an OIDC identity this machine does not have non-interactively. It also offers keyed signing against a local CA (`forgeseal ca`, `forgeseal sign --keyed`).
+
+Recommended resolution: the P6 dry run generates the SBOM for every tarball and signs tarball and SBOM in keyed mode with a throwaway CA created inside the dry run's scratch directory, then verifies both, so the whole pipeline is exercised without any network write. The release workflow signs keyless under GitHub Actions OIDC, and only on a tag or a manual dispatch.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q62: the README's case study link and conformance badge before P7
+
+REQ-DOC-1 asks for a conformance badge and a link to the case study. The case study is written and published in P7 on in8.sh, so the link has no target during P6, and a badge service is outside the repository.
+
+Recommended resolution: link `https://in8.sh/anyonce` (the same host and prefix as the D11 problem base URI) with the words "case study, published at launch". The badge is a static shields.io image whose text states anyonce's own core and profile pass counts, links to `conformance/REPORT.md`, and is asserted against `conformance/results/` by a test, so it cannot drift from the report. No badge endpoint is hosted.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q63: how NFR-1's "under 2 ms p50" is measured
+
+NFR-1 says the HTTP adapter adds under 2 ms p50 with the memory store, measured in `benchmarks/` and published in the README. It does not say what the baseline is, which path is timed, or in which process.
+
+Recommended resolution: in process, one runtime, sequential requests: the same trivial handler bare and wrapped in `withIdempotency` with the memory store, timed with `performance.now()` around `fetch(request)`. Two paths are measured, first execution (a fresh key per request) and replay (one key), and overhead is the wrapped p50 minus the bare p50 for each. The README table records runtime, OS, CPU model and iteration count. The CI test asserts both overheads under the spec's 2 ms and nothing tighter, so a slow shared runner does not flake it. Network and store latency are excluded by construction; they belong to the deployment, not the adapter.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q64: the parts of REL-2, REL-3 and section 7 that need the real release
+
+REQ-REL-2 (provenance visible on npm), REQ-REL-3 (tag `go/v0.1.0`, pkg.go.dev renders), section 7 item 5 and CHECKLIST's "Real release only after explicit go" can only be observed after a publish and a tag push, both of which are external actions this phase may not take.
+
+Recommended resolution: P6 proves everything short of the publish: the workflow's triggers, permissions and steps are pinned by tests, every package's doc comment exists so pkg.go.dev has something to render, and the dry run exercises version, build, pack, SBOM and signature. The CHECKLIST real-release line stays unticked and points here; it is done when the owner gives the go, the version PR merges, and the tags are pushed.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q65: whether the 0.1.0 version bump is committed in P6
+
+CHECKLIST's dry-run line starts with `bunx changeset version`. Running it on the integration branch would consume the pending changesets and commit 0.1.0 versions and changelogs before the release is approved, and every later change (the P6 review fixes, anything in P7) would then need a second bump to reach users.
+
+Recommended resolution: the dry run exports `HEAD` into a scratch directory with `git archive` and runs `changeset version` there; nothing it writes reaches the branch. The version commit is the first step of the real release, in its own PR, after the owner's go.
+
+**Decision: pending.** P6 proceeds on the recommendation.
