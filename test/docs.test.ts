@@ -26,6 +26,26 @@ function walk(dir: string): string[] {
   return out;
 }
 
+/** GitHub's heading anchors: lowercase, punctuation other than hyphens and spaces dropped, spaces to hyphens. */
+function anchors(markdown: string): Set<string> {
+  const out = new Set<string>();
+  const seen = new Map<string, number>();
+  let inFence = false;
+  for (const line of markdown.split('\n')) {
+    if (line.startsWith('```')) inFence = !inFence;
+    const m = inFence ? null : line.match(/^#{1,6} (.+)$/);
+    if (m === null) continue;
+    const base = (m[1] ?? '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}_\- ]/gu, '')
+      .replace(/ /g, '-');
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    out.add(count === 0 ? base : `${base}-${count}`);
+  }
+  return out;
+}
+
 /** The body of the section a heading line opens, up to the next heading of the same or a higher level. */
 function section(markdown: string, heading: RegExp): string | undefined {
   const lines = markdown.split('\n');
@@ -55,10 +75,13 @@ describe('docs', () => {
 
   test('REQ-DOC-2: semantics states the honest limits and the Workers waitUntil note', () => {
     const semantics = read('docs/semantics.md');
-    expect(semantics).toContain('waitUntil');
+    expect(semantics).toContain('No `ctx.waitUntil` is needed or used for correctness');
+    expect(semantics).toContain('if the client disconnects mid body');
     expect(semantics).toContain('does not roll back');
     expect(semantics).toContain('at most one handler execution per key while the record is alive');
-    for (const field of ['routeScope', 'keyLookup', 'body']) expect(semantics).toContain(field);
+    for (const field of ['routeScope', 'keyLookup', 'body']) {
+      expect(semantics).toMatch(new RegExp(`^\\| \`${field}\` \\|`, 'm'));
+    }
     expect(semantics).toContain('stale_fence');
   });
 
@@ -129,8 +152,8 @@ describe('docs', () => {
       'newKey()',
       'UUIDv4',
       '122',
-      'principal',
-      'requirePrincipal',
+      '`principal`',
+      '`requirePrincipal: true`',
       'sourceId',
       'redactKey',
       '8 characters',
@@ -150,13 +173,19 @@ describe('docs', () => {
     const broken: string[] = [];
     for (const name of files) {
       const text = readFileSync(join(docs, name), 'utf8');
-      const re = /\]\(([^)\s]+)\)/g;
+      const re = /\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
       for (let m = re.exec(text); m !== null; m = re.exec(text)) {
         const target = m[1] ?? '';
-        if (/^(https?:|mailto:)/.test(target) || target.startsWith('#')) continue;
-        const path = target.split('#')[0] ?? '';
-        if (!existsSync(resolve(dirname(join(docs, name)), path)))
+        if (/^(https?:|mailto:)/.test(target)) continue;
+        const [path = '', anchor] = target.split('#');
+        const file = path === '' ? join(docs, name) : resolve(dirname(join(docs, name)), path);
+        if (!existsSync(file)) {
           broken.push(`${name}: ${target}`);
+          continue;
+        }
+        if (anchor !== undefined && file.endsWith('.md')) {
+          if (!anchors(readFileSync(file, 'utf8')).has(anchor)) broken.push(`${name}: ${target}`);
+        }
       }
     }
     expect(broken).toEqual([]);
