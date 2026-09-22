@@ -33,6 +33,16 @@
         "hono": "^4.0.0",
       },
     },
+    "examples/anyq-consumer-ts": {
+      "name": "@anyonce-examples/anyq-consumer-ts",
+      "version": "0.0.0",
+      "dependencies": {
+        "@anyonce/anyq": "workspace:*",
+        "@anyonce/core": "workspace:*",
+        "@anyq/core": "0.5.0",
+        "@anyq/memory": "0.5.0",
+      },
+    },
     "examples/lambda-fetch-dynamodb": {
       "name": "@anyonce-examples/lambda-fetch-dynamodb",
       "version": "0.0.0",
@@ -179,6 +189,8 @@
     "@ampproject/remapping": ["@ampproject/remapping@2.3.0", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.5", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw=="],
 
     "@anyhook/signing": ["@anyhook/signing@0.2.2", "", { "peerDependencies": { "typescript": "^5.0.0" } }, "sha512-sVps0wCKMoaVBA6lfRi9aTIF5DFekddwV7oHGHDTC/Z8ySp3TX+QDvZKjgL+x7xrCJzFvMNlOhdRuDnp7G+aCQ=="],
+
+    "@anyonce-examples/anyq-consumer-ts": ["@anyonce-examples/anyq-consumer-ts@workspace:examples/anyq-consumer-ts"],
 
     "@anyonce-examples/lambda-fetch-dynamodb": ["@anyonce-examples/lambda-fetch-dynamodb@workspace:examples/lambda-fetch-dynamodb"],
 

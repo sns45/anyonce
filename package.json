@@ -7,7 +7,8 @@
     "conformance/fixtures/*",
     "examples/worker-hono-do",
     "examples/lambda-fetch-dynamodb",
-    "examples/webhook-receiver-standard-webhooks"
+    "examples/webhook-receiver-standard-webhooks",
+    "examples/anyq-consumer-ts"
   ],
   "scripts": {
     "lint": "biome check .",
@@ -19,7 +20,7 @@
     "test:services": "bun test test/compose.test.ts packages/stores/services packages/anyq/services",
     "test:reqs": "bun run scripts/reqs.ts --phase p3 && bun run scripts/reqs.ts --phase p4a && bun run scripts/reqs.ts --phase p4b && bun run scripts/reqs.ts --phase p5",
     "size": "bun run scripts/size.ts",
-    "typecheck": "bun run --filter '@anyonce/*' typecheck && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p test/tsconfig.json && tsc --noEmit -p test/workers/tsconfig.json && tsc --noEmit -p packages/stores/workers/tsconfig.json && tsc --noEmit -p conformance/report/worker/tsconfig.json && tsc --noEmit -p examples/worker-hono-do/tsconfig.json && tsc --noEmit -p examples/lambda-fetch-dynamodb/tsconfig.json && tsc --noEmit -p examples/webhook-receiver-standard-webhooks/tsconfig.json",
+    "typecheck": "bun run --filter '@anyonce/*' typecheck && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p test/tsconfig.json && tsc --noEmit -p test/workers/tsconfig.json && tsc --noEmit -p packages/stores/workers/tsconfig.json && tsc --noEmit -p conformance/report/worker/tsconfig.json && tsc --noEmit -p examples/worker-hono-do/tsconfig.json && tsc --noEmit -p examples/lambda-fetch-dynamodb/tsconfig.json && tsc --noEmit -p examples/webhook-receiver-standard-webhooks/tsconfig.json && tsc --noEmit -p examples/anyq-consumer-ts/tsconfig.json",
     "test:workers": "vitest run --config test/workers/vitest.config.ts",
     "test:node": "node --test test/node/*.test.mjs",
     "test:deno": "deno test --no-check --config test/deno/deno.json --allow-read --allow-env --allow-net=127.0.0.1 test/deno/",
