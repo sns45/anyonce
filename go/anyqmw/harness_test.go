@@ -65,6 +65,9 @@ type state struct {
 	applyErrs []error
 	ackErrs   []error
 	reinvokes []string
+	// reinvokeErrs holds what each failed re-invocation returned, in order. A re-invocation that succeeded
+	// adds nothing here, so a downgrade that took n re-invocations to reach the handler leaves n-1 entries.
+	reinvokeErrs []error
 }
 
 // driven records what the consumer did with each delivery: the broker id, the error the door returned, and
@@ -109,16 +112,25 @@ func (d *driven) reinvoked(id string) {
 	d.mu.Unlock()
 }
 
+// reinvokeFailed records the error a re-invocation returned. The downgrade loops on it: anyq re-runs the
+// strategy on that error, so a re-invocation that still meets the live claim parks and re-invokes again.
+func (d *driven) reinvokeFailed(err error) {
+	d.mu.Lock()
+	d.st.reinvokeErrs = append(d.st.reinvokeErrs, err)
+	d.mu.Unlock()
+}
+
 func (d *driven) snapshot() state {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return state{
-		ids:       append([]string(nil), d.st.ids...),
-		errs:      append([]error(nil), d.st.errs...),
-		handled:   append([]bool(nil), d.st.handled...),
-		applyErrs: append([]error(nil), d.st.applyErrs...),
-		ackErrs:   append([]error(nil), d.st.ackErrs...),
-		reinvokes: append([]string(nil), d.st.reinvokes...),
+		ids:          append([]string(nil), d.st.ids...),
+		errs:         append([]error(nil), d.st.errs...),
+		handled:      append([]bool(nil), d.st.handled...),
+		applyErrs:    append([]error(nil), d.st.applyErrs...),
+		ackErrs:      append([]error(nil), d.st.ackErrs...),
+		reinvokes:    append([]string(nil), d.st.reinvokes...),
+		reinvokeErrs: append([]error(nil), d.st.reinvokeErrs...),
 	}
 }
 
@@ -183,7 +195,11 @@ func driveWith(c consumer, wrapped core.Handler, seen *driven, settled *signal, 
 			seen.failed(err)
 			reinvoke := func() error {
 				seen.reinvoked(msg.ID())
-				return wrapped(ctx, msg)
+				reErr := wrapped(ctx, msg)
+				if reErr != nil {
+					seen.reinvokeFailed(reErr)
+				}
+				return reErr
 			}
 			handled, applyErr := c.ApplyStrategy(ctx, msg, err, reinvoke)
 			seen.applied(handled, applyErr)
