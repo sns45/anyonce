@@ -11,7 +11,7 @@ describe('package hygiene', () => {
       unknown
     >;
     expect(pkg.dependencies).toBeUndefined();
-    expect(pkg.peerDependencies).toEqual({ '@anyonce/core': 'workspace:*', hono: '>=4.8.0' });
+    expect(pkg.peerDependencies).toEqual({ '@anyonce/core': 'workspace:^', hono: '>=4.8.0' });
     expect(pkg.sideEffects).toBe(false);
   });
 
