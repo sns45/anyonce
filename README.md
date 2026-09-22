@@ -181,8 +181,15 @@ The badge above states anyonce's own result: every anyonce target, six TypeScrip
 
 ## Benchmarks
 
+NFR-1 states the HTTP adapter adds under 2 ms p50 over a bare handler with the memory store. How it is measured, and how to reproduce it, is in [benchmarks/README.md](benchmarks/README.md); the table below is written by `bun run bench`.
+
 <!-- bench:start -->
-Numbers are written by bun run bench.
+| Path | Bare p50 (ms) | Wrapped p50 (ms) | Overhead p50 (ms) | Wrapped p99 (ms) |
+| --- | --- | --- | --- | --- |
+| first execution | 0.001 | 0.007 | 0.006 | 0.407 |
+| replay | 0.001 | 0.005 | 0.004 | 0.013 |
+
+Measured on Bun 1.4.2, Darwin 27.0.0, Apple M4 Max, 20000 iterations per path.
 <!-- bench:end -->
 
 ## Go
