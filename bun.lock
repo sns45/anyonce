@@ -33,6 +33,19 @@
         "hono": "^4.0.0",
       },
     },
+    "examples/lambda-fetch-dynamodb": {
+      "name": "@anyonce-examples/lambda-fetch-dynamodb",
+      "version": "0.0.0",
+      "dependencies": {
+        "@anyonce/core": "workspace:*",
+        "@anyonce/stores": "workspace:*",
+        "@aws-sdk/client-dynamodb": "^3.1134.0",
+      },
+      "devDependencies": {
+        "@anyonce/conformance": "workspace:*",
+        "@anyonce/fixture-hono": "workspace:*",
+      },
+    },
     "examples/worker-hono-do": {
       "name": "@anyonce-examples/worker-hono-do",
       "version": "0.0.0",
@@ -155,6 +168,8 @@
     "@ampproject/remapping": ["@ampproject/remapping@2.3.0", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.5", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw=="],
 
     "@anyhook/signing": ["@anyhook/signing@0.2.2", "", { "peerDependencies": { "typescript": "^5.0.0" } }, "sha512-sVps0wCKMoaVBA6lfRi9aTIF5DFekddwV7oHGHDTC/Z8ySp3TX+QDvZKjgL+x7xrCJzFvMNlOhdRuDnp7G+aCQ=="],
+
+    "@anyonce-examples/lambda-fetch-dynamodb": ["@anyonce-examples/lambda-fetch-dynamodb@workspace:examples/lambda-fetch-dynamodb"],
 
     "@anyonce-examples/worker-hono-do": ["@anyonce-examples/worker-hono-do@workspace:examples/worker-hono-do"],
 
