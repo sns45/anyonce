@@ -6,6 +6,14 @@
  * Idempotency-Key on every call, so every call is a first begin) and replay (one fixed key, so every
  * measured call replays the result the priming call stored). Overhead is the wrapped path's p50 minus the
  * bare handler's p50. `bun run bench` runs this file directly and rewrites the bench block in README.md.
+ *
+ * The response body is read on every timed call, bare included, so the baseline has the same shape as the
+ * wrapped calls. This is not just fairness: capture.ts streams the wrapped response pull driven (Q19), so
+ * the idempotency record settles (moves out of in_flight) only once its body has been read. A call that
+ * never reads the body leaves the record in_flight forever, so the next call with that key sees a 409
+ * conflict, not a replay. Every wrapped response is also checked (assertFirstExecution / assertReplay)
+ * against the path it should have taken, so a regression here fails loudly instead of silently timing the
+ * wrong thing.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { cpus, type as osType, release } from 'node:os';
@@ -58,8 +66,32 @@ function toStats(times: readonly number[]): Stats {
   return { p50Ms: percentile(sorted, 50), p99Ms: percentile(sorted, 99) };
 }
 
-/** Sequential awaits, timed one at a time with performance.now() around each call. */
-async function timeCalls(n: number, run: () => Promise<Response>): Promise<number[]> {
+/** Throws if a call meant to be a first execution was not: status 201 and no Idempotency-Replayed header. */
+function assertFirstExecution(res: Response): void {
+  const replayed = res.headers.get('Idempotency-Replayed');
+  if (res.status !== 201 || replayed !== null) {
+    throw new Error(
+      `benchmark harness: expected a first execution (201, no Idempotency-Replayed), got ${res.status} Idempotency-Replayed=${String(replayed)}`,
+    );
+  }
+}
+
+/** Throws if a call meant to be a replay was not: status 201 and Idempotency-Replayed: true. */
+function assertReplay(res: Response): void {
+  const replayed = res.headers.get('Idempotency-Replayed');
+  if (res.status !== 201 || replayed !== 'true') {
+    throw new Error(
+      `benchmark harness: expected a replay (201, Idempotency-Replayed: true), got ${res.status} Idempotency-Replayed=${String(replayed)}`,
+    );
+  }
+}
+
+/**
+ * Sequential awaits, timed one at a time with performance.now() around each call. `run` reads the
+ * response body itself (Q19: a wrapped record settles only once its body is read), so the timed region
+ * covers the whole request lifecycle on every path, bare included.
+ */
+async function timeCalls(n: number, run: () => Promise<void>): Promise<number[]> {
   const times: number[] = [];
   for (let i = 0; i < n; i++) {
     const start = performance.now();
@@ -76,22 +108,37 @@ async function timeCalls(n: number, run: () => Promise<Response>): Promise<numbe
 export async function measure(opts: { iterations: number; warmup: number }): Promise<BenchResult> {
   const { iterations, warmup } = opts;
 
-  const runBare = (): Promise<Response> => handler(makeRequest());
+  const runBare = async (): Promise<void> => {
+    const res = await handler(makeRequest());
+    await res.arrayBuffer();
+  };
 
   let firstCounter = 0;
   const firstStore = new MemoryStore();
   const firstWrapped = withIdempotency(handler, { store: firstStore });
-  const runFirst = (): Promise<Response> => {
+  const runFirst = async (): Promise<void> => {
     firstCounter += 1;
-    return firstWrapped(makeRequest(`bench-first-${firstCounter}`));
+    const res = await firstWrapped(makeRequest(`bench-first-${firstCounter}`));
+    assertFirstExecution(res);
+    await res.arrayBuffer();
   };
 
   const replayStore = new MemoryStore();
   const replayWrapped = withIdempotency(handler, { store: replayStore });
-  const runReplay = (): Promise<Response> => replayWrapped(makeRequest('bench-replay'));
+  const REPLAY_KEY = 'bench-replay';
+  const runReplay = async (): Promise<void> => {
+    const res = await replayWrapped(makeRequest(REPLAY_KEY));
+    assertReplay(res);
+    await res.arrayBuffer();
+  };
 
-  // Primes the replay record once, outside every timed and warmup call, so every one of those is a real replay.
-  await runReplay();
+  // Primes the replay record once, outside every timed and warmup call, so every one of those is a real
+  // replay. The priming call is itself a first execution, and its body must be read too (Q19): an unread
+  // body leaves the record in_flight, and every later call with this key would see 409 conflict instead
+  // of a replay.
+  const priming = await replayWrapped(makeRequest(REPLAY_KEY));
+  assertFirstExecution(priming);
+  await priming.arrayBuffer();
 
   for (let i = 0; i < warmup; i++) await runBare();
   for (let i = 0; i < warmup; i++) await runFirst();

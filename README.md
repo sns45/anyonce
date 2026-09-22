@@ -186,8 +186,8 @@ NFR-1 states the HTTP adapter adds under 2 ms p50 over a bare handler with the m
 <!-- bench:start -->
 | Path | Bare p50 (ms) | Wrapped p50 (ms) | Overhead p50 (ms) | Wrapped p99 (ms) |
 | --- | --- | --- | --- | --- |
-| first execution | 0.001 | 0.007 | 0.006 | 0.407 |
-| replay | 0.001 | 0.005 | 0.004 | 0.013 |
+| first execution | 0.001 | 0.009 | 0.008 | 0.454 |
+| replay | 0.001 | 0.005 | 0.004 | 0.014 |
 
 Measured on Bun 1.4.2, Darwin 27.0.0, Apple M4 Max, 20000 iterations per path.
 <!-- bench:end -->

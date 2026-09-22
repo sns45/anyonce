@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { MemoryStore } from '@anyonce/core';
+import { withIdempotency } from '@anyonce/core/http';
 import { measure, renderBenchBlock, writeReadme } from './http-overhead';
 
 const root = resolve(import.meta.dir, '..');
@@ -13,6 +15,44 @@ describe('NFR-1: HTTP adapter overhead', () => {
     expect(result.overheadP50Ms.firstExecution).toBeLessThan(2);
     expect(result.overheadP50Ms.replay).toBeLessThan(2);
   }, 10_000);
+
+  test("NFR-1: the benchmark's wrapped paths really execute and really replay", async () => {
+    // measure() throws internally (assertFirstExecution / assertReplay) if a wrapped call did not take the
+    // path it was meant to, e.g. a first-execution call comes back replayed, or a replay call comes back a
+    // 409 conflict because the priming call's record never settled. A small, fast run is enough to prove
+    // the harness's own path assumptions hold; the size and speed of the run are covered separately above.
+    await expect(measure({ iterations: 20, warmup: 5 })).resolves.toEqual(
+      expect.objectContaining({ iterations: 20 }),
+    );
+  });
+
+  test('NFR-1: reading a first execution response body completes the record, so a repeat call under the same key replays', async () => {
+    const store = new MemoryStore();
+    const wrapped = withIdempotency(
+      async (req: Request) => {
+        await req.text();
+        return new Response('ok', { status: 201, headers: { 'Content-Type': 'text/plain' } });
+      },
+      { store },
+    );
+    const request = (): Request =>
+      new Request('http://localhost/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'nfr1-completion' },
+        body: JSON.stringify({ item: 'book' }),
+      });
+
+    const first = await wrapped(request());
+    expect(first.status).toBe(201);
+    expect(first.headers.get('Idempotency-Replayed')).toBeNull();
+    // Q19: the wrapped response streams pull driven, so the record settles, and a same-key call can
+    // replay it, only once this body has been read.
+    await first.text();
+
+    const second = await wrapped(request());
+    expect(second.status).toBe(201);
+    expect(second.headers.get('Idempotency-Replayed')).toBe('true');
+  });
 
   test('NFR-1: writeReadme replaces only the text between the bench markers and refuses a README without them', () => {
     const readme = `# Title\n\nBefore.\n\n${START}\nold numbers\n${END}\n\nAfter.\n`;

@@ -6,14 +6,23 @@ fetch-shaped handler when the store is `MemoryStore` (`@anyonce/core`).
 ## Method
 
 Everything runs in one process, one runtime, as sequential awaits, timed with `performance.now()` around
-each call. A trivial handler reads the request body and returns a fixed 201. Three paths are measured
-against the same handler:
+each call, including the read of the response body. A trivial handler reads the request body and returns
+a fixed 201. Three paths are measured against the same handler:
 
 - bare: the handler called directly, no adapter.
 - first execution: the handler wrapped in `withIdempotency`, called with a fresh `Idempotency-Key` on
   every call, so every call is a first begin.
 - replay: the handler wrapped in `withIdempotency`, called with one fixed key after a priming call, so
   every measured call replays the stored result.
+
+The response body is read on every timed call, bare included, and not just for a fair comparison: the
+wrapped response streams pull driven (`packages/core/src/http/capture.ts`), so the idempotency record
+settles, moving out of `in_flight`, only once its body has been read. A call that skips this leaves the
+record `in_flight` forever, so the next call under that key gets a 409 conflict instead of a replay, an
+earlier version of this harness had exactly that bug. `measure()` also checks every wrapped response
+against the path it was meant to take (a first execution comes back 201 with no `Idempotency-Replayed`
+header, a replay comes back 201 with `Idempotency-Replayed: true`) and throws on a mismatch, so a
+regression here fails the benchmark instead of silently timing the wrong thing.
 
 Overhead is the wrapped path's p50 minus the bare path's p50, for each of the two wrapped paths. Every
 call gets a fresh `Request` built from a fresh body; a consumed `Request` is never reused. See
