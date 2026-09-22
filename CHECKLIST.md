@@ -68,9 +68,9 @@ Each gate is run with `verification-before-completion`. Paste the raw command ou
 
 ## P6 docs, examples, release
 
-- [ ] Six examples each have a CI smoke test that passes
-- [ ] Benchmarks script writes numbers into README; NFR-1 met
-- [ ] `llms.txt` present and accurate
+- [x] Six examples each have a CI smoke test that passes
+- [x] Benchmarks script writes numbers into README; NFR-1 met
+- [x] `llms.txt` present and accurate
 - [x] Dry-run release: `bunx changeset version`, `bun run build`, `npm pack` for every package, `go mod tidy` clean, forgeseal SBOM + signature generated for tarballs (run by `bun run release:dry-run`: packs with `bun pm pack` per Q60, signs keyed against a throwaway CA per Q61, versions a `git archive` copy per Q65)
 - [ ] Real release only after explicit go: npm provenance visible on `npm view @anyonce/core`, Go tag `go/v0.1.0` resolves (open until the owner's go, see Q64)
 
