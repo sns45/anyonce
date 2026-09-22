@@ -46,6 +46,17 @@
         "@anyonce/fixture-hono": "workspace:*",
       },
     },
+    "examples/webhook-receiver-standard-webhooks": {
+      "name": "@anyonce-examples/webhook-receiver-standard-webhooks",
+      "version": "0.0.0",
+      "dependencies": {
+        "@anyonce/core": "workspace:*",
+        "@anyonce/webhooks": "workspace:*",
+      },
+      "devDependencies": {
+        "@anyhook/signing": "0.2.2",
+      },
+    },
     "examples/worker-hono-do": {
       "name": "@anyonce-examples/worker-hono-do",
       "version": "0.0.0",
@@ -170,6 +181,8 @@
     "@anyhook/signing": ["@anyhook/signing@0.2.2", "", { "peerDependencies": { "typescript": "^5.0.0" } }, "sha512-sVps0wCKMoaVBA6lfRi9aTIF5DFekddwV7oHGHDTC/Z8ySp3TX+QDvZKjgL+x7xrCJzFvMNlOhdRuDnp7G+aCQ=="],
 
     "@anyonce-examples/lambda-fetch-dynamodb": ["@anyonce-examples/lambda-fetch-dynamodb@workspace:examples/lambda-fetch-dynamodb"],
+
+    "@anyonce-examples/webhook-receiver-standard-webhooks": ["@anyonce-examples/webhook-receiver-standard-webhooks@workspace:examples/webhook-receiver-standard-webhooks"],
 
     "@anyonce-examples/worker-hono-do": ["@anyonce-examples/worker-hono-do@workspace:examples/worker-hono-do"],
 
