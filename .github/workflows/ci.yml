@@ -148,3 +148,31 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build
       - run: bun run test:deno
+
+  # REQ-DOC-7: every example's smoke test. Only the two compose services the examples use are started.
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: docker compose -f test/compose.yml up -d --wait dynamodb postgres
+      - shell: bash
+        run: bun run test:examples 2>&1 | tee examples.log
+      - run: scripts/no-skips.sh examples.log
+      - run: bun run test:examples:workers
+      - name: go-net-http-postgres
+        working-directory: examples/go-net-http-postgres
+        env:
+          ANYONCE_REQUIRE_SERVICES: '1'
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+      - if: always()
+        run: docker compose -f test/compose.yml down -v
