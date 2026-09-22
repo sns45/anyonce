@@ -7,7 +7,7 @@ import { readChangesets } from '@changesets/read';
 import { getPackages } from '@manypkg/get-packages';
 import { parse } from 'yaml';
 import { parseBunLock, prunedLockfile } from './release/lockfile';
-import { checkPackedManifest } from './release/manifest';
+import { checkPackedFiles, checkPackedManifest } from './release/manifest';
 
 const root = join(import.meta.dir, '..');
 
@@ -20,7 +20,12 @@ type Step = {
   'working-directory'?: string;
   if?: string;
 };
-type Job = { if?: string; defaults?: { run?: { 'working-directory'?: string } }; steps: Step[] };
+type Job = {
+  if?: string;
+  permissions?: Record<string, string>;
+  defaults?: { run?: { 'working-directory'?: string } };
+  steps: Step[];
+};
 type Workflow = {
   on: Record<string, unknown>;
   permissions?: Record<string, string>;
@@ -52,6 +57,12 @@ const globMatches = (pattern: string, name: string) =>
 const goodManifest = () => ({
   name: '@anyonce/hono',
   version: '0.1.0',
+  license: 'Apache-2.0',
+  repository: {
+    type: 'git',
+    url: 'git+https://github.com/sns45/anyonce.git',
+    directory: 'packages/hono',
+  },
   type: 'module',
   sideEffects: false,
   main: './dist/index.cjs',
@@ -122,6 +133,59 @@ describe('release: packed manifests', () => {
     ).toBe(true);
   });
 
+  test('REQ-REL-2: checkPackedManifest reports a missing license, a missing repository and a wrong repository url or directory', () => {
+    const noLicense = goodManifest() as Record<string, unknown>;
+    delete noLicense.license;
+    expect(checkPackedManifest(noLicense, '@anyonce/hono').some((p) => p.includes('license'))).toBe(
+      true,
+    );
+    const noRepository = goodManifest() as Record<string, unknown>;
+    delete noRepository.repository;
+    expect(
+      checkPackedManifest(noRepository, '@anyonce/hono').some((p) => p.includes('repository')),
+    ).toBe(true);
+    const wrongUrl = goodManifest();
+    wrongUrl.repository.url = 'git+https://github.com/someone/else.git';
+    expect(
+      checkPackedManifest(wrongUrl, '@anyonce/hono').some((p) => p.includes('repository.url')),
+    ).toBe(true);
+    const wrongDir = goodManifest();
+    wrongDir.repository.directory = 'packages/core';
+    expect(
+      checkPackedManifest(wrongDir, '@anyonce/hono').some((p) =>
+        p.includes('repository.directory'),
+      ),
+    ).toBe(true);
+  });
+
+  test('REQ-REL-2: every publishable source manifest declares the license and its own repository directory', () => {
+    for (const dir of readdirSync(join(root, 'packages'))) {
+      const pkg = JSON.parse(readFileSync(join(root, 'packages', dir, 'package.json'), 'utf8')) as {
+        private?: boolean;
+        license?: string;
+        repository?: unknown;
+        files?: string[];
+      };
+      if (pkg.private === true) continue;
+      expect(pkg.license).toBe('Apache-2.0');
+      expect(pkg.repository).toEqual({
+        type: 'git',
+        url: 'git+https://github.com/sns45/anyonce.git',
+        directory: `packages/${dir}`,
+      });
+      expect(pkg.files).toContain('LICENSE');
+    }
+  });
+
+  test('REQ-REL-2: checkPackedFiles fails a tarball without package/LICENSE', () => {
+    expect(checkPackedFiles(['package/package.json', 'package/LICENSE'], '@anyonce/hono')).toEqual(
+      [],
+    );
+    expect(
+      checkPackedFiles(['package/package.json', 'package/dist/index.js'], '@anyonce/hono'),
+    ).toEqual(['@anyonce/hono: the tarball has no package/LICENSE']);
+  });
+
   test('NFR-3: the source manifests declare no workspace:* peer (bun pm pack would pin it exactly)', () => {
     for (const dir of readdirSync(join(root, 'packages'))) {
       const pkg = JSON.parse(readFileSync(join(root, 'packages', dir, 'package.json'), 'utf8')) as {
@@ -170,16 +234,19 @@ describe('release: SBOM lockfile', () => {
     expect(out.workspaces).toEqual({ '': { name: '@anyonce/core' } });
   });
 
-  test('REQ-REL-2: the workspace bun.lock parses and every published package has an empty runtime closure', () => {
+  test('REQ-REL-2: the workspace bun.lock parses and @anyonce/core has an empty runtime closure', () => {
     const workspaceLock = parseBunLock(readFileSync(join(root, 'bun.lock'), 'utf8'));
     expect(Object.keys(workspaceLock.packages)).toContain('@changesets/cli');
+    const core = JSON.parse(readFileSync(join(root, 'packages/core/package.json'), 'utf8')) as {
+      name: string;
+    };
+    expect(Object.keys(prunedLockfile(workspaceLock, core).packages)).toEqual([]);
+    // Every other package's closure resolves against the lockfile (prunedLockfile throws otherwise).
     for (const dir of readdirSync(join(root, 'packages'))) {
       const manifest = JSON.parse(
         readFileSync(join(root, 'packages', dir, 'package.json'), 'utf8'),
-      ) as {
-        name: string;
-      };
-      expect(Object.keys(prunedLockfile(workspaceLock, manifest).packages)).toEqual([]);
+      ) as { name: string };
+      expect(() => prunedLockfile(workspaceLock, manifest)).not.toThrow();
     }
   });
 });
@@ -202,11 +269,18 @@ describe('release: workflow', () => {
 
   test('REQ-REL-2: release.yml publishes packed tarballs with provenance and signs them with forgeseal', () => {
     const wf = readWorkflow();
-    expect(wf.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
+    expect(wf.permissions).toEqual({ contents: 'read' });
     const job = wf.jobs.npm as Job;
+    expect(job.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
+    expect((wf.jobs.go as Job).permissions).toBeUndefined();
     expect(job.if).toContain("startsWith(github.ref, 'refs/tags/v')");
     expect(job.if).toContain("github.event_name == 'workflow_dispatch'");
+    const setupBun = job.steps.find((s) => s.uses?.startsWith('oven-sh/setup-bun@')) as Step;
+    expect(setupBun.with?.['bun-version']).toBe('1.4.2');
     const script = runs(job);
+    expect(script).toContain('cp LICENSE "$dir"');
+    expect(script.indexOf('cp LICENSE')).toBeLessThan(script.indexOf('bun pm pack'));
+    expect(script).toContain('bun scripts/release/manifest.ts dist-release/*.tgz');
     expect(script).toContain('bun install --frozen-lockfile');
     expect(script).toContain('bun pm pack --destination');
     expect(script).toContain('go install github.com/sns45/forgeseal/cmd/forgeseal@v0.5.1');
@@ -218,13 +292,45 @@ describe('release: workflow', () => {
     expect(publish.run).toContain('--provenance');
     expect(publish.run).toContain('--access public');
     expect(publish.run).toContain('dist-release/*.tgz');
-    expect(publish.if).toContain("startsWith(github.ref, 'refs/tags/v')");
-    expect(publish.if).toContain('inputs.publish');
     expect(publish.env?.NODE_AUTH_TOKEN).toMatch(/^\$\{\{ secrets\.NPM_TOKEN \}\}$/);
     expect(script.indexOf('forgeseal verify')).toBeLessThan(script.indexOf('npm publish'));
     const setupNode = job.steps.find((s) => s.uses?.startsWith('actions/setup-node@')) as Step;
     expect(setupNode.with?.['registry-url']).toBe('https://registry.npmjs.org');
-    expect(job.steps.some((s) => s.uses?.startsWith('actions/upload-artifact@'))).toBe(true);
+    const upload = job.steps.find((s) => s.uses?.startsWith('actions/upload-artifact@')) as Step;
+    expect(upload.if).toBe('success() || failure()');
+    expect(upload.with?.['if-no-files-found']).toBe('warn');
+  });
+
+  test('REQ-REL-2: release.yml publishes only from a v* tag ref, and only a version equal to the tag', () => {
+    const job = readWorkflow().jobs.npm as Job;
+    const publish = job.steps.find((s) => (s.run ?? '').includes('npm publish')) as Step;
+    // A dispatch with publish true from a branch must not publish: the tag ref is required for both events.
+    expect(publish.if).toBe(
+      "startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)",
+    );
+    const versionCheck = job.steps.find((s) => (s.run ?? '').includes('GITHUB_REF_NAME#v')) as Step;
+    expect(versionCheck.if).toBe(publish.if);
+    expect(versionCheck.run).toContain('dist-release/*.tgz');
+    expect(versionCheck.run).toContain('exit 1');
+    expect(job.steps.indexOf(versionCheck)).toBeLessThan(job.steps.indexOf(publish));
+  });
+
+  test('REQ-REL-2: release.yml verifies each keyless bundle with cosign against the workflow identity', () => {
+    const job = readWorkflow().jobs.npm as Job;
+    expect(job.steps.some((s) => s.uses?.startsWith('sigstore/cosign-installer@'))).toBe(true);
+    const script = runs(job);
+    const cosign = /cosign verify-blob --bundle "([^"]+)"[^\n]*/g;
+    const lines = [...script.matchAll(cosign)].map((m) => m[0]);
+    expect(lines.map((l) => /--bundle "([^"]+)"/.exec(l)?.[1]).sort()).toEqual(
+      ['$base.cdx.json.sigstore.json', '$tgz.sigstore.json'].sort(),
+    );
+    for (const line of lines) {
+      expect(line).toContain("--certificate-identity-regexp '^https://github.com/sns45/anyonce/'");
+      expect(line).toContain(
+        '--certificate-oidc-issuer https://token.actions.githubusercontent.com',
+      );
+    }
+    expect(script.indexOf('cosign verify-blob')).toBeLessThan(script.indexOf('npm publish'));
   });
 
   test('REQ-REL-2: release.yml never publishes through changesets and never signs the dry run way', () => {

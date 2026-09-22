@@ -10,8 +10,9 @@
  *   1. exports HEAD with `git archive` into work/ (uncommitted changes are not part of the dry run);
  *   2. in work/: `bun install --frozen-lockfile`, `bunx changeset version`, `bun install`, `bun run build`,
  *      so the version bump and changelogs land in the scratch copy and never on the branch (Q65);
- *   3. packs every non-private workspace package with `bun pm pack` into tarballs/ and checks each packed
- *      package.json with checkPackedManifest (Q60);
+ *   3. copies the root LICENSE into every non-private workspace package, packs it with `bun pm pack` into
+ *      tarballs/, and checks each packed package.json and file listing (checkPackedManifest,
+ *      checkPackedFiles; Q60);
  *   4. runs `go mod tidy -diff` in work/go;
  *   5. per tarball: an SBOM from the unpacked package and its runtime lockfile closure (lockfile.ts), then a
  *      keyed signature over the tarball and over the SBOM, each verified against the throwaway CA;
@@ -19,10 +20,23 @@
  * Git commands inside work/ run with GIT_CEILING_DIRECTORIES set, so they can never reach the real repo.
  */
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { parseBunLock, prunedLockfile } from './lockfile';
-import { checkPackedManifest, readPackedManifest } from './manifest';
+import {
+  checkPackedFiles,
+  checkPackedManifest,
+  listPackedFiles,
+  readPackedManifest,
+} from './manifest';
 
 const FORGESEAL_MODULE = 'github.com/sns45/forgeseal/cmd/forgeseal@v0.5.1';
 const EXPECTED_VERSION = '0.1.0';
@@ -153,19 +167,9 @@ function verify(
   return res.code === 0 && res.stderr.includes('Signature verification: PASSED');
 }
 
-/**
- * Things the real publish needs that NFR-3 does not cover. They are reported, not failed on: npm
- * provenance checks `repository.url` against the workflow's repository, and a tarball without a LICENSE
- * or README ships without them.
- */
-function publishNotes(name: string, manifest: unknown, tarball: string): string[] {
-  const notes: string[] = [];
-  const listing = Bun.spawnSync(['tar', '-tzf', tarball]).stdout.toString().split('\n');
-  const repository = (manifest as { repository?: unknown }).repository;
-  if (repository === undefined) notes.push(`${name}: package.json has no repository field`);
-  if (!listing.some((f) => /^package\/licen[cs]e/i.test(f))) notes.push(`${name}: no LICENSE file`);
-  if (!listing.some((f) => /^package\/readme/i.test(f))) notes.push(`${name}: no README file`);
-  return notes;
+/** Reported, not failed on: a tarball without a README ships without one on the npm page. */
+function publishNotes(name: string, listing: string[]): string[] {
+  return listing.some((f) => /^package\/readme/i.test(f)) ? [] : [`${name}: no README file`];
 }
 
 function main(): void {
@@ -191,7 +195,12 @@ function main(): void {
   const dirty = run(['git', 'status', '--porcelain'], repo).stdout.trim();
   if (dirty !== '')
     console.log('note: the working tree has uncommitted changes; the dry run uses HEAD only');
-  run(['sh', '-c', `git archive --format=tar HEAD | tar -x -C '${dirs.work}'`], repo);
+  // Two steps, not a pipe, so a git archive failure cannot be masked by tar's exit code.
+  const archive = join(out, 'head.tar');
+  rmSync(archive, { force: true });
+  run(['git', 'archive', '--format=tar', '-o', archive, 'HEAD'], repo);
+  run(['tar', '-xf', archive, '-C', dirs.work], repo);
+  rmSync(archive, { force: true });
   console.log(`exported ${head}`);
 
   step('version (changesets, scratch copy only)');
@@ -214,6 +223,8 @@ function main(): void {
   step('pack and check the packed manifests');
   const packed: Array<{ pkg: WorkspacePackage; tarball: string }> = [];
   for (const pkg of packages) {
+    // Every tarball ships the root LICENSE, as the release workflow does.
+    copyFileSync(join(dirs.work, 'LICENSE'), join(pkg.dir, 'LICENSE'));
     const before = new Set(readdirSync(dirs.tarballs));
     run(['bun', 'pm', 'pack', '--destination', dirs.tarballs], pkg.dir);
     const created = readdirSync(dirs.tarballs).filter((f) => f.endsWith('.tgz') && !before.has(f));
@@ -221,7 +232,11 @@ function main(): void {
       throw new Error(`${pkg.name}: expected one new tarball, found ${created.join(', ')}`);
     const tarball = join(dirs.tarballs, created[0] as string);
     const manifest = readPackedManifest(tarball);
-    const problems = checkPackedManifest(manifest, pkg.name);
+    const listing = listPackedFiles(tarball);
+    const problems = [
+      ...checkPackedManifest(manifest, pkg.name),
+      ...checkPackedFiles(listing, pkg.name),
+    ];
     const peers =
       (manifest as { peerDependencies?: Record<string, string> }).peerDependencies ?? {};
     const corePeer = peers['@anyonce/core'];
@@ -230,7 +245,7 @@ function main(): void {
     );
     for (const problem of problems) console.log(`  ${problem}`);
     failures.push(...problems);
-    notes.push(...publishNotes(pkg.name, manifest, tarball));
+    notes.push(...publishNotes(pkg.name, listing));
     packed.push({ pkg, tarball });
   }
 

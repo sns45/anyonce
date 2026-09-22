@@ -2,8 +2,16 @@
  * Checks a packed package.json (the one inside a tarball, after `bun pm pack` rewrote the workspace
  * protocol) against NFR-3 and Q60: an `exports` map whose every conditional entry names `types`, an ESM
  * `import` and a CJS `require`; `sideEffects: false`; and no `workspace:` specifier left in any
- * dependency field, since npm cannot install one.
+ * dependency field, since npm cannot install one. It also checks the fields the real publish depends
+ * on: `license` and a `repository` pointing at this repository and the package's own directory, which
+ * npm provenance compares against the workflow's source repository (REQ-REL-2).
  */
+
+export const REPOSITORY_URL = 'git+https://github.com/sns45/anyonce.git';
+export const LICENSE = 'Apache-2.0';
+
+/** The workspace directory of a published package: `@anyonce/<x>` lives in `packages/<x>`. */
+export const packageDirectory = (name: string) => `packages/${name.replace(/^@anyonce\//, '')}`;
 
 const DEPENDENCY_FIELDS = [
   'dependencies',
@@ -29,6 +37,24 @@ export function checkPackedManifest(manifest: unknown, name: string): string[] {
     problems.push(
       `${name}: sideEffects is ${JSON.stringify(manifest.sideEffects)}, expected false`,
     );
+  }
+  if (manifest.license !== LICENSE) {
+    problems.push(`${name}: license is ${JSON.stringify(manifest.license)}, expected ${LICENSE}`);
+  }
+  const repository = manifest.repository;
+  if (!isRecord(repository)) {
+    problems.push(`${name}: repository is missing`);
+  } else {
+    if (repository.url !== REPOSITORY_URL) {
+      problems.push(
+        `${name}: repository.url is ${JSON.stringify(repository.url)}, expected ${REPOSITORY_URL}`,
+      );
+    }
+    if (repository.directory !== packageDirectory(name)) {
+      problems.push(
+        `${name}: repository.directory is ${JSON.stringify(repository.directory)}, expected ${packageDirectory(name)}`,
+      );
+    }
   }
 
   for (const field of DEPENDENCY_FIELDS) {
@@ -96,11 +122,28 @@ export function checkPackedManifest(manifest: unknown, name: string): string[] {
   return problems;
 }
 
+/** Checks a tarball's file listing (`tar -tzf`): the package must ship its LICENSE. */
+export function checkPackedFiles(listing: string[], name: string): string[] {
+  return listing.some((f) => f === 'package/LICENSE')
+    ? []
+    : [`${name}: the tarball has no package/LICENSE`];
+}
+
 /** Reads `package/package.json` out of a packed tarball without unpacking it. */
 export function readPackedManifest(tarball: string): unknown {
   const result = Bun.spawnSync(['tar', '-xzOf', tarball, 'package/package.json']);
   if (result.exitCode !== 0) throw new Error(`${tarball}: ${result.stderr.toString().trim()}`);
   return JSON.parse(result.stdout.toString()) as unknown;
+}
+
+/** Lists a packed tarball's files, failing loudly when tar cannot read it. */
+export function listPackedFiles(tarball: string): string[] {
+  const result = Bun.spawnSync(['tar', '-tzf', tarball]);
+  if (result.exitCode !== 0) throw new Error(`${tarball}: ${result.stderr.toString().trim()}`);
+  return result.stdout
+    .toString()
+    .split('\n')
+    .filter((f) => f !== '');
 }
 
 // CLI: `bun scripts/release/manifest.ts <tarball>...` exits 1 when any packed manifest has a problem.
@@ -114,7 +157,10 @@ if (import.meta.main) {
   for (const tarball of tarballs) {
     const manifest = readPackedManifest(tarball);
     const name = isRecord(manifest) && typeof manifest.name === 'string' ? manifest.name : tarball;
-    const problems = checkPackedManifest(manifest, name);
+    const problems = [
+      ...checkPackedManifest(manifest, name),
+      ...checkPackedFiles(listPackedFiles(tarball), name),
+    ];
     for (const problem of problems) console.error(problem);
     if (problems.length > 0) failed = true;
     else console.log(`${name}: packed manifest ok`);
