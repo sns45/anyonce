@@ -1,0 +1,25 @@
+{
+  "name": "@anyonce-examples/worker-hono-do",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anyonce/core": "workspace:*",
+    "@anyonce/hono": "workspace:*",
+    "@anyonce/stores": "workspace:*",
+    "hono": "^4.13.8"
+  },
+  "devDependencies": {
+    "@anyonce/conformance": "workspace:*",
+    "@anyonce/fixture-hono": "workspace:*",
+    "@cloudflare/vitest-pool-workers": "0.12.21",
+    "@cloudflare/workers-types": "^5.20260916.1",
+    "vitest": "3.2.7",
+    "wrangler": "^4.132.0"
+  }
+}
