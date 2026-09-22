@@ -23,7 +23,7 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@anyonce/core": "workspace:*",
+    "@anyonce/core": "workspace:^",
     "hono": ">=4.8.0"
   },
   "devDependencies": {

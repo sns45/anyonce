@@ -47,7 +47,7 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@anyonce/core": "workspace:*",
+    "@anyonce/core": "workspace:^",
     "@aws-sdk/client-dynamodb": ">=3.600.0",
     "@cloudflare/workers-types": ">=4.20240925.0",
     "@upstash/redis": ">=1.30.0",
