@@ -203,7 +203,10 @@ describe('README', () => {
     );
     expect(badge).not.toBeNull();
     const path = new URL(badge?.[1] ?? '').pathname.replace(/^\/badge\//, '');
-    const [label, message] = path.split('-');
+    // Shields separates label, message and colour with single dashes; `--` is an escaped literal dash.
+    const [label, message] = path
+      .split(/(?<!-)-(?!-)/)
+      .map((segment) => segment.replace(/--/g, '-'));
     expect(decodeURIComponent(label ?? '')).toBe('conformance');
     expect(decodeURIComponent(message ?? '')).toBe([...counts][0] ?? '');
   });

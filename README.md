@@ -2,7 +2,7 @@
 
 One idempotency core for every way a request reaches a serverless system, in TypeScript and Go.
 
-A request arrives through one of three doors, and all three deliver at least once: an HTTP endpoint keyed by the `Idempotency-Key` header, a queue consumer built on [anyq](https://github.com/sns45/anyq), and a webhook receiver keyed by the Standard Webhooks `webhook-id` header. anyonce puts the same state machine behind all three: claim the key in one atomic write, run the handler once, store the outcome, replay it to duplicates, answer a concurrent duplicate with 409 and a changed payload under the same key with 422. Six atomic stores, both languages, and a language-agnostic conformance suite for the IETF `Idempotency-Key` draft that any implementation can run.
+A request arrives through one of three doors, and all three deliver at least once: an HTTP endpoint keyed by the `Idempotency-Key` header, a queue consumer built on [anyq](https://github.com/sns45/anyq), and a webhook receiver keyed by the Standard Webhooks `webhook-id` header. anyonce puts the same state machine behind all three: claim the key in one atomic write, run the handler once, store the outcome, replay it to duplicates, answer a concurrent duplicate with 409 and a changed payload under the same key with 422. Six atomic shared stores plus an in-process memory store, both languages, and a language-agnostic conformance suite for the IETF `Idempotency-Key` draft that any implementation can run.
 
 [![conformance](https://img.shields.io/badge/conformance-core%2011%2F11%20%7C%20profile%209%2F9-brightgreen)](conformance/REPORT.md)
 [![licence](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
@@ -38,6 +38,8 @@ curl -i -X POST http://localhost:3000/orders \
 The second answer is the first one again, same `201` and same order id, with `Idempotency-Replayed: true`; the handler ran once. The same key with `{"item":"lamp"}` is `422 fingerprint-mismatch`, and a duplicate that arrives while the first is still running is `409 conflict` with `Retry-After`. Every error is an RFC 9457 problem, listed in [docs/problems.md](docs/problems.md). The memory store is for one process; swap in a shared [store](#stores) for anything else.
 
 ## Install
+
+The npm packages and the Go module are published at launch as 0.1.0; until then the lines below describe that release.
 
 ```sh
 bun add @anyonce/core                      # engine, MemoryStore, and @anyonce/core/http (withIdempotency)
@@ -133,6 +135,7 @@ const receive = webhookReceiver({
 
 export const fetch = receive(async (req) => {
   const event = (await req.json()) as { type: string };
+  console.log('handled', event.type); // runs once per webhook-id
   return Response.json({ received: true });
 });
 ```
