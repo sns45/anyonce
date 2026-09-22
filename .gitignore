@@ -9,3 +9,5 @@ coverage/
 .superpowers/
 packages/conformance/.cli-out.xml
 test/.tmp/
+release-dry-run/
+dist-release/
