@@ -403,6 +403,13 @@ REQ-REL-2 (provenance visible on npm), REQ-REL-3 (tag `go/v0.1.0`, pkg.go.dev re
 
 Recommended resolution: P6 proves everything short of the publish: the workflow's triggers, permissions and steps are pinned by tests, every package's doc comment exists so pkg.go.dev has something to render, and the dry run exercises version, build, pack, SBOM and signature. The CHECKLIST real-release line stays unticked and points here; it is done when the owner gives the go, the version PR merges, and the tags are pushed.
 
+Release steps added by the P6 review:
+
+- add a README to each package tarball (the dry run lists every package that ships without one);
+- configure required reviewers on the npm-release environment in the repository settings (release.yml's npm job runs in that environment and says so);
+- make the repository public (Q68);
+- run one workflow_dispatch with publish false to prove the keyless sign and cosign verify path before the first tag.
+
 **Decision: pending.** P6 proceeds on the recommendation.
 
 ## Q65: whether the 0.1.0 version bump is committed in P6
@@ -425,7 +432,7 @@ Recommended resolution: add an optional waitUntil?: (p: Promise<unknown>) => voi
 
 TS webhookReceiver accepts skip, Go webhookmw.Options has no Skip, so a Go receiver cannot exempt a path the way the TS one can (Q28 used skip for the conformance control paths in TS).
 
-Recommended resolution: add Skip func(*http.Request) bool to webhookmw.Options with the same semantics as the TS option (checked before verification, a skipped request goes straight to next), with a test, in 0.1.x; documented as a parity gap in docs/semantics.md until then (it already is).
+Recommended resolution: add Skip func(*http.Request) bool to webhookmw.Options with the same semantics as the TS option (D16: Skip is checked after verification, so a skipped delivery that fails the gate is still 401; it turns off deduplication, never verification), with a test, in 0.1.x; documented as a parity gap in docs/semantics.md until then (it already is).
 
 **Decision: pending.** P6 proceeds on the recommendation.
 
@@ -434,5 +441,29 @@ Recommended resolution: add Skip func(*http.Request) bool to webhookmw.Options w
 REQ-REL-2 publishes with --provenance from GitHub Actions OIDC; npm only accepts provenance statements from public repositories, and sns45/anyonce is private; the release workflow and every package's repository field are ready (P6 Task 8).
 
 Recommended resolution: make the repository public before the first tag push (part of the explicit release go, Q64); do not drop --provenance to publish from a private repo, because REQ-REL-2 requires it.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q69: Go SQL stores give no way to close their pool
+
+`postgres.Open` and `sqlite.Open` return a store whose `*sql.DB` the caller cannot close, so a caller that wants to shut down cleanly has to open its own pool and pass it in (the Go Postgres example had to do exactly that).
+
+Recommended resolution: add `Close() error` to the SQL store type before the `go/v0.1.0` tag, closing the pool only when the store opened it, with a test. Not blocking P6.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q70: InFlightError.DelayMs truncates to whole milliseconds
+
+`InFlightError.DelayMs` truncates the remaining lease to whole milliseconds, so a downgraded park can wake up to 1 ms before the lease ends and park again (found by P6 Task 1 in the go/anyqmw services test). Behavior today is correct; the cost is one extra park.
+
+Recommended resolution: round up (ceil) in both languages in 0.1.x, with a test on each side.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q71: REQ-HTTP-17 and the Worker example's conformance run
+
+REQ-HTTP-17 says the Worker example passes the URL-mode runner. The Worker example runs the conformance runner in process inside workerd (vitest-pool-workers), which the acceptance criterion itself names as an acceptable route ("Worker via unstable_dev/vitest-pool-workers"); the Lambda example runs over a real socket.
+
+Recommended resolution: read the acceptance criterion as satisfied and note it here; no change.
 
 **Decision: pending.** P6 proceeds on the recommendation.

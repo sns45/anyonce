@@ -1,0 +1,32 @@
+{
+  "id": "core/expiry-executes-again",
+  "tier": "core",
+  "title": "After the published expiry the same key executes again",
+  "draftRef": "section-2.3",
+  "description": "The resource MAY purge keys on expiry. Requires the short-ttl capability (TTL at most 2000 ms); after 2500 ms the same key and payload must execute the handler again.",
+  "fixture": "echo",
+  "requires": ["short-ttl"],
+  "steps": [
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-expiry-1", "Content-Type": "text/plain" },
+        "body": "expire"
+      },
+      "expect": { "status": 201, "handlerInvocations": 1 }
+    },
+    {
+      "id": "after-expiry",
+      "delayMs": 2500,
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-expiry-1", "Content-Type": "text/plain" },
+        "body": "expire"
+      },
+      "expect": { "status": 201, "handlerInvocations": 2 }
+    }
+  ]
+}

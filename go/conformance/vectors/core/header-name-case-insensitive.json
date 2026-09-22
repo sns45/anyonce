@@ -1,0 +1,30 @@
+{
+  "id": "core/header-name-case-insensitive",
+  "tier": "core",
+  "title": "The header field name is matched case-insensitively",
+  "draftRef": "section-2.1",
+  "description": "HTTP field names are case-insensitive (RFC 9110 section 5.1). A retry that spells the field name in lowercase must replay the first result.",
+  "fixture": "echo",
+  "steps": [
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-case-1", "Content-Type": "text/plain" },
+        "body": "case"
+      },
+      "expect": { "status": 201, "handlerInvocations": 1 }
+    },
+    {
+      "id": "retry-lowercase",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "idempotency-key": "k-case-1", "Content-Type": "text/plain" },
+        "body": "case"
+      },
+      "expect": { "status": 201, "bodyEquals": { "sameAs": "first" }, "handlerInvocations": 1 }
+    }
+  ]
+}

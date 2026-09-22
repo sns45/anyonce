@@ -114,7 +114,7 @@ func parseArgs(args []string) (options, error) {
 // run loads the vectors, runs them against opts.url, writes the formatted report to stdout (or opts.out), and
 // returns the process exit code: 0 when nothing failed or errored, 1 otherwise.
 func run(ctx context.Context, opts options, stdout io.Writer) (int, error) {
-	vectors, err := conformance.LoadVectors(conformance.DefaultVectorsDir())
+	vectors, err := conformance.DefaultVectors()
 	if err != nil {
 		return 0, fmt.Errorf("load vectors: %w", err)
 	}

@@ -21,11 +21,17 @@ jobs:
   npm:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    # The owner must configure required reviewers on the npm-release environment in the repository
+    # settings (Settings, Environments, npm-release); without them the environment gates nothing.
+    environment: npm-release
     permissions:
       contents: read
       id-token: write
     steps:
+      # Full history, so the publish gate below can check that the tagged commit is on main.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
@@ -36,7 +42,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v4.1.2
         with:
           cosign-release: v3.1.2
       - run: bun install --frozen-lockfile
@@ -60,6 +66,10 @@ jobs:
           ls -l dist-release
       - name: check the packed manifests and files
         run: bun scripts/release/manifest.ts dist-release/*.tgz
+      # Unpacks the conformance tarball outside the checkout and loads its vectors (REQ-CONF-7).
+      - name: packed conformance tarball loads every vector outside the repository
+        shell: bash
+        run: bun scripts/release/packed-vectors.ts dist-release/anyonce-conformance-*.tgz
       # Keyless signing through Fulcio under this job's OIDC identity; every signature is recorded in
       # Rekor (Q61). forgeseal defaults to keyed mode, so keyless is explicit. forgeseal writes the
       # sigstore-go protobuf bundle (v0.3 JSON), which cosign reads with --bundle. `forgeseal verify`
@@ -80,8 +90,8 @@ jobs:
             # digest check only
             forgeseal verify --artifact "$tgz" --bundle "$tgz.sigstore.json"
             forgeseal verify --artifact "$base.cdx.json" --bundle "$base.cdx.json.sigstore.json"
-            cosign verify-blob --bundle "$tgz.sigstore.json" --certificate-identity-regexp '^https://github.com/sns45/anyonce/' --certificate-oidc-issuer https://token.actions.githubusercontent.com "$tgz"
-            cosign verify-blob --bundle "$base.cdx.json.sigstore.json" --certificate-identity-regexp '^https://github.com/sns45/anyonce/' --certificate-oidc-issuer https://token.actions.githubusercontent.com "$base.cdx.json"
+            cosign verify-blob --bundle "$tgz.sigstore.json" --certificate-identity-regexp '^https://github\.com/sns45/anyonce/\.github/workflows/release\.yml@' --certificate-oidc-issuer https://token.actions.githubusercontent.com "$tgz"
+            cosign verify-blob --bundle "$base.cdx.json.sigstore.json" --certificate-identity-regexp '^https://github\.com/sns45/anyonce/\.github/workflows/release\.yml@' --certificate-oidc-issuer https://token.actions.githubusercontent.com "$base.cdx.json"
           done
       - name: packed versions equal the tag
         if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
@@ -95,14 +105,40 @@ jobs:
               exit 1
             fi
           done
+      # A v tag on a commit that never reached main (a side branch, a stray commit) must not publish.
+      - name: tagged commit is on main
+        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
+        shell: bash
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "$GITHUB_SHA is not on origin/main; refusing to publish"
+            exit 1
+          fi
+      # @anyonce/core goes first, since every other package peers on it. A tarball whose name@version
+      # is already on npm is skipped, so a run that failed part way can be rerun.
       - name: publish with provenance
         if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
         shell: bash
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for tgz in dist-release/*.tgz; do
+          publish_one() {
+            local tgz="$1" name version
+            name="$(tar -xzOf "$tgz" package/package.json | jq -r .name)"
+            version="$(tar -xzOf "$tgz" package/package.json | jq -r .version)"
+            if [ "$(npm view "$name@$version" version 2>/dev/null)" = "$version" ]; then
+              echo "$name@$version is already published, skipping"
+              return 0
+            fi
             npm publish "$tgz" --provenance --access public
+          }
+          for tgz in dist-release/anyonce-core-*.tgz; do
+            publish_one "$tgz"
+          done
+          for tgz in dist-release/*.tgz; do
+            case "$tgz" in dist-release/anyonce-core-*) continue ;; esac
+            publish_one "$tgz"
           done
       - uses: actions/upload-artifact@v4
         if: success() || failure()

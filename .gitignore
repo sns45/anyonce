@@ -8,6 +8,8 @@ coverage/
 .worktrees/
 .superpowers/
 packages/conformance/.cli-out.xml
+# copied from conformance/vectors by the package build so the tarball ships them
+packages/conformance/vectors/
 test/.tmp/
 release-dry-run/
 # copied from the root LICENSE at pack time (release workflow and dry run)

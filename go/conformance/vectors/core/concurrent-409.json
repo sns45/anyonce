@@ -1,0 +1,35 @@
+{
+  "id": "core/concurrent-409",
+  "tier": "core",
+  "title": "A duplicate sent while the original is in flight yields 409",
+  "draftRef": "section-2.6",
+  "description": "Concurrent Request: the request was retried before the original completed. The first request holds the handler for 1500 ms; the second is sent 300 ms later and must receive a resource conflict error. Only one handler invocation occurs.",
+  "fixture": "slow",
+  "steps": [
+    {
+      "id": "original",
+      "request": {
+        "method": "POST",
+        "path": "/slow?ms=1500",
+        "headers": { "Idempotency-Key": "k-concurrent-1", "Content-Type": "text/plain" },
+        "body": "slow"
+      },
+      "expect": { "status": 200, "bodyEquals": "slept:1500" }
+    },
+    {
+      "id": "duplicate",
+      "concurrentWith": ["original"],
+      "delayMs": 300,
+      "request": {
+        "method": "POST",
+        "path": "/slow?ms=1500",
+        "headers": { "Idempotency-Key": "k-concurrent-1", "Content-Type": "text/plain" },
+        "body": "slow"
+      },
+      "expect": {
+        "status": 409,
+        "handlerInvocations": 1
+      }
+    }
+  ]
+}
