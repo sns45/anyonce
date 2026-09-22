@@ -1,0 +1,134 @@
+# Release (requirements.md 4.9, REQ-REL-2 and REQ-REL-3; Q60, Q61, Q64).
+# Runs only on a pushed tag or a manual dispatch, never on a branch push or a pull request.
+# A `v*` tag packs, signs and publishes the npm packages; a `go/v*` tag verifies the Go module.
+# A dispatch runs both jobs; it publishes only when the `publish` input is true AND it was dispatched
+# on a `v*` tag ref, so a dispatch from a branch can pack, sign and verify but never publish.
+name: release
+on:
+  push:
+    tags: ['v*', 'go/v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the packed tarballs to npm (only honoured on a v* tag ref)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  npm:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: sigstore/cosign-installer@v4
+        with:
+          cosign-release: v3.1.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run test
+      - name: install forgeseal
+        run: |
+          go install github.com/sns45/forgeseal/cmd/forgeseal@v0.5.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      # bun pm pack rewrites workspace: ranges; npm pack would ship them verbatim (Q60).
+      # The root LICENSE is copied into each package so every tarball ships it.
+      - name: pack every published package
+        shell: bash
+        run: |
+          mkdir -p dist-release
+          for dir in packages/*/; do
+            if [ "$(jq -r '.private // false' "${dir}package.json")" = "true" ]; then continue; fi
+            cp LICENSE "$dir"
+            (cd "$dir" && bun pm pack --destination ../../dist-release)
+          done
+          ls -l dist-release
+      - name: check the packed manifests and files
+        run: bun scripts/release/manifest.ts dist-release/*.tgz
+      # Keyless signing through Fulcio under this job's OIDC identity; every signature is recorded in
+      # Rekor (Q61). forgeseal defaults to keyed mode, so keyless is explicit. forgeseal writes the
+      # sigstore-go protobuf bundle (v0.3 JSON), which cosign reads with --bundle. `forgeseal verify`
+      # only compares the artifact digest for a keyless bundle; cosign verify-blob checks the Fulcio
+      # chain, the Rekor entry, the signer identity and the OIDC issuer.
+      - name: SBOM, sign and verify every tarball
+        shell: bash
+        run: |
+          for tgz in dist-release/*.tgz; do
+            base="${tgz%.tgz}"
+            unpacked="dist-release/unpacked/$(basename "$base")"
+            mkdir -p "$unpacked"
+            tar -xzf "$tgz" -C "$unpacked"
+            bun scripts/release/lockfile.ts bun.lock "$unpacked/package"
+            forgeseal sbom --dir "$unpacked/package" -o "$base.cdx.json"
+            forgeseal sign --keyed=false --artifact "$tgz" --bundle "$tgz.sigstore.json"
+            forgeseal sign --keyed=false --artifact "$base.cdx.json" --bundle "$base.cdx.json.sigstore.json"
+            # digest check only
+            forgeseal verify --artifact "$tgz" --bundle "$tgz.sigstore.json"
+            forgeseal verify --artifact "$base.cdx.json" --bundle "$base.cdx.json.sigstore.json"
+            cosign verify-blob --bundle "$tgz.sigstore.json" --certificate-identity-regexp '^https://github.com/sns45/anyonce/' --certificate-oidc-issuer https://token.actions.githubusercontent.com "$tgz"
+            cosign verify-blob --bundle "$base.cdx.json.sigstore.json" --certificate-identity-regexp '^https://github.com/sns45/anyonce/' --certificate-oidc-issuer https://token.actions.githubusercontent.com "$base.cdx.json"
+          done
+      - name: packed versions equal the tag
+        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
+        shell: bash
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          for tgz in dist-release/*.tgz; do
+            actual="$(tar -xzOf "$tgz" package/package.json | jq -r .version)"
+            if [ "$actual" != "$expected" ]; then
+              echo "$tgz is version $actual, the tag $GITHUB_REF_NAME expects $expected"
+              exit 1
+            fi
+          done
+      - name: publish with provenance
+        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for tgz in dist-release/*.tgz; do
+            npm publish "$tgz" --provenance --access public
+          done
+      - uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: release-tarballs-sboms-signatures
+          path: |
+            dist-release/*.tgz
+            dist-release/*.cdx.json
+            dist-release/*.sigstore.json
+          if-no-files-found: warn
+
+  go:
+    if: startsWith(github.ref, 'refs/tags/go/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go mod tidy -diff
+      - run: go vet ./...
+      - run: go test -race ./...
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          working-directory: go
+          version: v2.13.2

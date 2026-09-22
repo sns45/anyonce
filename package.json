@@ -30,7 +30,8 @@
     "vectors:validate": "bun test packages/conformance/test/vectors-validate.test.ts",
     "conformance": "bun run packages/conformance/src/cli.ts",
     "services:check": "bun run scripts/services-check.ts",
-    "report": "bun run scripts/report.ts"
+    "report": "bun run scripts/report.ts",
+    "release:dry-run": "bun run scripts/release/dry-run.ts"
   },
   "devDependencies": {
     "@anyonce/conformance": "workspace:*",
@@ -40,9 +41,13 @@
     "@anyonce/stores": "workspace:*",
     "@anyonce/webhooks": "workspace:*",
     "@biomejs/biome": "^2.5.14",
+    "@changesets/assemble-release-plan": "7.0.0",
     "@changesets/cli": "^3.0.3",
+    "@changesets/config": "4.0.1",
+    "@changesets/read": "1.0.1",
     "@cloudflare/vitest-pool-workers": "0.12.21",
     "@cloudflare/workers-types": "^5.20260916.1",
+    "@manypkg/get-packages": "3.1.0",
     "@types/bun": "^1.4.2",
     "@vitest/coverage-v8": "3.2.7",
     "ajv": "^8.20.0",

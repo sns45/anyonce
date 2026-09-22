@@ -3,6 +3,11 @@
   "version": "0.0.0",
   "description": "anyonce idempotency stores: DynamoDB, Redis, Postgres, D1 and Durable Objects",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sns45/anyonce.git",
+    "directory": "packages/stores"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -40,14 +45,15 @@
   },
   "files": [
     "dist",
-    "migrations"
+    "migrations",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@anyonce/core": "workspace:*",
+    "@anyonce/core": "workspace:^",
     "@aws-sdk/client-dynamodb": ">=3.600.0",
     "@cloudflare/workers-types": ">=4.20240925.0",
     "@upstash/redis": ">=1.30.0",

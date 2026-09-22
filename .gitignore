@@ -9,3 +9,7 @@ coverage/
 .superpowers/
 packages/conformance/.cli-out.xml
 test/.tmp/
+release-dry-run/
+# copied from the root LICENSE at pack time (release workflow and dry run)
+packages/*/LICENSE
+dist-release/
