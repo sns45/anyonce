@@ -7,7 +7,7 @@ Semantics: every operation is identified by (scope, key) and carries a fingerpri
 ## Packages
 
 - `@anyonce/core`: engine, types, key helpers, fingerprints and the in-process store. exports: execute, defaultPolicy, defaultStoreResult, MemoryStore, newKey, redactKey, parseKey, validateKey, httpFingerprint, jcsFingerprint, sha256Hex, canonicalize, parseSfString, DEFAULT_LEASE_MS, DEFAULT_TTL_MS, DEFAULT_MAX_RESULT_BYTES, MAX_KEY_BYTES
-- `@anyonce/core/http`: `withIdempotency` for any fetch handler plus the shared HTTP helpers. exports: withIdempotency, idempotencyOf, runIdempotent, withProtocolHeaders, problem, problemResponse, lookupKey, captureResponse, replayResponse, DEFAULT_HEADER_NAME, DEFAULT_METHODS, DEFAULT_PROBLEM_BASE_URI, PROBLEM_STATUS
+- `@anyonce/core/http`: `withIdempotency` for any fetch handler plus the shared HTTP helpers. exports: withIdempotency, idempotencyOf, runIdempotent, resolveHttpOptions, withProtocolHeaders, problem, problemResponse, lookupKey, captureResponse, replayResponse, DEFAULT_HEADER_NAME, DEFAULT_METHODS, DEFAULT_PROBLEM_BASE_URI, PROBLEM_STATUS
 - `@anyonce/core/testing`: the shared store contract suite, for a store of your own. exports: storeContractSuite, T0, LEASE_MS, TTL_MS, MAX_RESULT_BYTES
 - `@anyonce/hono`: Hono middleware for the HTTP door. exports: idempotency, withIdempotency, idempotencyOf
 - `@anyonce/anyq`: anyq consumer middleware and the companion strategy (both required). exports: idempotent, idempotencyStrategy, InFlightError, FingerprintMismatchError, FingerprintError, isInFlightError, isFingerprintMismatchError, messageFingerprint, DEFAULT_KEY_HEADER, IDEMPOTENCY_STRATEGY_NAME
@@ -38,7 +38,7 @@ Module `github.com/sns45/anyonce/go`, Go 1.26, no cgo.
 - `github.com/sns45/anyonce/go/store/postgres`: Postgres store on database/sql. exports: New, Open, Options, EnsureSchema, Schema
 - `github.com/sns45/anyonce/go/store/sqlite`: SQLite store on modernc.org/sqlite. exports: New, Open, EnsureSchema, Schema
 - `github.com/sns45/anyonce/go/storetest`: the store contract suite. exports: Run, Harness, Factory
-- `github.com/sns45/anyonce/go/conformance`: Go conformance runner. exports: Run, RunVectors, LoadVectors, Options, Summary
+- `github.com/sns45/anyonce/go/conformance`: Go conformance runner with the vectors embedded. exports: Run, RunVectors, DefaultVectors, LoadVectors, Options, Summary
 
 ## Docs
 

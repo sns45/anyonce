@@ -18,8 +18,8 @@ a fixed 201. Three paths are measured against the same handler:
 The response body is read on every timed call, bare included, and not just for a fair comparison: the
 wrapped response streams pull driven (`packages/core/src/http/capture.ts`), so the idempotency record
 settles, moving out of `in_flight`, only once its body has been read. A call that skips this leaves the
-record `in_flight` forever, so the next call under that key gets a 409 conflict instead of a replay, an
-earlier version of this harness had exactly that bug. `measure()` also checks every wrapped response
+record `in_flight` until its lease expires, so the next call under that key gets a 409 conflict instead of
+a replay. An earlier version of this harness had exactly that bug. `measure()` also checks every wrapped response
 against the path it was meant to take (a first execution comes back 201 with no `Idempotency-Replayed`
 header, a replay comes back 201 with `Idempotency-Replayed: true`) and throws on a mismatch, so a
 regression here fails the benchmark instead of silently timing the wrong thing.
