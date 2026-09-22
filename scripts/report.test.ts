@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RunSummary, VectorResult, VectorStatus } from '@anyonce/conformance';
-import { capabilityArgs, normalize, readResults } from './report/collect';
+import {
+  capabilityArgs,
+  normalize,
+  readResults,
+  type WaitForWorkerReadyOptions,
+  waitForWorkerReady,
+} from './report/collect';
 import { renderReport } from './report/render';
 import { CAPABILITY_TTL_MS, type ReportRow, ROWS } from './report/rows';
 
@@ -395,5 +401,102 @@ describe('scripts/report', () => {
       expect(content).toMatch(/Draft section:/);
       expect(content).toMatch(/Reproduction:/);
     }
+  });
+});
+
+// REQ-CONF-8 (P6 Task 2): waitForWorkerReady is pure with respect to process spawning. `lines` is a plain
+// async iterable and `probe` a stub, so these tests inject no real process, no real socket and no real timer:
+// `wait` resolves immediately instead of scheduling a setTimeout, and the internal overall-timeout race uses a
+// real (but always cancelled, never fired) setTimeout under the hood, never awaited to completion here.
+describe('scripts/report: wrangler readiness (REQ-CONF-8)', () => {
+  async function* asyncLines(chunks: readonly string[]): AsyncIterable<string> {
+    for (const chunk of chunks) yield chunk;
+  }
+
+  function neverSettles<T>(): Promise<T> {
+    return new Promise<T>(() => {});
+  }
+
+  function statusResponse(status: number): Response {
+    return new Response(null, { status });
+  }
+
+  function baseOpts(overrides: Partial<WaitForWorkerReadyOptions> = {}): WaitForWorkerReadyOptions {
+    return {
+      url: 'http://127.0.0.1:18906',
+      attempts: 5,
+      intervalMs: 1000,
+      wait: async () => {},
+      timeoutMs: 60_000,
+      context: 'row "test"',
+      ...overrides,
+    };
+  }
+
+  test('REQ-CONF-8: wrangler readiness accepts the Ready line with or without SGR escapes', async () => {
+    // A probe that never answers 200, so only the Ready line itself can resolve either case.
+    const neverReadyProbe = async () => statusResponse(503);
+
+    const plain = await waitForWorkerReady(
+      asyncLines(['[wrangler:info] Ready on http://127.0.0.1:18906\n']),
+      neverReadyProbe,
+      baseOpts(),
+    );
+    expect(plain).toBe('http://127.0.0.1:18906');
+
+    const withSgr = await waitForWorkerReady(
+      asyncLines(['\x1b[32m[wrangler:info]\x1b[0m Ready on http://127.0.0.1:18906\n']),
+      neverReadyProbe,
+      baseOpts(),
+    );
+    expect(withSgr).toBe('http://127.0.0.1:18906');
+  });
+
+  test('REQ-CONF-8: wrangler readiness falls back to an HTTP probe of GET /counter once the port is announced but the Ready line never comes', async () => {
+    const statuses = [503, 503, 200];
+    let calls = 0;
+    const probe = async () => statusResponse(statuses[calls++] ?? 200);
+    const waits: number[] = [];
+
+    // The line stream never prints Ready and never exits either: wrangler is still running, just silent on
+    // stdout after its first line. Only the probe's own bounded retry can resolve this one.
+    async function* idleLines(): AsyncIterable<string> {
+      yield '[wrangler:info] Starting local server...\n';
+      yield await neverSettles<string>();
+    }
+
+    const url = await waitForWorkerReady(
+      idleLines(),
+      probe,
+      baseOpts({
+        wait: async (ms) => {
+          waits.push(ms);
+        },
+      }),
+    );
+    expect(url).toBe('http://127.0.0.1:18906');
+    expect(calls).toBe(3);
+    expect(waits).toEqual([1000, 1000]);
+  });
+
+  test('REQ-CONF-8: wrangler readiness fails fast with the output tail when wrangler exits first', async () => {
+    // A probe that never answers 200 either, so the process exit is what has to end the wait, not a timed out
+    // probe loop happening to finish around the same time.
+    const neverReadyProbe = async () => statusResponse(503);
+
+    await expect(
+      waitForWorkerReady(
+        asyncLines(['[wrangler:info] Starting local server...\n', 'bundling failed: boom\n']),
+        neverReadyProbe,
+        baseOpts(),
+      ),
+    ).rejects.toThrow(/wrangler dev exited before it was ready/);
+    await expect(
+      waitForWorkerReady(
+        asyncLines(['[wrangler:info] Starting local server...\n', 'bundling failed: boom\n']),
+        neverReadyProbe,
+        baseOpts(),
+      ),
+    ).rejects.toThrow(/bundling failed: boom/);
   });
 });
