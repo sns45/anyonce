@@ -16,7 +16,7 @@
     "doctor": "scripts/doctor.sh",
     "build": "bun run --filter '@anyonce/*' build",
     "bench": "bun run benchmarks/http-overhead.ts",
-    "test": "bun test packages/core packages/hono packages/anyq/test packages/conformance conformance/ scripts test/ci.test.ts test/docs.test.ts packages/stores/test packages/webhooks benchmarks test/readme.test.ts",
+    "test": "bun test packages/core packages/hono packages/anyq/test packages/conformance conformance/ scripts test/ci.test.ts test/docs.test.ts packages/stores/test packages/webhooks benchmarks test/readme.test.ts test/standards.test.ts",
     "test:coverage": "vitest run --root packages/core --config vitest.config.ts --coverage",
     "test:services": "bun test test/compose.test.ts packages/stores/services packages/anyq/services",
     "test:reqs": "bun run scripts/reqs.ts --phase p3 && bun run scripts/reqs.ts --phase p4a && bun run scripts/reqs.ts --phase p4b && bun run scripts/reqs.ts --phase p5 && bun run scripts/reqs.ts --phase p6",
