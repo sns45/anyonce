@@ -347,7 +347,7 @@ The draft never bounds what a resource must be able to keep, nor says what it do
 
 ### Evidence from running code
 
-Against a result of 1 MiB plus one byte, the three third parties did three different things. hono-idempotency 0.9.1 and fiber v3.5.0 store and replay the whole body. idempo v1.0.0 does not store it and executes the handler again on the retry (`profile/omitted-body-replay`: `handlerInvocations: expected 1, got 2`), although it has a `MaxResponseBytes` option, so the bound exists and only its consequence is unspecified. anyonce executes once and replays the status and headers with an empty body and `Idempotency-Replay: omitted`. The second field is proposed in the same shape as G4's; a parameter on `Idempotency-Replayed` would be a tighter design and the WG may well prefer it.
+Against a result of 1 MiB plus one byte, the three third parties diverge in two different ways, and neither matches anyonce. hono-idempotency 0.9.1 and fiber v3.5.0 store and replay the whole body. idempo v1.0.0 does not store it and executes the handler again on the retry (`profile/omitted-body-replay`: `handlerInvocations: expected 1, got 2`), although it has a `MaxResponseBytes` option, so the bound exists and only its consequence is unspecified. anyonce executes once and replays the status and headers with an empty body and `Idempotency-Replay: omitted`. The second field is proposed in the same shape as G4's; a parameter on `Idempotency-Replayed` would be a tighter design and the WG may well prefer it.
 
 ### Proposed text
 

@@ -33,6 +33,8 @@ The part that may be useful to the WG beyond the listing is the conformance suit
 - Cross-implementation report: https://github.com/sns45/anyonce/blob/main/conformance/REPORT.md
 - Places where the vectors had to pick a behavior the draft leaves open, with proposed text for each: https://github.com/sns45/anyonce/blob/main/conformance/DRAFT-GAPS.md
 
+The per-project findings behind those numbers will go to each project first, offered as a shared asset rather than a scorecard, and some of the failures reflect ambiguity in the draft rather than a bug on their side.
+
 On the vectors themselves: they are Apache-2.0 and could live next to the draft if the chairs and editors would find that useful. We have not put them in this PR, because a directory of test material in the WG repository is a bigger question than an Implementation Status entry and would be an IETF contribution under the Note Well. If you would like them here, say so and a follow-up PR will add them under `conformance/` with a short README.
 
 The entry says pre-release honestly: the 0.1.0 packages have not been published yet. The source, the suite and the report are public now. Happy to adjust the wording or the level of detail to match the other entries; the existing entries are much shorter, and a trimmed version (Organization, Description, Reference) is fine too.
@@ -40,11 +42,12 @@ The entry says pre-release honestly: the 0.1.0 packages have not been published 
 ## Text to add
 
 ```markdown
-Organization: anyonce
+Organization: anyonce (Shantanu Sharma, individual)
 
 - Implementation: anyonce, https://github.com/sns45/anyonce
 - Description: One idempotency core applied to HTTP handlers, queue consumers and webhook receivers, in TypeScript (`@anyonce/core`, `@anyonce/hono`) and Go (`github.com/sns45/anyonce/go`), with the claim step a single atomic write on every supported store (memory, Cloudflare Durable Objects, Cloudflare D1, DynamoDB, Redis, Postgres, SQLite). Implements the `Idempotency-Key` request header field as an Item Structured Header String, the 400, 409 and 422 error cases as RFC 9457 problem details, and fingerprinting over method, target and content.
 - Level of maturity: pre-release. Source available and tested in CI; the 0.1.0 packages are not yet published. The implementation ships a language agnostic conformance suite for this draft (11 core and 9 profile vectors) that has been used to grade three independent implementations.
+- Version compatibility: draft-ietf-httpapi-idempotency-key-header-07 (normative text identical to the editor's copy at dab060c).
 - Coverage: every normative requirement of Section 2 that the suite grades, in both languages and on every store. Where the draft leaves a behavior open (replay indication, Retry-After on 409, 5xx results, key length, result size, error codes), the choices are documented and graded separately as a profile.
 - Licensing: Apache-2.0.
 - Implementation experience: seventeen points where the draft is silent or open to more than one reading are recorded with proposed text at https://github.com/sns45/anyonce/blob/main/conformance/DRAFT-GAPS.md. Results of the suite against anyonce and three other implementations: https://github.com/sns45/anyonce/blob/main/conformance/REPORT.md

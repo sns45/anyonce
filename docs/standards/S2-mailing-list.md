@@ -8,7 +8,7 @@ Notes for the sender, not part of the mail:
 
 - Send from the address that will stay subscribed to the list; IETF lists hold posts from non-subscribers for moderation.
 - The per-implementation findings (`conformance/issues/`) are still unsent drafts. The mail says so on purpose; offer them to each project before anyone on the list reads them as a scorecard.
-- If S1 has been opened by the time this goes, add its URL after the gap list link.
+- If the S1 PR exists by the time this goes, add its URL after the gap list link.
 
 ```text
 To: httpapi@ietf.org
@@ -17,7 +17,7 @@ Subject: Running code for draft-ietf-httpapi-idempotency-key-header: two impleme
 Hello all,
 
 draft-ietf-httpapi-idempotency-key-header-07 expired on 18 April 2026
-and no -08 has been posted. I would like to offer some running code in
+and no -08 has appeared. I would like to offer some running code in
 case it helps the WG decide what to do with it.
 
 anyonce is an open source (Apache-2.0) implementation of the draft in
@@ -36,7 +36,7 @@ it leaves open:
 Results from the committed run (third parties are graded on the core
 tier only; their profile numbers are information, not a verdict):
 
-  anyonce, TypeScript and Go, 11 runs across 7 stores: core 11/11, profile 9/9 on every run
+  anyonce (TypeScript, Go), 11 runs on 7 stores: core 11/11, profile 9/9
   hono-idempotency 0.9.1 (TypeScript, Hono middleware): core 11/11
   idempo v1.0.0 (Go, net/http middleware): core 9/11
   fiber v3.5.0 (Go, middleware/idempotency): core 7/11
@@ -59,9 +59,10 @@ The ones that seem most worth the WG's time:
   - there is no way to tell a replayed response from a fresh one;
     two of the three independent implementations already send an
     unregistered Idempotency-Replayed: true
-  - "success or an error" in 2.6 reads as "replay a 500 forever";
-    two of three release the key on a 5xx instead, and the three
-    disagree about 4xx
+  - "success or an error" in 2.6 can be read as replaying a 500 for
+    the life of the key; two of three release the key on a 5xx
+    instead, and on a 404 hono-idempotency does not replay it while
+    the other two do
   - the String syntax in 2.1 says nothing about what a resource does
     with a value that is not a valid String, or whether "k" and k
     are one key
