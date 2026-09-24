@@ -147,12 +147,83 @@ function thirdParties(): { name: string; version: string }[] {
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 
 const UNSENT = /^This is an unsent draft held in the anyonce repository\./m;
+/** The opening paragraph that says nothing was sent, which is the one place these verbs may appear. */
+const UNSENT_PARAGRAPH = /^This is an unsent draft held in the anyonce repository\..*$/m;
 const SENT_CLAIMS: RegExp[] = [
   /\b(I|we) (have |had )?(sent|filed|posted|opened|submitted|emailed|mailed)\b/i,
   /\b(was|were|is|are) (now )?(sent|filed|posted|opened|submitted)\b/i,
+  /\b(has|have|had) (now |already )?been (sent|filed|posted|opened|submitted|emailed|mailed)\b/i,
   /\bissue filed https?:/i,
   /\balready (sent|filed|posted|opened|submitted)\b/i,
 ];
+
+/**
+ * docs/reference/draft-07.txt as one line: the page footer and running header dropped and every run
+ * of whitespace collapsed to a single space, which is how DRAFT-GAPS.md quotes the draft.
+ */
+function draftText(): string {
+  return read('docs/reference/draft-07.txt')
+    .split('\n')
+    .filter((l) => !/^(Jena & Dalal {2,}Expires|Internet-Draft {2,}The Idempotency-Key)/.test(l))
+    .join(' ')
+    .replace(/\s+/g, ' ');
+}
+
+/** The shared footer of S3, quoted as a block but written by anyonce rather than taken from the draft. */
+const FOOTER = /^> This came out of implementing the draft twice/;
+
+/** Every `> ` quotation line of a markdown file outside fenced blocks, except the S3 footer. */
+function quotations(markdown: string): string[] {
+  const out: string[] = [];
+  let inFence = false;
+  for (const line of markdown.split('\n')) {
+    if (line.startsWith('```')) inFence = !inFence;
+    if (inFence || !line.startsWith('> ') || FOOTER.test(line)) continue;
+    out.push(line.slice(2));
+  }
+  return out;
+}
+
+/**
+ * Every pass count a draft quotes is the one conformance/results records: the vector totals, the
+ * anyonce line, the number of anyonce runs, and each third party's core count wherever its name and
+ * version are followed on the same line by a `core x/y` figure.
+ */
+function expectCounts(path: string): void {
+  const text = read(path);
+  const vectors = (tier: string): number =>
+    readdirSync(join(root, 'conformance/vectors', tier)).filter((f) => f.endsWith('.json')).length;
+  expect(text, path).toContain(`${vectors('core')} core vectors`);
+  expect(text, path).toContain(`${vectors('profile')} profile vectors`);
+
+  const files = readdirSync(join(root, 'conformance/results')).filter((f) => f.endsWith('.json'));
+  const own = files.filter((f) => f.startsWith('anyonce-'));
+  expect(own.length).toBeGreaterThanOrEqual(11);
+  for (const file of own) {
+    const { core, profile } = tally(file);
+    expect(core.pass, file).toBe(core.total);
+    expect(profile.pass, file).toBe(profile.total);
+  }
+  const { core, profile } = tally(own[0] ?? '');
+  expect(text, path).toMatch(
+    new RegExp(
+      `anyonce[^\\n]*core ${core.pass}/${core.total}[^\\n]*profile ${profile.pass}/${profile.total}`,
+    ),
+  );
+  expect(text, path).toContain(`${own.length} runs`);
+
+  const parties = thirdParties();
+  expect(parties.map((p) => p.name).sort()).toEqual(['fiber', 'hono-idempotency', 'idempo']);
+  for (const { name, version } of parties) {
+    const file = `${name}.json`;
+    expect(files).toContain(file);
+    const t = tally(file).core;
+    const re = new RegExp(`${escapeRegExp(`${name} ${version}`)}[^\\n]*?core (\\d+)/(\\d+)`, 'g');
+    const quoted = [...text.matchAll(re)].map((m) => `${m[1]}/${m[2]}`);
+    expect(quoted.length, `${path} ${name}`).toBeGreaterThan(0);
+    for (const q of quoted) expect(q, `${path} ${name}`).toBe(`${t.pass}/${t.total}`);
+  }
+}
 
 describe('standards drafts', () => {
   test('S1: the WG PR draft exists, says it is unsent, targets draft-ietf-httpapi-idempotency-key-header-07 section 4 and RFC 7942, and links the suite and the report', () => {
@@ -175,10 +246,12 @@ describe('standards drafts', () => {
     }
     const entry = fenced(s1, 'markdown').find((block) => block.startsWith('Organization: '));
     expect(entry, 'no kramdown entry opening with Organization:').toBeDefined();
+    expect(entry).toStartWith('Organization: anyonce (Shantanu Sharma, individual)\n');
     for (const field of [
       '- Implementation:',
       '- Description:',
       '- Level of maturity:',
+      '- Version compatibility: draft-ietf-httpapi-idempotency-key-header-07',
       '- Coverage:',
       '- Licensing:',
       '- Implementation experience:',
@@ -189,6 +262,11 @@ describe('standards drafts', () => {
       expect(entry).toContain(field);
     }
     expect(entry).toContain('pre-release');
+    expect(s1).toContain('shared asset rather than a scorecard');
+  });
+
+  test('S1: the WG PR draft quotes the pass counts that conformance/results records for every implementation', () => {
+    expectCounts(S1);
   });
 
   test('S2: the mailing list draft quotes the pass counts that conformance/results records for every implementation', () => {
@@ -196,39 +274,35 @@ describe('standards drafts', () => {
     expect(s2).toMatch(UNSENT);
     expect(s2).toMatch(/^To: httpapi@ietf\.org$/m);
     expect(s2).toMatch(/^Subject: .+$/m);
-
-    const vectors = (tier: string): number =>
-      readdirSync(join(root, 'conformance/vectors', tier)).filter((f) => f.endsWith('.json'))
-        .length;
-    expect(s2).toContain(`${vectors('core')} core vectors`);
-    expect(s2).toContain(`${vectors('profile')} profile vectors`);
-
-    const files = readdirSync(join(root, 'conformance/results')).filter((f) => f.endsWith('.json'));
-    const own = files.filter((f) => f.startsWith('anyonce-'));
-    expect(own.length).toBeGreaterThanOrEqual(11);
-    for (const file of own) {
-      const { core, profile } = tally(file);
-      expect(core.pass, file).toBe(core.total);
-      expect(profile.pass, file).toBe(profile.total);
+    expectCounts(S2);
+    const body = fenced(s2, 'text')[0] ?? '';
+    const long = body
+      .split('\n')
+      .filter((l) => l.length > 72 && !/https?:\/\//.test(l) && !l.startsWith('Subject: '));
+    expect(long, 'mail body lines over 72 columns').toEqual([]);
+    // Only draft text is put in quotation marks, and the 4xx summary names what the run measured.
+    expect(body).not.toContain('"replay a 500 forever"');
+    expect(body).not.toContain('the three\n    disagree about 4xx');
+    expect(body).toContain('hono-idempotency does not');
+    // G14: the run showed two behaviors among the three third parties, not three.
+    for (const path of [S3, GAPS]) {
+      expect(read(path), path).not.toContain('three different ways');
+      expect(read(path), path).toContain('two different ways, and neither matches anyonce');
     }
-    const { core, profile } = tally(own[0] ?? '');
-    expect(s2).toMatch(
-      new RegExp(
-        `anyonce[^\\n]*core ${core.pass}/${core.total}[^\\n]*profile ${profile.pass}/${profile.total}`,
-      ),
-    );
-    expect(s2).toContain(`${own.length} runs`);
+  });
 
-    const parties = thirdParties();
-    expect(parties.map((p) => p.name).sort()).toEqual(['fiber', 'hono-idempotency', 'idempo']);
-    for (const { name, version } of parties) {
-      const file = `${name}.json`;
-      expect(files).toContain(file);
-      const t = tally(file).core;
-      expect(s2).toMatch(
-        new RegExp(`${escapeRegExp(`${name} ${version}`)}[^\\n]*core ${t.pass}/${t.total}`),
-      );
+  test('S3: every quotation in the drafts is verbatim draft-ietf-httpapi-idempotency-key-header-07 text', () => {
+    const draft = draftText();
+    let count = 0;
+    for (const path of [S1, S2, S3]) {
+      for (const q of quotations(read(path))) {
+        count++;
+        expect(draft.includes(q), `${path}: ${q}`).toBe(true);
+      }
     }
+    expect(count).toBeGreaterThanOrEqual(20);
+    expect(draft).toContain('success or an error.');
+    expect(read(S2)).toContain('"success or an error"');
   });
 
   test('S3: every DRAFT-GAPS entry has an issue draft citing the same draft sections', () => {
@@ -281,7 +355,8 @@ describe('standards drafts', () => {
       const text = read(path);
       for (const dash of dashes) expect(text.includes(dash), path).toBe(false);
       expect(text, path).toMatch(UNSENT);
-      for (const claim of SENT_CLAIMS) expect(text, `${path} ${claim}`).not.toMatch(claim);
+      const rest = text.replace(UNSENT_PARAGRAPH, '');
+      for (const claim of SENT_CLAIMS) expect(rest, `${path} ${claim}`).not.toMatch(claim);
     }
   });
 
