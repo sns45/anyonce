@@ -53,26 +53,26 @@ other repositories (branch anyonce-launch, one PR each):
 
 ### Task 1: standards drafts S1 to S3 (branch `p7-standards`)
 
-- [ ] Write `test/standards.test.ts` first, failing: `S1: the WG PR draft exists, says it is unsent, targets draft-ietf-httpapi-idempotency-key-header-07 section 4 and RFC 7942, and links the suite and the report`; `S2: the mailing list draft quotes the pass counts that conformance/results records for every implementation`; `S3: every DRAFT-GAPS entry has an issue draft citing the same draft sections`; `S3: every issue draft's proposed text equals the DRAFT-GAPS proposed text byte for byte`; `S3: wave 1 is G4, G5, G6 with G7, G8 and G16 (Q85)`; `S1, S2, S3: no em or en dash and no claim that anything was sent`. Add the file to the root `test` script.
-- [ ] Write the three drafts until the test passes. Sources: `docs/reference/draft-07.txt` (section numbers and quotations), `conformance/DRAFT-GAPS.md`, `conformance/REPORT.md`, `conformance/issues/`.
-- [ ] Point each DRAFT-GAPS `Status: open` line at its S3 draft (`Status: open, issue drafted in docs/standards/S3-draft-issues.md#g<n>`), and make the test assert the anchor resolves.
-- [ ] Gates: `bun run lint`, `bun run test`, dash gate. PR to `p7-launch`, `Part of #49`.
+- [x] Write `test/standards.test.ts` first, failing: `S1: the WG PR draft exists, says it is unsent, targets draft-ietf-httpapi-idempotency-key-header-07 section 4 and RFC 7942, and links the suite and the report`; `S2: the mailing list draft quotes the pass counts that conformance/results records for every implementation`; `S3: every DRAFT-GAPS entry has an issue draft citing the same draft sections`; `S3: every issue draft's proposed text equals the DRAFT-GAPS proposed text byte for byte`; `S3: wave 1 is G4, G5, G6 with G7, G8 and G16 (Q85)`; `S1, S2, S3: no em or en dash and no claim that anything was sent`. Add the file to the root `test` script.
+- [x] Write the three drafts until the test passes. Sources: `docs/reference/draft-07.txt` (section numbers and quotations), `conformance/DRAFT-GAPS.md`, `conformance/REPORT.md`, `conformance/issues/`.
+- [x] Point each DRAFT-GAPS `Status: open` line at its S3 draft (`Status: open, issue drafted in docs/standards/S3-draft-issues.md#g<n>`), and make the test assert the anchor resolves.
+- [x] Gates: `bun run lint`, `bun run test`, dash gate. PR to `p7-launch`, `Part of #49`.
 
 ### Task 2: case study and site, profile README, resume (other repositories)
 
-- [ ] project-launch Step 0 intake from this repository; Step 1 article `content/anyonce/ARTICLE.md` in in8-home from the four-file template in `docs/eb1a-template/`, gates G1 to G7, with the "Why this is new" section per Q82 and the landscape table carrying the 0.2 rows with dates plus quayside and Powertools; diagrams under `src/diagrams/anyonce/` in the dark palette.
-- [ ] Step 2 card in `src/data/content.ts`, `public/sitemap.xml`, `public/llms.txt`; the Q83 redirects.
-- [ ] Step 3 profile README entry; Step 4 resume entry (one Letter page, columns within 20px, both variants; curation proposals go in the PR body, never applied silently).
-- [ ] Step 5 G8 check across the three repositories. `bun run build` green in in8-home and resume.
-- [ ] Each repository: branch `anyonce-launch`, one commit, one PR against `main`, body with the diff summary, the caveats (manual print preview, Q80 publish wording, no deploy). Record the three URLs.
+- [x] project-launch Step 0 intake from this repository; Step 1 article `content/anyonce/ARTICLE.md` in in8-home from the four-file template in `docs/eb1a-template/`, gates G1 to G7, with the "Why this is new" section per Q82 and the landscape table carrying the 0.2 rows with dates plus quayside and Powertools; diagrams under `src/diagrams/anyonce/` in the dark palette.
+- [x] Step 2 card in `src/data/content.ts`, `public/sitemap.xml`, `public/llms.txt`; the Q83 redirects.
+- [ ] Step 3 profile README entry; Step 4 resume entry (one Letter page, columns within 20px, both variants; curation proposals go in the PR body, never applied silently). (Profile README done in sns45/sns45#1; the resume entry is sns45/resume#1 as `atsOnly`, and one Letter page with columns within 20px stays open on Q87.)
+- [x] Step 5 G8 check across the three repositories. `bun run build` green in in8-home and resume.
+- [x] Each repository: branch `anyonce-launch`, one commit, one PR against `main`, body with the diff summary, the caveats (manual print preview, Q80 publish wording, no deploy). Record the three URLs. Note: sns45/in8-home#1 and sns45/sns45#1 have more than one commit; squash each on merge.
 
 ### Task 3: launch drafts, README link, gates (branch `p7-launch-drafts`)
 
-- [ ] `test/readme.test.ts` first: the case study link is `https://in8.sh/work/anyonce`; then the README change.
-- [ ] `/promote --platforms reddit,linkedin` with `content/anyonce/ARTICLE.md` as the sole claims source; outputs copied to `docs/launch/`; reviewed against G8.
-- [ ] `docs/launch/README.md`: each surface, its PR or file, and what remains gated on the owner.
-- [ ] CHECKLIST P7 ticks; `test:reqs` gains `--phase p7`.
-- [ ] Gates below. PR to `p7-launch`, `Part of #49`.
+- [x] `test/readme.test.ts` first: the case study link is `https://in8.sh/work/anyonce`; then the README change.
+- [x] `/promote --platforms reddit,linkedin` with `content/anyonce/ARTICLE.md` as the sole claims source; outputs copied to `docs/launch/`; reviewed against G8.
+- [x] `docs/launch/README.md`: each surface, its PR or file, and what remains gated on the owner.
+- [x] CHECKLIST P7 ticks; `test:reqs` gains `--phase p7`.
+- [x] Gates below. PR to `p7-launch`, `Part of #49`.
 
 ## Phase gate
 
