@@ -490,6 +490,9 @@ describe('release: workflow', () => {
     expect(publish).toContain('npm view "$name@$version" version');
     expect(publish.indexOf('npm view')).toBeLessThan(publish.indexOf('npm publish'));
     expect(publish).toContain('return 0');
+    // npm reads a bare dir/file.tgz as a GitHub shorthand (run 36011344322); the ./ prefix is required.
+    expect(publish).toContain('npm publish "./$tgz"');
+    expect(publish).toContain('set -euo pipefail');
   });
 
   test('REQ-CONF-7: release.yml loads the packed conformance vectors outside the checkout before uploading', () => {

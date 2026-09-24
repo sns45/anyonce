@@ -171,6 +171,7 @@ jobs:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
         run: |
           cat > /tmp/publish-packages.sh <<'SCRIPT'
+          set -euo pipefail
           export NODE_AUTH_TOKEN="$NPM_TOKEN"
           publish_one() {
             local tgz="$1" name version
@@ -180,7 +181,8 @@ jobs:
               echo "$name@$version is already published, skipping"
               return 0
             fi
-            npm publish "$tgz" --provenance --access public
+            # A bare dir/file.tgz path reads as a GitHub user/repo shorthand to npm; ./ makes it a file.
+            npm publish "./$tgz" --provenance --access public
           }
           for tgz in dist-release/anyonce-core-*.tgz; do
             publish_one "$tgz"
