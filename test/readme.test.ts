@@ -142,7 +142,7 @@ describe('README', () => {
     expect(text).toContain('](conformance/REPORT.md)');
     expect(text).toContain('](docs/conformance.md)');
     expect(text).toContain('](https://in8.sh/work/anyonce)');
-    expect(text).toContain('published at launch');
+    expect(text).toContain('published as 0.1.0');
     expect(text).toContain('<!-- bench:start -->');
     expect(text).toContain('<!-- bench:end -->');
     expect(text).toContain('Apache-2.0');

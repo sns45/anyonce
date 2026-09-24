@@ -44,16 +44,17 @@ Fiber v3.5.0: 7
 
 The same run found 17 places where the draft is silent, ambiguous or out of date. Each one is written up with proposed text. The working group pull request, the mailing list summary and the issues are drafted, not sent yet.
 
-Honest scope, because it matters: this is 0.1.0 pre release. The guarantee is at most one handler run per key while its record is alive, not exactly once side effects. Nothing has been load tested in production.
+Honest scope, because it matters: this is 0.1.0, published on npm with provenance and as a tagged Go module. The guarantee is at most one handler run per key while its record is alive, not exactly once side effects. Nothing has been load tested in production.
 
-The npm packages and the Go module publish with the 0.1.0 release. Today it runs from a clone:
+The npm packages and the Go module are published as 0.1.0:
+
+bun add @anyonce/core @anyonce/hono hono
+go get github.com/sns45/anyonce/go@v0.1.0
+
+It also runs from a clone:
 
 git clone https://github.com/sns45/anyonce
 bun install && bun run build && bun run test
-
-Once 0.1.0 is out:
-bun add @anyonce/core @anyonce/hono
-go get github.com/sns45/anyonce/go@v0.1.0
 
 The full case study, with the landscape table, the trade offs and the diagrams:
 https://in8.sh/work/anyonce?utm_source=linkedin&utm_medium=social&utm_campaign=anyonce-launch
