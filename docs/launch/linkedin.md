@@ -39,7 +39,7 @@ The IETF has a draft for the Idempotency-Key header. It expired in April with no
 
 So anyonce ships 20 executable vectors that only speak HTTP, and I pointed them at three other implementations:
 hono-idempotency 0.9.1: 11 of 11 core vectors
-idempo v1.0.0: 9
+idempo v1.0.0: 9 (one miss, replaying a keyed GET, rests on a vector my own draft issue calls arguable and possibly mis-tiered)
 Fiber v3.5.0: 7
 
 The same run found 17 places where the draft is silent, ambiguous or out of date. Each one is written up with proposed text. The working group pull request, the mailing list summary and the issues are drafted, not sent yet.

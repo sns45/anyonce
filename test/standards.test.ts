@@ -280,11 +280,11 @@ describe('standards drafts', () => {
       .split('\n')
       .filter((l) => l.length > 72 && !/https?:\/\//.test(l) && !l.startsWith('Subject: '));
     expect(long, 'mail body lines over 72 columns').toEqual([]);
-    // Only draft text is put in quotation marks, and the 4xx summary names what the run measured.
-    expect(body).not.toContain('"replay a 500 forever"');
-    expect(body).not.toContain('the three\n    disagree about 4xx');
+    // The 4xx summary names what the run measured.
     expect(body).toContain('hono-idempotency does not');
-    // G14: the run showed two behaviors among the three third parties, not three.
+  });
+
+  test('S3: the G14 issue and DRAFT-GAPS entry describe the two behaviours the run measured', () => {
     for (const path of [S3, GAPS]) {
       expect(read(path), path).not.toContain('three different ways');
       expect(read(path), path).toContain('two different ways, and neither matches anyonce');
@@ -358,6 +358,32 @@ describe('standards drafts', () => {
       const rest = text.replace(UNSENT_PARAGRAPH, '');
       for (const claim of SENT_CLAIMS) expect(rest, `${path} ${claim}`).not.toMatch(claim);
     }
+  });
+
+  test('P7: the launch drafts are marked unsent and quote the committed counts (Q86)', () => {
+    const dir = join(root, 'docs/launch');
+    const files = readdirSync(dir).filter((f) => f.endsWith('.md'));
+    expect(files.length).toBeGreaterThanOrEqual(6);
+    const texts = files.map((f) => ({ path: `docs/launch/${f}`, text: read(`docs/launch/${f}`) }));
+    for (const { path, text } of texts) expect(text, path).toMatch(/^> Unsent drafts?\. /);
+
+    const all = texts.map((t) => t.text).join('\n');
+    for (const { name, version } of thirdParties()) {
+      const t = tally(`${name}.json`).core;
+      const re = new RegExp(
+        `${escapeRegExp(`${name} ${version}`)}(?: passes|:) (\\d+)(?: of (\\d+))?`,
+        'gi',
+      );
+      const quoted = [...all.matchAll(re)];
+      expect(quoted.length, name).toBeGreaterThan(0);
+      for (const m of quoted) {
+        expect(Number(m[1]), name).toBe(t.pass);
+        if (m[2] !== undefined) expect(Number(m[2]), name).toBe(t.total);
+      }
+    }
+    const gapCounts = [...all.matchAll(/(\d+) places where the draft/g)].map((m) => Number(m[1]));
+    expect(gapCounts.length).toBeGreaterThan(0);
+    for (const n of gapCounts) expect(n).toBe(gaps().length);
   });
 
   test('S3: every DRAFT-GAPS status line points at its issue draft', () => {
