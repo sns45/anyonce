@@ -408,7 +408,8 @@ Release steps added by the P6 review:
 - add a README to each package tarball (the dry run lists every package that ships without one);
 - configure required reviewers on the npm-release environment in the repository settings (release.yml's npm job runs in that environment and says so);
 - make the repository public (Q68);
-- run one workflow_dispatch with publish false to prove the keyless sign and cosign verify path before the first tag.
+- run one workflow_dispatch with publish false to prove the keyless sign and cosign verify path before the first tag;
+- the npm token comes from Doppler release-tooling/prd through a read-only service token stored as the DOPPLER_TOKEN secret on the npm-release environment.
 
 **Decision: pending.** P6 proceeds on the recommendation.
 

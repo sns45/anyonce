@@ -293,13 +293,34 @@ describe('release: workflow', () => {
     expect(publish.run).toContain('--provenance');
     expect(publish.run).toContain('--access public');
     expect(publish.run).toContain('dist-release/*.tgz');
-    expect(publish.env?.NODE_AUTH_TOKEN).toMatch(/^\$\{\{ secrets\.NPM_TOKEN \}\}$/);
+    expect(publish.env?.DOPPLER_TOKEN).toMatch(/^\$\{\{ secrets\.DOPPLER_TOKEN \}\}$/);
+    expect(publish.run).toContain('doppler run --');
+    expect(publish.run).toContain('export NODE_AUTH_TOKEN="$NPM_TOKEN"');
     expect(script.indexOf('forgeseal verify')).toBeLessThan(script.indexOf('npm publish'));
     const setupNode = job.steps.find((s) => s.uses?.startsWith('actions/setup-node@')) as Step;
     expect(setupNode.with?.['registry-url']).toBe('https://registry.npmjs.org');
     const upload = job.steps.find((s) => s.uses?.startsWith('actions/upload-artifact@')) as Step;
     expect(upload.if).toBe('success() || failure()');
     expect(upload.with?.['if-no-files-found']).toBe('warn');
+  });
+
+  test('REQ-REL-2: release.yml sources the npm token from Doppler, never from an NPM_TOKEN secret', () => {
+    const text = readFileSync(join(root, '.github/workflows/release.yml'), 'utf8');
+    expect(text).not.toContain('secrets.NPM_TOKEN');
+    expect(text).not.toContain('NPM_TOKEN }}');
+    const job = readWorkflow().jobs.npm as Job;
+    const dopplerInstall = job.steps.find((s) => s.uses?.startsWith('dopplerhq/cli-action@')) as
+      | Step
+      | undefined;
+    expect(dopplerInstall).toBeDefined();
+    const publish = job.steps.find((s) => (s.run ?? '').includes('npm publish')) as Step;
+    expect(publish.run).toContain('doppler run --');
+    const authCheck = job.steps.find((s) => (s.run ?? '').includes('npm whoami')) as Step;
+    expect(authCheck.run).toContain('doppler run --');
+    expect(authCheck.env?.DOPPLER_TOKEN).toMatch(/^\$\{\{ secrets\.DOPPLER_TOKEN \}\}$/);
+    expect(authCheck.if).toBe(publish.if);
+    expect(job.steps.indexOf(dopplerInstall as Step)).toBeLessThan(job.steps.indexOf(authCheck));
+    expect(job.steps.indexOf(authCheck)).toBeLessThan(job.steps.indexOf(publish));
   });
 
   test('REQ-REL-2: release.yml publishes only from a v* tag ref, and only a version equal to the tag', () => {

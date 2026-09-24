@@ -45,6 +45,8 @@ jobs:
       - uses: sigstore/cosign-installer@v4.1.2
         with:
           cosign-release: v3.1.2
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
       - run: bun install --frozen-lockfile
       - run: bun run build
       - run: bun run test
@@ -115,14 +117,38 @@ jobs:
             echo "$GITHUB_SHA is not on origin/main; refusing to publish"
             exit 1
           fi
+      # NPM_TOKEN comes from Doppler (project release-tooling, config prd), sourced through the
+      # DOPPLER_TOKEN environment secret on the npm-release environment; it never lands in a
+      # GitHub secret, an .npmrc on disk outside doppler run, or a log line.
+      - name: verify npm authentication resolves through Doppler
+        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
+        shell: bash
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          cat > /tmp/verify-npm-auth.sh <<'SCRIPT'
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error::NPM_TOKEN could not be resolved from Doppler. Verify the DOPPLER_TOKEN secret is set on the npm-release environment and the release-tooling/prd config contains NPM_TOKEN."
+            exit 1
+          fi
+          export NODE_AUTH_TOKEN="$NPM_TOKEN"
+          if ! npm whoami >/dev/null 2>&1; then
+            echo "::error::npm authentication failed. NPM_TOKEN (from Doppler release-tooling/prd via DOPPLER_TOKEN) is missing, expired, or lacks publish rights to the @anyonce scope."
+            exit 1
+          fi
+          echo "Authenticated to npm as: $(npm whoami)"
+          SCRIPT
+          doppler run -- bash /tmp/verify-npm-auth.sh
       # @anyonce/core goes first, since every other package peers on it. A tarball whose name@version
       # is already on npm is skipped, so a run that failed part way can be rerun.
       - name: publish with provenance
         if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
         shell: bash
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
         run: |
+          cat > /tmp/publish-packages.sh <<'SCRIPT'
+          export NODE_AUTH_TOKEN="$NPM_TOKEN"
           publish_one() {
             local tgz="$1" name version
             name="$(tar -xzOf "$tgz" package/package.json | jq -r .name)"
@@ -140,6 +166,8 @@ jobs:
             case "$tgz" in dist-release/anyonce-core-*) continue ;; esac
             publish_one "$tgz"
           done
+          SCRIPT
+          doppler run -- bash /tmp/publish-packages.sh
       - uses: actions/upload-artifact@v4
         if: success() || failure()
         with:
