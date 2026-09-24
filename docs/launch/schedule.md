@@ -2,7 +2,7 @@
 
 # Posting schedule for anyonce
 
-Preconditions, in order, before Day 1: the 0.1.0 release is published (Q64, Q80); the in8-home PR is merged and deployed, and https://in8.sh/work/anyonce answers; the "publishes with the release" sentences in `reddit.md` and `linkedin.md` are updated to match what actually shipped; the owner says go. Only Reddit and LinkedIn were generated for this launch.
+Preconditions, in order, before Day 1 (Q89): the 0.1.0 release is published (Q64, Q80); S2 is sent and the S4 issues are offered to each graded project (hono-idempotency, idempo, Fiber), because S1 and S2 promise the findings go to the authors first and every post quotes their scores; the in8-home PR is merged and deployed, and https://in8.sh/work/anyonce answers; the "publishes with the release" sentences in `reddit.md` and `linkedin.md` are updated to match what actually shipped; the owner says go. Only Reddit and LinkedIn were generated for this launch.
 
 Spread over three days so no subreddit sees a second post from the same account on the same day.
 
