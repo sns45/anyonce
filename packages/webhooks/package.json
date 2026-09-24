@@ -1,6 +1,6 @@
 {
   "name": "@anyonce/webhooks",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Standard Webhooks receiver for anyonce: idempotent webhook delivery after signature verification",
   "license": "Apache-2.0",
   "repository": {

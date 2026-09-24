@@ -1,6 +1,6 @@
 {
   "name": "@anyonce/anyq",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "anyq consumer middleware for anyonce idempotency",
   "license": "Apache-2.0",
   "repository": {

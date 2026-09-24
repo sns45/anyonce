@@ -88,15 +88,22 @@ describe('release: changesets', () => {
     for (const name of published) expect(globMatches('@anyonce/*', name)).toBe(true);
   });
 
-  test('REQ-REL-1: the pending changesets release every published package at 0.1.0', async () => {
+  test('REQ-REL-1: every published package is at, or is released by the pending changesets to, one version from 0.1.0 up', async () => {
     const packages = await getPackages(root);
     const parsed = await readConfig(root, packages);
     if (parsed.config === undefined)
       throw new Error(`changeset config: ${parsed.errors.join('; ')}`);
     const changesets = await readChangesets(root);
     const plan = assembleReleasePlan(changesets, packages, parsed.config, undefined);
-    const versions = Object.fromEntries(plan.releases.map((r) => [r.name, r.newVersion]));
-    for (const name of publishedPackages()) expect(versions[name]).toBe('0.1.0');
+    const planned = Object.fromEntries(plan.releases.map((r) => [r.name, r.newVersion]));
+    const current = Object.fromEntries(
+      packages.packages.map((p) => [p.packageJson.name, p.packageJson.version]),
+    );
+    const versions = publishedPackages().map((name) => planned[name] ?? current[name]);
+    // The fixed group moves every package together, and the first release is 0.1.0.
+    expect(new Set(versions).size).toBe(1);
+    const [major, minor] = (versions[0] ?? '0.0.0').split('.').map(Number);
+    expect((major ?? 0) > 0 || (minor ?? 0) >= 1).toBe(true);
   });
 });
 

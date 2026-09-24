@@ -1,6 +1,6 @@
 {
   "name": "@anyonce/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Transport-agnostic idempotency engine, store contract and memory store",
   "license": "Apache-2.0",
   "repository": {
