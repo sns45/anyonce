@@ -1,0 +1,8 @@
+{
+  "name": "anyonce-worker-hono-do",
+  "main": "./src/index.ts",
+  "compatibility_date": "2025-09-01",
+  // IdempotencyObject holds the idempotency records in its SQLite storage, so the class needs a SQLite migration.
+  "durable_objects": { "bindings": [{ "name": "IDEMPOTENCY", "class_name": "IdempotencyObject" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["IdempotencyObject"] }]
+}

@@ -133,6 +133,11 @@ func TestMemoryAdapter(t *testing.T) {
 		// The handler running at all is the end of the park: anyq re-enqueued the message and the door's
 		// second claim found the lease gone.
 		in.ran.wait(t, 1, "inner handler calls")
+		// The inner handler starting is not the delivery finishing: the door still has to complete the claim
+		// and the loop still has to ack. Stopping here would cancel the context under the door, which then
+		// reports the cancellation and the strategy dead-letters it. Two settles: the delivery that parked
+		// and the redelivery that ran.
+		settled.wait(t, 2, "settled deliveries")
 		st := run.stop(t)
 
 		wantParked(t, st, in, leaseUntil, 1)

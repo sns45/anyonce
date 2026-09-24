@@ -364,3 +364,106 @@ Fiber's `idempotency.Config` defaults `KeyHeader` to `X-Idempotency-Key`, not `I
 Recommended resolution: configure the Fiber fixture with `KeyHeader: "Idempotency-Key"` and a permissive `KeyHeaderValidate` that accepts every key (`func(string) error { return nil }`, so the fixture adds no validation Fiber does not have), and print both overrides in `conformance/REPORT.md`'s notes for that row so the departure from defaults is visible. Record the two defaults themselves as findings in the Fiber issue drafts: the header name is a draft-conformance gap, and the 500 in place of a 400 is an error-handling gap against draft section 2.7.
 
 **Decision: pending.** P5 proceeds on the recommendation.
+
+## Q60: `npm pack` publishes `workspace:*` peer ranges verbatim
+
+Every package that depends on `@anyonce/core` (`@anyonce/anyq`, `@anyonce/hono`, `@anyonce/stores`, `@anyonce/webhooks`) declares it as a peer with `workspace:*`. Checked on 22 September 2026: `npm pack` in `packages/hono` writes `"@anyonce/core": "workspace:*"` into the packed `package.json`, which npm cannot install, and `changeset publish` publishes through npm. `bun pm pack` rewrites the protocol (to the exact version for `workspace:*`).
+
+Recommended resolution: pack every package with `bun pm pack` and publish the tarball with `npm publish <tarball> --provenance --access public`, so provenance still comes from npm. Change the four peers to `workspace:^` so the packed range is `^0.1.0` rather than an exact pin. The dry run and the release workflow both check every packed manifest for a leftover `workspace:` specifier. CHECKLIST's "`npm pack` for every package" is read as "pack every package"; the command is `bun pm pack`.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q61: forgeseal keyless signing is an external action
+
+REQ-REL-2 asks for forgeseal SBOM plus Sigstore signing of the release tarballs. forgeseal v0.5.1 (`go install github.com/sns45/forgeseal/cmd/forgeseal@v0.5.1`, installable locally) signs keyless through Fulcio and records every signature in the public Rekor transparency log, which is a publication, and it needs an OIDC identity this machine does not have non-interactively. It also offers keyed signing against a local CA (`forgeseal ca`, `forgeseal sign --keyed`).
+
+Recommended resolution: the P6 dry run generates the SBOM for every tarball and signs tarball and SBOM in keyed mode with a throwaway CA created inside the dry run's scratch directory, then verifies both, so the whole pipeline is exercised without any network write. The release workflow signs keyless under GitHub Actions OIDC, and only on a tag or a manual dispatch.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q62: the README's case study link and conformance badge before P7
+
+REQ-DOC-1 asks for a conformance badge and a link to the case study. The case study is written and published in P7 on in8.sh, so the link has no target during P6, and a badge service is outside the repository.
+
+Recommended resolution: link `https://in8.sh/anyonce` (the same host and prefix as the D11 problem base URI) with the words "case study, published at launch". The badge is a static shields.io image whose text states anyonce's own core and profile pass counts, links to `conformance/REPORT.md`, and is asserted against `conformance/results/` by a test, so it cannot drift from the report. No badge endpoint is hosted.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q63: how NFR-1's "under 2 ms p50" is measured
+
+NFR-1 says the HTTP adapter adds under 2 ms p50 with the memory store, measured in `benchmarks/` and published in the README. It does not say what the baseline is, which path is timed, or in which process.
+
+Recommended resolution: in process, one runtime, sequential requests: the same trivial handler bare and wrapped in `withIdempotency` with the memory store, timed with `performance.now()` around `fetch(request)`. Two paths are measured, first execution (a fresh key per request) and replay (one key), and overhead is the wrapped p50 minus the bare p50 for each. The README table records runtime, OS, CPU model and iteration count. The CI test asserts both overheads under the spec's 2 ms and nothing tighter, so a slow shared runner does not flake it. Network and store latency are excluded by construction; they belong to the deployment, not the adapter.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q64: the parts of REL-2, REL-3 and section 7 that need the real release
+
+REQ-REL-2 (provenance visible on npm), REQ-REL-3 (tag `go/v0.1.0`, pkg.go.dev renders), section 7 item 5 and CHECKLIST's "Real release only after explicit go" can only be observed after a publish and a tag push, both of which are external actions this phase may not take.
+
+Recommended resolution: P6 proves everything short of the publish: the workflow's triggers, permissions and steps are pinned by tests, every package's doc comment exists so pkg.go.dev has something to render, and the dry run exercises version, build, pack, SBOM and signature. The CHECKLIST real-release line stays unticked and points here; it is done when the owner gives the go, the version PR merges, and the tags are pushed.
+
+Release steps added by the P6 review:
+
+- add a README to each package tarball (the dry run lists every package that ships without one);
+- configure required reviewers on the npm-release environment in the repository settings (release.yml's npm job runs in that environment and says so);
+- make the repository public (Q68);
+- run one workflow_dispatch with publish false to prove the keyless sign and cosign verify path before the first tag.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q65: whether the 0.1.0 version bump is committed in P6
+
+CHECKLIST's dry-run line starts with `bunx changeset version`. Running it on the integration branch would consume the pending changesets and commit 0.1.0 versions and changelogs before the release is approved, and every later change (the P6 review fixes, anything in P7) would then need a second bump to reach users.
+
+Recommended resolution: the dry run exports `HEAD` into a scratch directory with `git archive` and runs `changeset version` there; nothing it writes reaches the branch. The version commit is the first step of the real release, in its own PR, after the owner's go.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q66: a client disconnect on Cloudflare Workers leaves the claim in flight
+
+The HTTP capture completes the record in the response stream's pull path (Q19); when the client cancels, the remaining body is drained and complete runs afterwards with nothing keeping the Worker alive (no ctx.waitUntil), so the runtime can end that work, the record stays in_flight until the lease expires, and a retry after that runs the handler again. docs/semantics.md already describes this.
+
+Recommended resolution: add an optional waitUntil?: (p: Promise<unknown>) => void option to withIdempotency and the Hono middleware (the Hono binding passes c.executionCtx.waitUntil when present) that the capture hands its drain-and-complete promise to on cancel. This is a public API change with a changeset, targeted at 0.1.x after the owner decides; until then the lease bounds the damage.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q67: the Go webhook door has no Skip option
+
+TS webhookReceiver accepts skip, Go webhookmw.Options has no Skip, so a Go receiver cannot exempt a path the way the TS one can (Q28 used skip for the conformance control paths in TS).
+
+Recommended resolution: add Skip func(*http.Request) bool to webhookmw.Options with the same semantics as the TS option (D16: Skip is checked after verification, so a skipped delivery that fails the gate is still 401; it turns off deduplication, never verification), with a test, in 0.1.x; documented as a parity gap in docs/semantics.md until then (it already is).
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q68: npm provenance needs a public source repository
+
+REQ-REL-2 publishes with --provenance from GitHub Actions OIDC; npm only accepts provenance statements from public repositories, and sns45/anyonce is private; the release workflow and every package's repository field are ready (P6 Task 8).
+
+Recommended resolution: make the repository public before the first tag push (part of the explicit release go, Q64); do not drop --provenance to publish from a private repo, because REQ-REL-2 requires it.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q69: Go SQL stores give no way to close their pool
+
+`postgres.Open` and `sqlite.Open` return a store whose `*sql.DB` the caller cannot close, so a caller that wants to shut down cleanly has to open its own pool and pass it in (the Go Postgres example had to do exactly that).
+
+Recommended resolution: add `Close() error` to the SQL store type before the `go/v0.1.0` tag, closing the pool only when the store opened it, with a test. Not blocking P6.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q70: InFlightError.DelayMs truncates to whole milliseconds
+
+`InFlightError.DelayMs` truncates the remaining lease to whole milliseconds, so a downgraded park can wake up to 1 ms before the lease ends and park again (found by P6 Task 1 in the go/anyqmw services test). Behavior today is correct; the cost is one extra park.
+
+Recommended resolution: round up (ceil) in both languages in 0.1.x, with a test on each side.
+
+**Decision: pending.** P6 proceeds on the recommendation.
+
+## Q71: REQ-HTTP-17 and the Worker example's conformance run
+
+REQ-HTTP-17 says the Worker example passes the URL-mode runner. The Worker example runs the conformance runner in process inside workerd (vitest-pool-workers), which the acceptance criterion itself names as an acceptable route ("Worker via unstable_dev/vitest-pool-workers"); the Lambda example runs over a real socket.
+
+Recommended resolution: read the acceptance criterion as satisfied and note it here; no change.
+
+**Decision: pending.** P6 proceeds on the recommendation.

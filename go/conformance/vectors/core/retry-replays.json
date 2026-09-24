@@ -1,0 +1,30 @@
+{
+  "id": "core/retry-replays",
+  "tier": "core",
+  "title": "A retry after completion replays the stored status and body without executing again",
+  "draftRef": "section-2.6",
+  "description": "Duplicate request, Retry: the resource responds with the result of the previously completed operation. The counter stays at one.",
+  "fixture": "echo",
+  "steps": [
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-retry-1", "Content-Type": "text/plain" },
+        "body": "payload-a"
+      },
+      "expect": { "status": 201, "bodyEquals": "payload-a", "handlerInvocations": 1 }
+    },
+    {
+      "id": "retry",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "headers": { "Idempotency-Key": "k-retry-1", "Content-Type": "text/plain" },
+        "body": "payload-a"
+      },
+      "expect": { "status": 201, "bodyEquals": { "sameAs": "first" }, "handlerInvocations": 1 }
+    }
+  ]
+}

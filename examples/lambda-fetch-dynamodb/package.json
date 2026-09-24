@@ -1,0 +1,20 @@
+{
+  "name": "@anyonce-examples/lambda-fetch-dynamodb",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/local.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anyonce/core": "workspace:*",
+    "@anyonce/stores": "workspace:*",
+    "@aws-sdk/client-dynamodb": "^3.1134.0"
+  },
+  "devDependencies": {
+    "@anyonce/conformance": "workspace:*",
+    "@anyonce/fixture-hono": "workspace:*"
+  }
+}

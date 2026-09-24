@@ -1,0 +1,33 @@
+{
+  "id": "profile/5xx-not-stored",
+  "tier": "profile",
+  "title": "A 5xx result is not stored, so a retry executes again",
+  "description": "anyonce profile (D6): on 5xx the record is abandoned so the client can retry; the second request executes and is not marked as a replay.",
+  "fixture": "status",
+  "steps": [
+    {
+      "id": "first",
+      "request": {
+        "method": "POST",
+        "path": "/status/500",
+        "headers": { "Idempotency-Key": "k-5xx-1", "Content-Type": "text/plain" },
+        "body": "s"
+      },
+      "expect": { "status": 500, "bodyEquals": "status:500", "handlerInvocations": 1 }
+    },
+    {
+      "id": "retry",
+      "request": {
+        "method": "POST",
+        "path": "/status/500",
+        "headers": { "Idempotency-Key": "k-5xx-1", "Content-Type": "text/plain" },
+        "body": "s"
+      },
+      "expect": {
+        "status": 500,
+        "headers": { "Idempotency-Replayed": { "absent": true } },
+        "handlerInvocations": 2
+      }
+    }
+  ]
+}

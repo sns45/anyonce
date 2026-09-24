@@ -1,0 +1,64 @@
+# anyonce
+
+> Transport-agnostic idempotent execution for serverless and edge systems: one core state machine behind three doors (HTTP `Idempotency-Key`, anyq queue consumers, Standard Webhooks `webhook-id` receivers), six atomic stores, TypeScript and Go, and a conformance suite for the IETF Idempotency-Key draft.
+
+Semantics: every operation is identified by (scope, key) and carries a fingerprint of its payload. `begin` claims the key in one atomic write on every store (no get-then-lock) and returns acquired, in_flight, completed or mismatch. An acquired claim holds a lease and a monotonic fence token; a claim whose lease expired is re-acquirable with fence + 1 by a request with the same fingerprint (under a different fingerprint it is still a mismatch), and `complete` or `abandon` with a stale fence is rejected. A completed record is replayed to duplicates with `Idempotency-Replayed: true`. A duplicate while the claim is live is 409 `conflict` with `Retry-After` (lease remaining, seconds); the same key with a different fingerprint is 422 `fingerprint-mismatch`; a missing key when required is 400 `missing-key`. Storage rule (D6): results with status below 500 are stored and replayed; a 5xx or a thrown error abandons the record so the client can retry. Stored bodies over `maxResultBytes` (1 MiB default) complete in an omitted form that replays status and headers with `Idempotency-Replay: omitted`. Records expire after a TTL (24 h default), enforced on read and by `purge(now)`. Errors are RFC 9457 problem details with a stable `code`. Queue door: a completed duplicate is acknowledged without running the handler, an in-flight duplicate parks for the lease remainder, a mismatch dead-letters with reason `fingerprint-mismatch`, through the companion strategy. Webhook door: signature verification always runs before the store is touched.
+
+## Packages
+
+- `@anyonce/core`: engine, types, key helpers, fingerprints and the in-process store. exports: execute, defaultPolicy, defaultStoreResult, MemoryStore, newKey, redactKey, parseKey, validateKey, httpFingerprint, jcsFingerprint, sha256Hex, canonicalize, parseSfString, DEFAULT_LEASE_MS, DEFAULT_TTL_MS, DEFAULT_MAX_RESULT_BYTES, MAX_KEY_BYTES
+- `@anyonce/core/http`: `withIdempotency` for any fetch handler plus the shared HTTP helpers. exports: withIdempotency, idempotencyOf, runIdempotent, resolveHttpOptions, withProtocolHeaders, problem, problemResponse, lookupKey, captureResponse, replayResponse, DEFAULT_HEADER_NAME, DEFAULT_METHODS, DEFAULT_PROBLEM_BASE_URI, PROBLEM_STATUS
+- `@anyonce/core/testing`: the shared store contract suite, for a store of your own. exports: storeContractSuite, T0, LEASE_MS, TTL_MS, MAX_RESULT_BYTES
+- `@anyonce/hono`: Hono middleware for the HTTP door. exports: idempotency, withIdempotency, idempotencyOf
+- `@anyonce/anyq`: anyq consumer middleware and the companion strategy (both required). exports: idempotent, idempotencyStrategy, InFlightError, FingerprintMismatchError, FingerprintError, isInFlightError, isFingerprintMismatchError, messageFingerprint, DEFAULT_KEY_HEADER, IDEMPOTENCY_STRATEGY_NAME
+- `@anyonce/webhooks`: Standard Webhooks receiver, verification before deduplication. exports: webhookReceiver, standardWebhooksVerify, markVerified, isVerified, parseSecret, DEFAULT_ID_HEADER, DEFAULT_TOLERANCE_SECONDS
+- `@anyonce/stores`: the record codec shared by the stores. exports: newRow, rowToRecord, encodeResultMeta, decodeResultMeta, bytesToBase64, base64ToBytes
+- `@anyonce/stores/durable-objects`: Cloudflare Durable Objects store, one object per scope. exports: DurableObjectsStore, IdempotencyObject
+- `@anyonce/stores/d1`: Cloudflare D1 store. exports: D1Store, ensureSchema, MIGRATION_SQL
+- `@anyonce/stores/dynamodb`: DynamoDB store, one conditional UpdateItem per claim. exports: DynamoDbStore, ensureTable, itemKey, DYNAMODB_MAX_RESULT_BYTES
+- `@anyonce/stores/redis`: Redis store, one Lua script per transition (ioredis, node-redis, Upstash). exports: RedisStore, fromIoredis, fromNodeRedis, fromUpstash
+- `@anyonce/stores/postgres`: Postgres store (postgres.js, Neon). exports: PostgresStore, fromPostgresJs, fromNeon, ensureSchema, MIGRATION_SQL
+- `@anyonce/conformance`: conformance runner and the `anyonce-conformance` CLI. exports: runConformance, loadVectors, runVector, runVectors, evaluateExpect, formatReport, toSender
+- `@anyonce/conformance/runtime`: the runner without the file loader and the CLI, for workerd. exports: runConformance, runVector, runVectors, evaluateExpect, formatReport, toSender
+
+`@anyonce/stores/migrations/*` ships the Postgres and D1 SQL migrations as files.
+
+## Go
+
+Module `github.com/sns45/anyonce/go`, Go 1.26, no cgo.
+
+- `github.com/sns45/anyonce/go/anyonce`: engine, Store interface, keys, fingerprints, sentinel errors. exports: Execute, Store, Policy, DefaultPolicy, Record, Operation, NewKey, RedactKey, ParseKey, ValidateKey, HTTPFingerprint, JCSFingerprint, ErrConflict, ErrMismatch, ErrStaleFence, ErrStoreUnavailable
+- `github.com/sns45/anyonce/go/httpmw`: net/http middleware for the HTTP door. exports: New, Middleware, Options, KeyFromContext, FenceFromContext, NewProblem, WriteProblem, DefaultMethods
+- `github.com/sns45/anyonce/go/anyqmw`: anyq consumer middleware and the companion strategy (both required). exports: Wrap, Strategy, Options, KeySourceID, KeySourceHeader, KeySourceBody, InFlightRetry, InFlightAck, InFlightError, ErrFingerprintMismatch, DefaultKeyHeader
+- `github.com/sns45/anyonce/go/webhookmw`: webhook receiver middleware, verification before deduplication. exports: New, Middleware, Options, MarkVerified, IsVerified, DefaultIDHeader
+- `github.com/sns45/anyonce/go/standardwebhooks`: Standard Webhooks signature verification. exports: New, Verifier, ParseSecret, ErrVerification, DefaultTolerance
+- `github.com/sns45/anyonce/go/store/memory`: in-process store. exports: New, Store
+- `github.com/sns45/anyonce/go/store/dynamodb`: DynamoDB store. exports: New, Options, Store, EnsureTable, MaxResultBytes
+- `github.com/sns45/anyonce/go/store/redis`: Redis store. exports: New, Options, Store
+- `github.com/sns45/anyonce/go/store/postgres`: Postgres store on database/sql. exports: New, Open, Options, EnsureSchema, Schema
+- `github.com/sns45/anyonce/go/store/sqlite`: SQLite store on modernc.org/sqlite. exports: New, Open, EnsureSchema, Schema
+- `github.com/sns45/anyonce/go/storetest`: the store contract suite. exports: Run, Harness, Factory
+- `github.com/sns45/anyonce/go/conformance`: Go conformance runner with the vectors embedded. exports: Run, RunVectors, DefaultVectors, LoadVectors, Options, Summary
+
+## Docs
+
+The npm packages, the Go module and the public repository links below are published at launch (0.1.0).
+
+- [README](https://github.com/sns45/anyonce/blob/main/README.md): the three doors, stores, conformance, examples
+- [docs/semantics.md](https://github.com/sns45/anyonce/blob/main/docs/semantics.md): state machine, lease and fence, guarantees and limits
+- [docs/stores.md](https://github.com/sns45/anyonce/blob/main/docs/stores.md): store guarantees matrix, atomicity per store, why not Cloudflare KV
+- [docs/queue-ids.md](https://github.com/sns45/anyonce/blob/main/docs/queue-ids.md): message id stability per anyq adapter
+- [docs/problems.md](https://github.com/sns45/anyonce/blob/main/docs/problems.md): problem types, codes and statuses
+- [docs/conformance.md](https://github.com/sns45/anyonce/blob/main/docs/conformance.md): running the suite, reading the report, adding a vector
+- [docs/security.md](https://github.com/sns45/anyonce/blob/main/docs/security.md): key entropy, scope and principal, log redaction, stored bodies
+- [conformance/REPORT.md](https://github.com/sns45/anyonce/blob/main/conformance/REPORT.md): cross-implementation conformance report
+- [requirements.md](https://github.com/sns45/anyonce/blob/main/requirements.md): the design
+
+## Examples
+
+- [worker-hono-do](https://github.com/sns45/anyonce/tree/main/examples/worker-hono-do): Cloudflare Worker, Hono, Durable Objects store
+- [lambda-fetch-dynamodb](https://github.com/sns45/anyonce/tree/main/examples/lambda-fetch-dynamodb): AWS Lambda function URL, withIdempotency, DynamoDB store
+- [go-net-http-postgres](https://github.com/sns45/anyonce/tree/main/examples/go-net-http-postgres): Go net/http, httpmw, Postgres store
+- [anyq-consumer-ts](https://github.com/sns45/anyonce/tree/main/examples/anyq-consumer-ts): anyq consumer in TypeScript with idempotent and idempotencyStrategy
+- [anyq-consumer-go](https://github.com/sns45/anyonce/tree/main/examples/anyq-consumer-go): anyq consumer in Go with anyqmw.Wrap and anyqmw.Strategy
+- [webhook-receiver-standard-webhooks](https://github.com/sns45/anyonce/tree/main/examples/webhook-receiver-standard-webhooks): Standard Webhooks receiver

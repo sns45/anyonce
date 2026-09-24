@@ -37,12 +37,23 @@ const WORKER_CONFIG = join(WORKER_DIR, 'wrangler.jsonc');
 const WRANGLER_BIN = join(REPO_ROOT, 'node_modules', '.bin', 'wrangler');
 
 /** wrangler dev prints "[wrangler:info] Ready on http://127.0.0.1:<port>" once workerd is listening. That
- * line is the readiness signal: the collector never sleeps a fixed amount and never polls the port. */
+ * line is the primary readiness signal. waitForWorkerReady below also races a bounded HTTP probe of GET
+ * /counter against it (REQ-CONF-8 Step 2, WRANGLER_PROBE_ATTEMPTS/INTERVAL_MS), for the case where wrangler
+ * keeps running but never prints this line; the probe is a fixed number of attempts on a fixed interval,
+ * never an unbounded poll, and the collector still never sleeps a fixed amount waiting for either signal. */
 const WRANGLER_READY_PATTERN = /Ready on (http:\S+)/;
 
 /** Generous, because a cold wrangler dev bundles the worker before workerd starts; about ten seconds is
  * typical. A hung start has to fail with a message rather than block the whole collection forever. */
 const WRANGLER_READY_TIMEOUT_MS = 120_000;
+
+/** Bounded retry for waitForWorkerReady's HTTP probe fallback (REQ-CONF-8 Step 2): five attempts, the first
+ * fired immediately and the rest half a second apart, so four gaps of half a second between them; the worst
+ * case adds two seconds on top of whatever the Ready line would have taken. Never a fixed sleep on its own:
+ * WRANGLER_READY_TIMEOUT_MS above remains the ceiling if neither the Ready line nor the probe ever succeeds.
+ */
+const WRANGLER_PROBE_ATTEMPTS = 5;
+const WRANGLER_PROBE_INTERVAL_MS = 500;
 
 /** The Go fixture is already built by the time it is spawned, so it should listen almost immediately. */
 const FIXTURE_READY_TIMEOUT_MS = 30_000;
@@ -461,40 +472,156 @@ function tail(text: string): string {
   return clean.length > 1000 ? `...${clean.slice(-1000)}` : clean || '(no output)';
 }
 
+/** REQ-CONF-8: strips any SGR (color) escapes before matching WRANGLER_READY_PATTERN, so wrangler dev's Ready
+ * line parses whether or not color output is enabled. */
+function parseReadyUrl(buffer: string): string | undefined {
+  return WRANGLER_READY_PATTERN.exec(buffer.replace(ANSI_PATTERN, ''))?.[1];
+}
+
+/** REQ-CONF-8: parameters for waitForWorkerReady's HTTP probe fallback (Step 2). Every value that could
+ * otherwise be a fixed sleep is a parameter, so a unit test injects both `wait` and the probe and runs with no
+ * real timers. */
+export interface WaitForWorkerReadyOptions {
+  /** The worker's URL, known up front from the row's own fixed --port (N6): every workerd-url row in rows.ts
+   * carries one, so this is available before wrangler is even spawned. It is what the probe fallback polls
+   * and what waitForWorkerReady returns when the probe, rather than the Ready line, wins the race. */
+  url: string;
+  /** Number of GET /counter attempts before the probe gives up; a 200 on any attempt ends the loop
+   * immediately. */
+  attempts: number;
+  /** Delay between attempts, driven through `wait` rather than a bare setTimeout so a test can make it instant. */
+  intervalMs: number;
+  wait: (ms: number) => Promise<void>;
+  /** Overall ceiling in ms; matches the collector's WRANGLER_READY_TIMEOUT_MS. */
+  timeoutMs: number;
+  context: string;
+}
+
 /**
- * Waits for wrangler dev's own readiness line rather than sleeping or polling, so a slow bundle is waited out
- * and a wrangler that dies (a port already bound, a bundle error) fails immediately with its output rather
- * than after the full timeout. Once ready, stdout keeps being drained in the background: wrangler logs every
- * request it serves, and a full pipe buffer would stall the server mid-run.
+ * REQ-CONF-8: resolves to the worker's URL from whichever readiness signal arrives first.
+ *
+ * The primary signal is wrangler dev's own "Ready on ..." line, read from `lines` chunk by chunk. The fallback
+ * is a bounded HTTP probe of GET /counter, a route that bypasses the idempotency layer entirely (DEFAULT_METHODS
+ * in packages/core/src/http/options.ts is ['POST', 'PATCH']), so it answers 200 the moment the worker itself is
+ * listening, no key required. Both run concurrently from the start: a workerd-url row's port is fixed and known
+ * before wrangler is even spawned (rows.ts assigns one to every such row), so there is no port announcement to
+ * wait for before probing can begin; the Ready line is watched for its own sake because it is instant when it
+ * comes. That is also why a probe that exhausts its attempts does not itself fail the wait: it only means the
+ * Ready line, or the overall `timeoutMs` ceiling, decides instead.
+ *
+ * If `lines` ends before either signal fires, that is wrangler exiting (a port already bound, a bundle error),
+ * and it is reported immediately with the output tail rather than waited out by an in-flight probe: an exited
+ * process has nothing left to answer GET /counter.
+ */
+export async function waitForWorkerReady(
+  lines: AsyncIterable<string>,
+  probe: () => Promise<Response>,
+  opts: WaitForWorkerReadyOptions,
+): Promise<string> {
+  const { url, attempts, intervalMs, wait, timeoutMs, context } = opts;
+  const timer = rejectAfter(
+    timeoutMs,
+    `${context}: wrangler dev was not ready within ${timeoutMs} ms`,
+  );
+  // Set once either signal wins, so the loser stops doing further work of its own accord instead of running
+  // for the lifetime of the wrangler process it was racing against. Each loop only checks this at the top of
+  // an iteration, so the loser's already-pending operation (one more chunk read, one more probe in flight)
+  // still completes; that single extra step is harmless and is what "settled" is for; it is not, and does not
+  // need to be, instant cancellation.
+  let settled = false;
+
+  async function watchReadyLine(): Promise<string> {
+    let buffer = '';
+    for await (const chunk of lines) {
+      if (settled) return neverResolves<string>();
+      buffer += chunk;
+      const found = parseReadyUrl(buffer);
+      if (found !== undefined) return found;
+    }
+    throw new Error(`${context}: wrangler dev exited before it was ready: ${tail(buffer)}`);
+  }
+
+  async function watchProbe(): Promise<string> {
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      if (settled) return neverResolves<string>();
+      if (attempt > 0) await wait(intervalMs);
+      try {
+        const response = await probe();
+        if (response.status === 200) return url;
+      } catch {
+        // Connection refused while workerd is still starting; keep retrying until attempts is spent.
+      }
+    }
+    // Exhausted without a 200: never resolve or reject here. watchReadyLine may still succeed, wrangler may
+    // exit (watchReadyLine's own rejection), or the timer will fire; a probe that gave up must not itself fail
+    // a run that may still be legitimately starting.
+    return neverResolves<string>();
+  }
+
+  try {
+    const winner = await Promise.race([watchReadyLine(), watchProbe(), timer.promise]);
+    settled = true;
+    return winner;
+  } finally {
+    timer.cancel();
+  }
+}
+
+/** A promise that never settles, for a losing branch of a race that must stop competing without itself
+ * resolving or rejecting. */
+function neverResolves<T>(): Promise<T> {
+  return new Promise<T>(() => {});
+}
+
+/** Adapts a stream reader into the AsyncIterable<string> waitForWorkerReady consumes, so the collector's real
+ * ReadableStream and a unit test's plain async generator satisfy the same parameter. */
+function chunksFrom(reader: ReadableStreamDefaultReader<Uint8Array>): AsyncIterable<string> {
+  const decoder = new TextDecoder();
+  return {
+    [Symbol.asyncIterator](): AsyncIterator<string> {
+      return {
+        async next(): Promise<IteratorResult<string>> {
+          const chunk = await reader.read();
+          if (chunk.done) return { done: true, value: undefined };
+          return { done: false, value: decoder.decode(chunk.value, { stream: true }) };
+        },
+      };
+    },
+  };
+}
+
+/** Keeps reading (and discarding) from `reader` until the stream ends, using the same reader rather than
+ * releasing and reacquiring one. wrangler logs every request it serves once the run is under way, and a full
+ * OS pipe buffer would stall the process mid-run whichever readiness path won. */
+async function drainReader(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+  for (;;) {
+    const chunk = await reader.read();
+    if (chunk.done) return;
+  }
+}
+
+/**
+ * REQ-CONF-8: wires waitForWorkerReady to wrangler dev's real stdout and a real GET /counter probe. `url` is
+ * the row's own fixed --port (N6), already known by the caller before wrangler was spawned.
  */
 async function waitForWranglerUrl(
   stream: ReadableStream<Uint8Array> | null,
+  url: string,
   context: string,
 ): Promise<string> {
   if (stream === null) throw new Error(`${context}: wrangler dev produced no stdout`);
   const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  const timer = rejectAfter(
-    WRANGLER_READY_TIMEOUT_MS,
-    `${context}: wrangler dev was not ready within ${WRANGLER_READY_TIMEOUT_MS} ms`,
-  );
-  let buffer = '';
   try {
-    for (;;) {
-      const chunk = await Promise.race([reader.read(), timer.promise]);
-      if (chunk.done) {
-        throw new Error(`${context}: wrangler dev exited before it was ready: ${tail(buffer)}`);
-      }
-      buffer += decoder.decode(chunk.value, { stream: true });
-      const url = WRANGLER_READY_PATTERN.exec(buffer)?.[1];
-      if (url !== undefined) {
-        reader.releaseLock();
-        void readAllText(stream).catch(() => {});
-        return url;
-      }
-    }
+    return await waitForWorkerReady(chunksFrom(reader), () => fetch(`${url}/counter`), {
+      url,
+      attempts: WRANGLER_PROBE_ATTEMPTS,
+      intervalMs: WRANGLER_PROBE_INTERVAL_MS,
+      wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      timeoutMs: WRANGLER_READY_TIMEOUT_MS,
+      context,
+    });
   } finally {
-    timer.cancel();
+    void drainReader(reader).catch(() => {});
   }
 }
 
@@ -513,6 +640,7 @@ export async function collectWorkerdUrl(row: ReportRow): Promise<RunSummary> {
   if (row.port === undefined) {
     throw new Error(`workerd-url collector: row "${row.id}" has no fixed port`);
   }
+  const url = `http://127.0.0.1:${row.port}`;
   const state = join(WORKER_DIR, '.wrangler', 'report-state', row.id);
   rmSync(state, { recursive: true, force: true });
   const wrangler = Bun.spawn({
@@ -535,13 +663,16 @@ export async function collectWorkerdUrl(row: ReportRow): Promise<RunSummary> {
     stdout: 'pipe',
     stderr: 'pipe',
   });
-  // stdout is drained by waitForWranglerUrl once it has the address; stderr needs the same treatment for the
+  // stdout is drained by waitForWranglerUrl once readiness settles; stderr needs the same treatment for the
   // same reason. wrangler writes bundler and deprecation notices there, and a full OS pipe buffer would block
   // the process mid-run with nothing to time it out.
   void readAllText(wrangler.stderr).catch(() => {});
   try {
-    const url = await waitForWranglerUrl(wrangler.stdout, `row "${row.id}"`);
-    return await runTsConformanceCli(buildTsUrlArgs(row, url), `row "${row.id}" (${url})`);
+    const readyUrl = await waitForWranglerUrl(wrangler.stdout, url, `row "${row.id}" (${url})`);
+    return await runTsConformanceCli(
+      buildTsUrlArgs(row, readyUrl),
+      `row "${row.id}" (${readyUrl})`,
+    );
   } finally {
     wrangler.kill();
     await wrangler.exited;

@@ -350,10 +350,32 @@ func casePark(t *testing.T, b broker) {
 		}
 		return
 	}
-	// The mirror property: the downgrade never leaves the delivery it has, so the handler is re-invoked once
-	// on that same id.
-	if len(st.reinvokes) != 1 || st.reinvokes[0] != st.ids[1] {
-		t.Fatalf("the downgrade re-invoked %v, want one re-invocation of %q", st.reinvokes, st.ids[1])
+	// The mirror property: the downgrade never leaves the delivery it has, so every re-invocation is on that
+	// same id. How many it takes is not fixed. anyq sleeps the door's DelayMs, which is the lease remainder in
+	// whole milliseconds rounded down (minimum 1), so the first wake can land a fraction of a millisecond before
+	// the lease ends. That re-invocation meets the live claim, the door reports another in-flight error, and
+	// anyq parks and re-invokes again. What must hold is that every re-invocation but the last one met the
+	// claim and stopped at the door, and only the last reached the handler; wantParked above already proved
+	// the handler ran once for this message and not before the lease expired.
+	if len(st.reinvokes) == 0 {
+		t.Fatal("the downgrade never re-invoked the handler")
+	}
+	for i, id := range st.reinvokes {
+		if id != st.ids[1] {
+			t.Fatalf("re-invocation %d was on %q, want the parked delivery %q", i, id, st.ids[1])
+		}
+	}
+	if len(st.reinvokeErrs) != len(st.reinvokes)-1 {
+		t.Fatalf("%d re-invocations failed of %d, want every one but the last to fail: %v", len(st.reinvokeErrs), len(st.reinvokes), st.reinvokeErrs)
+	}
+	for i, err := range st.reinvokeErrs {
+		var inFlight *anyqmw.InFlightError
+		if !errors.As(err, &inFlight) {
+			t.Fatalf("re-invocation %d failed with %v, want an *InFlightError from a wake just short of the lease", i, err)
+		}
+	}
+	if len(st.reinvokes) > 1 {
+		t.Logf("the downgrade took %d re-invocations; the earlier ones woke just short of the lease and parked again", len(st.reinvokes))
 	}
 }
 

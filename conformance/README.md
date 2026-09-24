@@ -81,7 +81,8 @@ Flags mirror the TypeScript CLI flag for flag: `-url` (required), `-tier core|pr
 1. Create `vectors/<tier>/<name>.json`; the `id` must be `<tier>/<name>`.
 2. Core vectors must cite a `draftRef`; profile vectors must not use `requires`.
 3. Add the id to `CORE_IDS` or `PROFILE_IDS` in `packages/conformance/test/catalog.ts`, and to `BARE_PASS_IDS` there if it passes without an idempotency layer.
-4. Run `bun run vectors:validate` and `bun test packages/conformance`.
+4. Copy the file to the same path under `go/conformance/vectors/`, which the Go module embeds; a parity test in `go/conformance` fails until the two match.
+5. Run `bun run vectors:validate`, `bun run build` (the package build copies the vectors it ships) and `bun test packages/conformance`.
 
 ## Cross-implementation report
 

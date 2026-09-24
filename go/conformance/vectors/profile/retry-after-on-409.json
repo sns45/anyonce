@@ -1,0 +1,31 @@
+{
+  "id": "profile/retry-after-on-409",
+  "tier": "profile",
+  "title": "A 409 for an in-flight duplicate carries Retry-After in whole seconds",
+  "description": "anyonce profile: Retry-After is derived from the remaining lease, at least 1 second.",
+  "fixture": "slow",
+  "steps": [
+    {
+      "id": "original",
+      "request": {
+        "method": "POST",
+        "path": "/slow?ms=1500",
+        "headers": { "Idempotency-Key": "k-retry-after-1", "Content-Type": "text/plain" },
+        "body": "slow"
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "id": "duplicate",
+      "concurrentWith": ["original"],
+      "delayMs": 300,
+      "request": {
+        "method": "POST",
+        "path": "/slow?ms=1500",
+        "headers": { "Idempotency-Key": "k-retry-after-1", "Content-Type": "text/plain" },
+        "body": "slow"
+      },
+      "expect": { "status": 409, "headers": { "Retry-After": { "regex": "^[1-9][0-9]*$" } } }
+    }
+  ]
+}

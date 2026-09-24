@@ -8,7 +8,7 @@ Each gate is run with `verification-before-completion`. Paste the raw command ou
 - [ ] `bun run lint` clean, `bun run build` clean, `bun run test` green, `bun run test:reqs` reports no uncovered REQ ids in this phase's scope
 - [ ] `cd go && go vet ./... && go test -race ./... && golangci-lint run` clean (once Go code exists)
 - [ ] No em or en dashes: `rg -n "[\x{2013}\x{2014}]" --glob '!node_modules' --glob '!*.lock' --glob '!docs/reference/**' .` returns nothing
-- [ ] No full keys logged: `rg -n "console\.(log|info|warn|error)\(.*key" packages go` reviewed, only `redactKey` usages
+- [ ] No full keys logged: `rg -n "console\.(log|info|warn|error)\(.*key" packages go examples` reviewed, only `redactKey` usages
 - [ ] Changeset present for any public API change
 - [ ] `docs/superpowers/questions.md` reviewed; every open question has a recommended resolution
 
@@ -68,11 +68,11 @@ Each gate is run with `verification-before-completion`. Paste the raw command ou
 
 ## P6 docs, examples, release
 
-- [ ] Six examples each have a CI smoke test that passes
-- [ ] Benchmarks script writes numbers into README; NFR-1 met
-- [ ] `llms.txt` present and accurate
-- [ ] Dry-run release: `bunx changeset version`, `bun run build`, `npm pack` for every package, `go mod tidy` clean, forgeseal SBOM + signature generated for tarballs
-- [ ] Real release only after explicit go: npm provenance visible on `npm view @anyonce/core`, Go tag `go/v0.1.0` resolves
+- [x] Six examples each have a CI smoke test that passes
+- [x] Benchmarks script writes numbers into README; NFR-1 met
+- [x] `llms.txt` present and accurate
+- [x] Dry-run release: `bunx changeset version`, `bun run build`, `npm pack` for every package, `go mod tidy` clean, forgeseal SBOM + signature generated for tarballs (run by `bun run release:dry-run`: packs with `bun pm pack` per Q60, signs keyed against a throwaway CA per Q61, versions a `git archive` copy per Q65)
+- [ ] Real release only after explicit go: npm provenance visible on `npm view @anyonce/core`, Go tag `go/v0.1.0` resolves (open until the owner's go, see Q64)
 
 ## P7 standards and launch
 

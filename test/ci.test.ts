@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
+import { goExamples } from './examples';
 
 type Job = {
   steps: Array<{
@@ -23,9 +24,10 @@ const runs = (job: Job) => job.steps.map((s) => s.run ?? '').join('\n');
 const uses = (job: Job) => job.steps.map((s) => s.uses ?? '');
 
 describe('ci workflow', () => {
-  test('REQ-REL-4: declares the ts, vectors-validate, workers, go, services, node-compat and deno jobs', () => {
+  test('REQ-REL-4: declares the ts, vectors-validate, workers, go, services, node-compat, deno and examples jobs', () => {
     expect(Object.keys(ci.jobs).sort()).toEqual([
       'deno',
+      'examples',
       'go',
       'node-compat',
       'services',
@@ -76,7 +78,7 @@ describe('ci workflow', () => {
   });
 
   test('REQ-REL-4: tee pipelines use bash with pipefail', () => {
-    for (const name of ['ts', 'services', 'workers']) {
+    for (const name of ['ts', 'services', 'workers', 'examples']) {
       const job = ci.jobs[name] as Job;
       for (const step of job.steps) {
         if (step.run?.includes('| tee')) {
@@ -130,7 +132,7 @@ describe('ci workflow', () => {
     const text = runs(job);
     expect(text).toContain('rg -n "[\\x{2013}\\x{2014}]"');
     expect(text).toContain("--glob '!docs/reference/**'");
-    expect(text).toContain("rg -n 'console\\.(log|info|warn|error)\\(.*key' packages go");
+    expect(text).toContain("rg -n 'console\\.(log|info|warn|error)\\(.*key' packages go examples");
     for (const step of job.steps) {
       if (step.name === 'dash gate' || step.name === 'key-log gate') {
         expect(step.shell).toBe('bash');
@@ -230,6 +232,59 @@ describe('ci workflow', () => {
     expect(runs(workers)).toContain('scripts/no-skips.sh workers.log');
     expect(runs(workers).indexOf('tee workers.log')).toBeLessThan(
       runs(workers).indexOf('scripts/no-skips.sh workers.log'),
+    );
+  });
+
+  test('REQ-DOC-7: the examples job starts DynamoDB Local and Postgres, runs every example smoke test and fails on skips', () => {
+    const job = ci.jobs.examples as Job;
+    expect(job).toBeTruthy();
+    expect(uses(job).some((u) => u.startsWith('oven-sh/setup-bun@'))).toBe(true);
+    expect(uses(job).some((u) => u.startsWith('actions/setup-go@'))).toBe(true);
+    const steps = job.steps.map((s) => s.run ?? '');
+    const at = (run: string) => steps.indexOf(run);
+    expect(at('bun install --frozen-lockfile')).toBeGreaterThan(-1);
+    expect(at('bun run build')).toBeGreaterThan(at('bun install --frozen-lockfile'));
+    const composeUp = at('docker compose -f test/compose.yml up -d --wait dynamodb postgres');
+    expect(composeUp).toBeGreaterThan(at('bun run build'));
+    const bunTests = at('bun run test:examples 2>&1 | tee examples.log');
+    expect(bunTests).toBeGreaterThan(composeUp);
+    expect(job.steps[bunTests]?.shell).toBe('bash');
+    expect(at('scripts/no-skips.sh examples.log')).toBeGreaterThan(bunTests);
+    const workerTests = at('bun run test:examples:workers 2>&1 | tee examples-workers.log');
+    expect(workerTests).toBeGreaterThan(at('bun run build'));
+    expect(job.steps[workerTests]?.shell).toBe('bash');
+    expect(at('scripts/no-skips.sh examples-workers.log')).toBeGreaterThan(workerTests);
+
+    // Every nested Go module under examples/ gets its own vet and race test step with services required.
+    const goModules = goExamples();
+    expect(goModules).toContain('go-net-http-postgres');
+    for (const name of goModules) {
+      const index = job.steps.findIndex((s) => s['working-directory'] === `examples/${name}`);
+      const step = job.steps[index];
+      expect(step?.run, name).toContain('go vet ./...');
+      expect(step?.run, name).toContain('go test -race -count=1 ./...');
+      expect(step?.env?.ANYONCE_REQUIRE_SERVICES, name).toBe('1');
+      expect(index, name).toBeGreaterThan(composeUp);
+      const lint = job.steps.find(
+        (s) =>
+          s.uses?.startsWith('golangci/golangci-lint-action@') &&
+          s.with?.['working-directory'] === `examples/${name}`,
+      );
+      expect(lint?.with?.version, name).toBe('v2.13.2');
+    }
+
+    const composeDown = job.steps.findIndex(
+      (s) => s.run === 'docker compose -f test/compose.yml down -v',
+    );
+    expect(composeDown).toBeGreaterThan(bunTests);
+    expect(job.steps[composeDown]?.if).toBe('always()');
+
+    const pkg = JSON.parse(readFileSync(join(import.meta.dir, '../package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts['test:examples']).toStartWith('bun test examples');
+    expect(pkg.scripts['test:examples:workers']).toBe(
+      'vitest run --config examples/worker-hono-do/vitest.config.ts',
     );
   });
 });
