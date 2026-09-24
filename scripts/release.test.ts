@@ -22,6 +22,7 @@ type Step = {
 };
 type Job = {
   if?: string;
+  needs?: string | string[];
   environment?: string;
   permissions?: Record<string, string>;
   defaults?: { run?: { 'working-directory'?: string } };
@@ -313,14 +314,35 @@ describe('release: workflow', () => {
     expect(dispatch.inputs.publish.default).toBe(false);
   });
 
-  test('REQ-REL-2: release.yml publishes packed tarballs with provenance and signs them with forgeseal', () => {
+  test('REQ-REL-2: release.yml splits npm into a pack job without an environment and a publish job behind npm-release', () => {
     const wf = readWorkflow();
+    expect(Object.keys(wf.jobs).sort()).toEqual(['go', 'pack', 'publish']);
     expect(wf.permissions).toEqual({ contents: 'read' });
-    const job = wf.jobs.npm as Job;
-    expect(job.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
+    const pack = wf.jobs.pack as Job;
+    const publish = wf.jobs.publish as Job;
+    // A dispatch from main must run pack: the environment only admits v* tags and needs a reviewer.
+    expect(pack.environment).toBeUndefined();
+    expect(pack.needs).toBeUndefined();
+    expect(pack.if).toBe(
+      "startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'",
+    );
+    expect(pack.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
+    expect(publish.environment).toBe('npm-release');
+    expect(publish.needs).toBe('pack');
+    // A dispatch with publish true from a branch must not publish: the tag ref is required for both events.
+    expect(publish.if).toBe(
+      "startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)",
+    );
+    expect(publish.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
     expect((wf.jobs.go as Job).permissions).toBeUndefined();
-    expect(job.if).toContain("startsWith(github.ref, 'refs/tags/v')");
-    expect(job.if).toContain("github.event_name == 'workflow_dispatch'");
+    expect((wf.jobs.go as Job).environment).toBeUndefined();
+    // Repository settings are the owner's job; the workflow says so next to the environment.
+    const text = readFileSync(join(root, '.github/workflows/release.yml'), 'utf8');
+    expect(text).toMatch(/required reviewers on the npm-release environment/);
+  });
+
+  test('REQ-REL-2: the pack job packs, checks, signs and verifies every tarball, then uploads them', () => {
+    const job = readWorkflow().jobs.pack as Job;
     const setupBun = job.steps.find((s) => s.uses?.startsWith('oven-sh/setup-bun@')) as Step;
     expect(setupBun.with?.['bun-version']).toBe('1.4.2');
     const script = runs(job);
@@ -334,56 +356,96 @@ describe('release: workflow', () => {
     expect(script).toMatch(/forgeseal sign --keyed=false/);
     expect(script).toContain('forgeseal verify');
     expect(script.indexOf('bun pm pack')).toBeLessThan(script.indexOf('forgeseal sign'));
-    const publish = job.steps.find((s) => (s.run ?? '').includes('npm publish')) as Step;
-    expect(publish.run).toContain('--provenance');
-    expect(publish.run).toContain('--access public');
-    expect(publish.run).toContain('dist-release/*.tgz');
-    expect(publish.env?.DOPPLER_TOKEN).toMatch(/^\$\{\{ secrets\.DOPPLER_TOKEN \}\}$/);
-    expect(publish.run).toContain('doppler run --');
-    expect(publish.run).toContain('export NODE_AUTH_TOKEN="$NPM_TOKEN"');
-    expect(script.indexOf('forgeseal verify')).toBeLessThan(script.indexOf('npm publish'));
-    const setupNode = job.steps.find((s) => s.uses?.startsWith('actions/setup-node@')) as Step;
-    expect(setupNode.with?.['registry-url']).toBe('https://registry.npmjs.org');
+    expect(script).not.toContain('npm publish');
+    expect(script).not.toContain('doppler');
+    const sign = job.steps.find((s) => (s.run ?? '').includes('forgeseal sign')) as Step;
     const upload = job.steps.find((s) => s.uses?.startsWith('actions/upload-artifact@')) as Step;
-    expect(upload.if).toBe('success() || failure()');
-    expect(upload.with?.['if-no-files-found']).toBe('warn');
+    expect(upload.if).toBeUndefined();
+    expect(upload.with?.name).toBe('release-tarballs-sboms-signatures');
+    expect(upload.with?.path).toContain('dist-release/*.tgz');
+    expect(upload.with?.path).toContain('dist-release/*.cdx.json');
+    expect(upload.with?.path).toContain('dist-release/*.sigstore.json');
+    expect(upload.with?.['if-no-files-found']).toBe('error');
+    expect(job.steps.indexOf(sign)).toBeLessThan(job.steps.indexOf(upload));
+    expect(job.steps.at(-1)).toBe(upload);
   });
 
-  test('REQ-REL-2: release.yml sources the npm token from Doppler, never from an NPM_TOKEN secret', () => {
+  test('REQ-REL-2: the publish job downloads the signed artifact and runs every guard before npm publish', () => {
+    const job = readWorkflow().jobs.publish as Job;
+    const checkout = job.steps.find((s) => s.uses?.startsWith('actions/checkout@')) as Step;
+    expect(checkout.with?.['fetch-depth']).toBe(0);
+    const setupNode = job.steps.find((s) => s.uses?.startsWith('actions/setup-node@')) as Step;
+    expect(setupNode.with?.['node-version']).toBe(22);
+    expect(setupNode.with?.['registry-url']).toBe('https://registry.npmjs.org');
+    const doppler = job.steps.find((s) => s.uses?.startsWith('dopplerhq/cli-action@')) as Step;
+    const download = job.steps.find((s) =>
+      s.uses?.startsWith('actions/download-artifact@'),
+    ) as Step;
+    expect(download.with?.name).toBe('release-tarballs-sboms-signatures');
+    expect(download.with?.path).toBe('dist-release');
+    // Nothing is rebuilt, repacked or re-signed in the publish job.
+    expect(runs(job)).not.toContain('bun pm pack');
+    expect(runs(job)).not.toContain('forgeseal');
+    const at = (needle: string) => {
+      const step = job.steps.find((s) => (s.run ?? '').includes(needle)) as Step;
+      expect(step).toBeDefined();
+      // The job carries the publish condition; no guard can be skipped on its own.
+      expect(step.if).toBeUndefined();
+      return job.steps.indexOf(step);
+    };
+    const version = at('GITHUB_REF_NAME#v');
+    const onMain = at('git merge-base');
+    const auth = at('npm whoami');
+    const publish = at('npm publish');
+    expect(job.steps.indexOf(download)).toBeLessThan(version);
+    expect(job.steps.indexOf(doppler)).toBeLessThan(auth);
+    expect(version).toBeLessThan(onMain);
+    expect(onMain).toBeLessThan(auth);
+    expect(auth).toBeLessThan(publish);
+    const versionRun = job.steps[version]?.run as string;
+    expect(versionRun).toContain('dist-release/*.tgz');
+    expect(versionRun).toContain('exit 1');
+    const onMainRun = job.steps[onMain]?.run as string;
+    expect(onMainRun).toContain(
+      'git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main',
+    );
+    expect(onMainRun).toContain('git merge-base --is-ancestor "$GITHUB_SHA" origin/main');
+    expect(onMainRun).toContain('exit 1');
+  });
+
+  test('REQ-REL-2: every guard step lives in the publish job, none in pack or go', () => {
+    const wf = readWorkflow();
+    for (const name of ['pack', 'go']) {
+      const script = runs(wf.jobs[name] as Job);
+      for (const guard of ['GITHUB_REF_NAME#v', 'git merge-base', 'npm whoami', 'npm publish']) {
+        expect(`${name}: ${guard}: ${script.includes(guard)}`).toBe(`${name}: ${guard}: false`);
+      }
+    }
+  });
+
+  test('REQ-REL-2: release.yml sources the npm token from Doppler, and only the publish job sees DOPPLER_TOKEN', () => {
     const text = readFileSync(join(root, '.github/workflows/release.yml'), 'utf8');
     expect(text).not.toContain('secrets.NPM_TOKEN');
     expect(text).not.toContain('NPM_TOKEN }}');
-    const job = readWorkflow().jobs.npm as Job;
-    const dopplerInstall = job.steps.find((s) => s.uses?.startsWith('dopplerhq/cli-action@')) as
-      | Step
-      | undefined;
-    expect(dopplerInstall).toBeDefined();
+    const wf = readWorkflow();
+    for (const [name, job] of Object.entries(wf.jobs)) {
+      if (name === 'publish') continue;
+      expect(`${name}: ${JSON.stringify(job).includes('DOPPLER_TOKEN')}`).toBe(`${name}: false`);
+    }
+    const job = wf.jobs.publish as Job;
+    const withToken = job.steps.filter((s) => s.env?.DOPPLER_TOKEN !== undefined);
     const publish = job.steps.find((s) => (s.run ?? '').includes('npm publish')) as Step;
-    expect(publish.run).toContain('doppler run --');
     const authCheck = job.steps.find((s) => (s.run ?? '').includes('npm whoami')) as Step;
-    expect(authCheck.run).toContain('doppler run --');
-    expect(authCheck.env?.DOPPLER_TOKEN).toMatch(/^\$\{\{ secrets\.DOPPLER_TOKEN \}\}$/);
-    expect(authCheck.if).toBe(publish.if);
-    expect(job.steps.indexOf(dopplerInstall as Step)).toBeLessThan(job.steps.indexOf(authCheck));
-    expect(job.steps.indexOf(authCheck)).toBeLessThan(job.steps.indexOf(publish));
-  });
-
-  test('REQ-REL-2: release.yml publishes only from a v* tag ref, and only a version equal to the tag', () => {
-    const job = readWorkflow().jobs.npm as Job;
-    const publish = job.steps.find((s) => (s.run ?? '').includes('npm publish')) as Step;
-    // A dispatch with publish true from a branch must not publish: the tag ref is required for both events.
-    expect(publish.if).toBe(
-      "startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)",
-    );
-    const versionCheck = job.steps.find((s) => (s.run ?? '').includes('GITHUB_REF_NAME#v')) as Step;
-    expect(versionCheck.if).toBe(publish.if);
-    expect(versionCheck.run).toContain('dist-release/*.tgz');
-    expect(versionCheck.run).toContain('exit 1');
-    expect(job.steps.indexOf(versionCheck)).toBeLessThan(job.steps.indexOf(publish));
+    expect(withToken).toEqual([authCheck, publish]);
+    for (const step of withToken) {
+      expect(step.env?.DOPPLER_TOKEN).toMatch(/^\$\{\{ secrets\.DOPPLER_TOKEN \}\}$/);
+      expect(step.run).toContain('doppler run --');
+    }
+    expect(publish.run).toContain('export NODE_AUTH_TOKEN="$NPM_TOKEN"');
   });
 
   test('REQ-REL-2: release.yml verifies each keyless bundle with cosign against the workflow identity', () => {
-    const job = readWorkflow().jobs.npm as Job;
+    const job = readWorkflow().jobs.pack as Job;
     const installers = job.steps.filter((s) => s.uses?.startsWith('sigstore/cosign-installer@'));
     expect(installers.map((s) => s.uses)).toEqual(['sigstore/cosign-installer@v4.1.2']);
     const script = runs(job);
@@ -400,32 +462,18 @@ describe('release: workflow', () => {
         '--certificate-oidc-issuer https://token.actions.githubusercontent.com',
       );
     }
-    expect(script.indexOf('cosign verify-blob')).toBeLessThan(script.indexOf('npm publish'));
+    const verify = job.steps.find((s) => (s.run ?? '').includes('cosign verify-blob')) as Step;
+    const upload = job.steps.find((s) => s.uses?.startsWith('actions/upload-artifact@')) as Step;
+    expect(job.steps.indexOf(verify)).toBeLessThan(job.steps.indexOf(upload));
   });
 
-  test('REQ-REL-2: release.yml publishes only a commit on main, behind the npm-release environment', () => {
-    const job = readWorkflow().jobs.npm as Job;
-    expect(job.environment).toBe('npm-release');
-    const checkout = job.steps.find((s) => s.uses?.startsWith('actions/checkout@')) as Step;
-    expect(checkout.with?.['fetch-depth']).toBe(0);
-    const publish = job.steps.find((s) => (s.run ?? '').includes('npm publish')) as Step;
-    const onMain = job.steps.find((s) => (s.run ?? '').includes('git merge-base')) as Step;
-    expect(onMain.if).toBe(publish.if);
-    expect(onMain.run).toContain(
-      'git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main',
-    );
-    expect(onMain.run).toContain('git merge-base --is-ancestor "$GITHUB_SHA" origin/main');
-    expect(onMain.run).toContain('exit 1');
-    expect(job.steps.indexOf(onMain)).toBeLessThan(job.steps.indexOf(publish));
-    // Repository settings are the owner's job; the workflow says so next to the environment.
-    const text = readFileSync(join(root, '.github/workflows/release.yml'), 'utf8');
-    expect(text).toMatch(/required reviewers on the npm-release environment/);
-  });
-
-  test('REQ-REL-2: release.yml publishes @anyonce/core first and skips a version already on npm', () => {
-    const job = readWorkflow().jobs.npm as Job;
+  test('REQ-REL-2: release.yml publishes @anyonce/core first with provenance and skips a version already on npm', () => {
+    const job = readWorkflow().jobs.publish as Job;
     const publish = (job.steps.find((s) => (s.run ?? '').includes('npm publish')) as Step)
       .run as string;
+    expect(publish).toContain('--provenance');
+    expect(publish).toContain('--access public');
+    expect(publish).toContain('doppler run --');
     const coreLoop = publish.indexOf('for tgz in dist-release/anyonce-core-*.tgz');
     const restLoop = publish.indexOf('for tgz in dist-release/*.tgz');
     expect(coreLoop).toBeGreaterThan(-1);
@@ -436,8 +484,8 @@ describe('release: workflow', () => {
     expect(publish).toContain('return 0');
   });
 
-  test('REQ-CONF-7: release.yml loads the packed conformance vectors outside the checkout before publishing', () => {
-    const job = readWorkflow().jobs.npm as Job;
+  test('REQ-CONF-7: release.yml loads the packed conformance vectors outside the checkout before uploading', () => {
+    const job = readWorkflow().jobs.pack as Job;
     const check = job.steps.find((s) =>
       (s.run ?? '').includes('scripts/release/packed-vectors.ts'),
     ) as Step;
@@ -446,9 +494,9 @@ describe('release: workflow', () => {
     );
     expect(check.if).toBeUndefined();
     const pack = job.steps.find((s) => (s.run ?? '').includes('bun pm pack')) as Step;
-    const publish = job.steps.find((s) => (s.run ?? '').includes('npm publish')) as Step;
+    const upload = job.steps.find((s) => s.uses?.startsWith('actions/upload-artifact@')) as Step;
     expect(job.steps.indexOf(pack)).toBeLessThan(job.steps.indexOf(check));
-    expect(job.steps.indexOf(check)).toBeLessThan(job.steps.indexOf(publish));
+    expect(job.steps.indexOf(check)).toBeLessThan(job.steps.indexOf(upload));
   });
 
   test('REQ-REL-2: release.yml never publishes through changesets and never signs the dry run way', () => {
