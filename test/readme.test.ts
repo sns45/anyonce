@@ -16,6 +16,31 @@ function fenced(markdown: string, lang: string): string[] {
   return out;
 }
 
+/** `import { A, B } from 'specifier';` lines of a code block, mapped to their named imports. */
+function importedFrom(block: string): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  const re = /^import\s+\{([^}]+)\}\s+from\s+'([^']+)';$/gm;
+  for (let m = re.exec(block); m !== null; m = re.exec(block)) {
+    const names = (m[1] ?? '')
+      .split(',')
+      .map((name) => name.trim())
+      .filter((name) => name !== '' && !name.startsWith('type '));
+    const specifier = m[2] ?? '';
+    out.set(specifier, [...(out.get(specifier) ?? []), ...names]);
+  }
+  return out;
+}
+
+/** Every non-private package directory under packages/, by directory name. */
+function publishedPackageDirs(): string[] {
+  return readdirSync(join(root, 'packages')).filter((dir) => {
+    const file = join(root, 'packages', dir, 'package.json');
+    if (!existsSync(file)) return false;
+    const pkg = JSON.parse(readFileSync(file, 'utf8')) as { private?: boolean };
+    return pkg.private !== true;
+  });
+}
+
 /** GitHub's heading anchors: lowercase, punctuation other than hyphens and spaces dropped, spaces to hyphens. */
 function anchors(markdown: string): Set<string> {
   const out = new Set<string>();
@@ -304,5 +329,59 @@ describe('llms.txt', () => {
     for (const doc of readdirSync(join(root, 'docs')).filter((name) => name.endsWith('.md'))) {
       expect(llmsSection('Docs').join('\n')).toContain(`docs/${doc}`);
     }
+  });
+});
+
+describe('package READMEs', () => {
+  test('REQ-DOC-8: every published package ships a non-empty README.md with an Install section and the licence', () => {
+    for (const dir of publishedPackageDirs()) {
+      const text = read(`packages/${dir}/README.md`);
+      expect(text.length).toBeGreaterThan(0);
+      expect(text).toContain('## Install');
+      expect(text).toContain('Apache-2.0');
+    }
+  });
+
+  test('REQ-DOC-8: every link in a package README is absolute, and a repository blob link resolves to a real file', () => {
+    const broken: string[] = [];
+    for (const dir of publishedPackageDirs()) {
+      const text = read(`packages/${dir}/README.md`);
+      const re = /\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+      for (let m = re.exec(text); m !== null; m = re.exec(text)) {
+        const target = m[1] ?? '';
+        if (!/^https?:/.test(target)) {
+          broken.push(`packages/${dir}/README.md: relative link ${target}`);
+          continue;
+        }
+        const blob = target.match(/^https:\/\/github\.com\/sns45\/anyonce\/blob\/main\/([^#]+)/);
+        if (blob !== null && !existsSync(join(root, blob[1] ?? ''))) {
+          broken.push(`packages/${dir}/README.md: ${target}`);
+        }
+      }
+    }
+    expect(broken).toEqual([]);
+  });
+
+  test('REQ-DOC-8: every @anyonce import named in a package README code block is exported by the built package', async () => {
+    // The Durable Objects entry imports the Workers runtime module; outside workerd it is stubbed so the
+    // built module can be loaded and its export names read.
+    mock.module('cloudflare:workers', () => ({ DurableObject: class {} }));
+    const missing: string[] = [];
+    let checked = 0;
+    for (const dir of publishedPackageDirs()) {
+      const text = read(`packages/${dir}/README.md`);
+      for (const block of fenced(text, 'ts')) {
+        for (const [specifier, names] of importedFrom(block)) {
+          if (!specifier.startsWith('@anyonce/')) continue;
+          checked += 1;
+          const mod = (await import(specifier)) as Record<string, unknown>;
+          for (const name of names) {
+            if (!(name in mod)) missing.push(`packages/${dir}/README.md: ${specifier}: ${name}`);
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+    expect(missing).toEqual([]);
   });
 });
