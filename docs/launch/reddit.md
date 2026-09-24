@@ -4,9 +4,8 @@
 
 Claims source: the case study `content/anyonce/ARTICLE.md` in https://github.com/sns45/in8-home/pull/1, to be served at https://in8.sh/work/anyonce. Every number and claim below appears in that article. Re-read each subreddit's sidebar rules on the day of posting (self-promotion ratio, flair, whether project posts belong in a weekly thread) and adjust or skip the post if they have changed.
 
-Links: the case study link in each body uses the Reddit tracked URL. The repository link is untagged. Post one subreddit per day at most, never the same text twice.
+Links: no post body carries a link; the case study link goes in the author's first comment, with the tracked URL below. The repository link is untagged. Post one subreddit per day at most, never the same text twice.
 
-- Tracked URL (post): `https://in8.sh/work/anyonce?utm_source=reddit&utm_medium=post&utm_campaign=anyonce-launch`
 - Tracked URL (first comment): `https://in8.sh/work/anyonce?utm_source=reddit&utm_medium=comment&utm_campaign=anyonce-launch`
 - Repository: `https://github.com/sns45/anyonce`
 

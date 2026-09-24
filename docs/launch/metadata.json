@@ -7,7 +7,6 @@
   "claims_source": "https://github.com/sns45/in8-home/pull/1 (content/anyonce/ARTICLE.md)",
   "campaign": "anyonce-launch",
   "tracked_urls": {
-    "reddit": "https://in8.sh/work/anyonce?utm_source=reddit&utm_medium=post&utm_campaign=anyonce-launch",
     "reddit_comment": "https://in8.sh/work/anyonce?utm_source=reddit&utm_medium=comment&utm_campaign=anyonce-launch",
     "linkedin": "https://in8.sh/work/anyonce?utm_source=linkedin&utm_medium=social&utm_campaign=anyonce-launch"
   },

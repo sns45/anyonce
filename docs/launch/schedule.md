@@ -35,7 +35,7 @@ After Day 2 and Day 3:
 
 | When posting to | Link to |
 |---|---|
-| Reddit | Case study (tracked, in the body or first comment) and the repository; an earlier Reddit thread in the first comment only if it is active |
+| Reddit | Case study (tracked, in the first comment) and the repository; an earlier Reddit thread in the first comment only if it is active |
 | LinkedIn | Case study (tracked) and the repository; the r/programming thread if active |
 
 ## Social proof updates

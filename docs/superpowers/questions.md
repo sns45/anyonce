@@ -545,4 +545,4 @@ The CI run on PR #52 failed once in the Go job on oldstable at `TestStreaming/RE
 
 Recommended resolution: in 0.1.x, make the test wait on a barrier instead of reading immediately: a store wrapper that signals on abandon, or a poll of the store state with a deadline (never a sleep to pass).
 
-**Decision: pending.**
+**Decision: pending.** P7 proceeds on the recommendation.
