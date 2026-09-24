@@ -1,8 +1,10 @@
 # Release (requirements.md 4.9, REQ-REL-2 and REQ-REL-3; Q60, Q61, Q64).
 # Runs only on a pushed tag or a manual dispatch, never on a branch push or a pull request.
 # A `v*` tag packs, signs and publishes the npm packages; a `go/v*` tag verifies the Go module.
-# A dispatch runs both jobs; it publishes only when the `publish` input is true AND it was dispatched
-# on a `v*` tag ref, so a dispatch from a branch can pack, sign and verify but never publish.
+# The npm side is two jobs. `pack` builds, packs, signs and verifies with no environment, so a
+# dispatch from any ref (main included) runs it without an approval. `publish` runs behind the
+# npm-release environment and only when the ref is a `v*` tag and the event is a tag push or a
+# dispatch with the `publish` input true, so a dispatch from a branch can never publish.
 name: release
 on:
   push:
@@ -18,35 +20,24 @@ permissions:
   contents: read
 
 jobs:
-  npm:
+  pack:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    # The owner must configure required reviewers on the npm-release environment in the repository
-    # settings (Settings, Environments, npm-release); without them the environment gates nothing.
-    environment: npm-release
+    # No environment here: keyless signing only needs this job's OIDC token.
     permissions:
       contents: read
       id-token: write
     steps:
-      # Full history, so the publish gate below can check that the tagged commit is on main.
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
       - uses: actions/setup-go@v5
         with:
           go-version: stable
       - uses: sigstore/cosign-installer@v4.1.2
         with:
           cosign-release: v3.1.2
-      - name: Install Doppler CLI
-        uses: dopplerhq/cli-action@v3
       - run: bun install --frozen-lockfile
       - run: bun run build
       - run: bun run test
@@ -95,8 +86,44 @@ jobs:
             cosign verify-blob --bundle "$tgz.sigstore.json" --certificate-identity-regexp '^https://github\.com/sns45/anyonce/\.github/workflows/release\.yml@' --certificate-oidc-issuer https://token.actions.githubusercontent.com "$tgz"
             cosign verify-blob --bundle "$base.cdx.json.sigstore.json" --certificate-identity-regexp '^https://github\.com/sns45/anyonce/\.github/workflows/release\.yml@' --certificate-oidc-issuer https://token.actions.githubusercontent.com "$base.cdx.json"
           done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-tarballs-sboms-signatures
+          path: |
+            dist-release/*.tgz
+            dist-release/*.cdx.json
+            dist-release/*.sigstore.json
+          if-no-files-found: error
+
+  publish:
+    needs: pack
+    if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
+    runs-on: ubuntu-latest
+    # The owner must configure required reviewers on the npm-release environment in the repository
+    # settings (Settings, Environments, npm-release); without them the environment gates nothing.
+    # DOPPLER_TOKEN is an environment secret on npm-release, so only this job can read it.
+    environment: npm-release
+    # npm publish --provenance needs this job's OIDC token.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # Full history, so the gate below can check that the tagged commit is on main.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+      # The tarballs, SBOMs and bundles that pack signed and verified; nothing is rebuilt here.
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-tarballs-sboms-signatures
+          path: dist-release
       - name: packed versions equal the tag
-        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
         shell: bash
         run: |
           expected="${GITHUB_REF_NAME#v}"
@@ -109,7 +136,6 @@ jobs:
           done
       # A v tag on a commit that never reached main (a side branch, a stray commit) must not publish.
       - name: tagged commit is on main
-        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
         shell: bash
         run: |
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
@@ -121,7 +147,6 @@ jobs:
       # DOPPLER_TOKEN environment secret on the npm-release environment; it never lands in a
       # GitHub secret, an .npmrc on disk outside doppler run, or a log line.
       - name: verify npm authentication resolves through Doppler
-        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
         shell: bash
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
@@ -142,7 +167,6 @@ jobs:
       # @anyonce/core goes first, since every other package peers on it. A tarball whose name@version
       # is already on npm is skipped, so a run that failed part way can be rerun.
       - name: publish with provenance
-        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish)
         shell: bash
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
@@ -168,15 +192,6 @@ jobs:
           done
           SCRIPT
           doppler run -- bash /tmp/publish-packages.sh
-      - uses: actions/upload-artifact@v4
-        if: success() || failure()
-        with:
-          name: release-tarballs-sboms-signatures
-          path: |
-            dist-release/*.tgz
-            dist-release/*.cdx.json
-            dist-release/*.sigstore.json
-          if-no-files-found: warn
 
   go:
     if: startsWith(github.ref, 'refs/tags/go/v') || github.event_name == 'workflow_dispatch'
