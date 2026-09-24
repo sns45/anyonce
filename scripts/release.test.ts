@@ -354,7 +354,8 @@ describe('release: workflow', () => {
     expect(script).toContain('go install github.com/sns45/forgeseal/cmd/forgeseal@v0.5.1');
     expect(script).toContain('forgeseal sbom');
     expect(script).toMatch(/forgeseal sign --keyed=false/);
-    expect(script).toContain('forgeseal verify');
+    expect(script).not.toContain('forgeseal verify');
+    expect(script).toContain('cosign verify-blob --bundle');
     expect(script.indexOf('bun pm pack')).toBeLessThan(script.indexOf('forgeseal sign'));
     expect(script).not.toContain('npm publish');
     expect(script).not.toContain('doppler');

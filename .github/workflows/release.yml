@@ -65,9 +65,10 @@ jobs:
         run: bun scripts/release/packed-vectors.ts dist-release/anyonce-conformance-*.tgz
       # Keyless signing through Fulcio under this job's OIDC identity; every signature is recorded in
       # Rekor (Q61). forgeseal defaults to keyed mode, so keyless is explicit. forgeseal writes the
-      # sigstore-go protobuf bundle (v0.3 JSON), which cosign reads with --bundle. `forgeseal verify`
-      # only compares the artifact digest for a keyless bundle; cosign verify-blob checks the Fulcio
-      # chain, the Rekor entry, the signer identity and the OIDC issuer.
+      # sigstore-go protobuf bundle (v0.3 JSON), which cosign reads with --bundle. forgeseal v0.5.1
+      # cannot parse its own keyless bundle (logIndex is a JSON string in the protobuf form), so
+      # cosign verify-blob is the verifier: it checks the Fulcio chain, the Rekor entry, the signer
+      # identity and the OIDC issuer.
       - name: SBOM, sign and verify every tarball
         shell: bash
         run: |
@@ -81,8 +82,6 @@ jobs:
             forgeseal sign --keyed=false --artifact "$tgz" --bundle "$tgz.sigstore.json"
             forgeseal sign --keyed=false --artifact "$base.cdx.json" --bundle "$base.cdx.json.sigstore.json"
             # digest check only
-            forgeseal verify --artifact "$tgz" --bundle "$tgz.sigstore.json"
-            forgeseal verify --artifact "$base.cdx.json" --bundle "$base.cdx.json.sigstore.json"
             cosign verify-blob --bundle "$tgz.sigstore.json" --certificate-identity-regexp '^https://github\.com/sns45/anyonce/\.github/workflows/release\.yml@' --certificate-oidc-issuer https://token.actions.githubusercontent.com "$tgz"
             cosign verify-blob --bundle "$base.cdx.json.sigstore.json" --certificate-identity-regexp '^https://github\.com/sns45/anyonce/\.github/workflows/release\.yml@' --certificate-oidc-issuer https://token.actions.githubusercontent.com "$base.cdx.json"
           done
