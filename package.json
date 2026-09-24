@@ -19,7 +19,7 @@
     "test": "bun test packages/core packages/hono packages/anyq/test packages/conformance conformance/ scripts test/ci.test.ts test/docs.test.ts packages/stores/test packages/webhooks benchmarks test/readme.test.ts test/standards.test.ts",
     "test:coverage": "vitest run --root packages/core --config vitest.config.ts --coverage",
     "test:services": "bun test test/compose.test.ts packages/stores/services packages/anyq/services",
-    "test:reqs": "bun run scripts/reqs.ts --phase p3 && bun run scripts/reqs.ts --phase p4a && bun run scripts/reqs.ts --phase p4b && bun run scripts/reqs.ts --phase p5 && bun run scripts/reqs.ts --phase p6",
+    "test:reqs": "bun run scripts/reqs.ts --phase p3 && bun run scripts/reqs.ts --phase p4a && bun run scripts/reqs.ts --phase p4b && bun run scripts/reqs.ts --phase p5 && bun run scripts/reqs.ts --phase p6 && bun run scripts/reqs.ts --phase p7",
     "size": "bun run scripts/size.ts",
     "typecheck": "bun run --filter '@anyonce/*' typecheck && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p benchmarks/tsconfig.json && tsc --noEmit -p test/tsconfig.json && tsc --noEmit -p test/workers/tsconfig.json && tsc --noEmit -p packages/stores/workers/tsconfig.json && tsc --noEmit -p conformance/report/worker/tsconfig.json && tsc --noEmit -p examples/worker-hono-do/tsconfig.json && tsc --noEmit -p examples/lambda-fetch-dynamodb/tsconfig.json && tsc --noEmit -p examples/webhook-receiver-standard-webhooks/tsconfig.json && tsc --noEmit -p examples/anyq-consumer-ts/tsconfig.json",
     "test:workers": "vitest run --config test/workers/vitest.config.ts",
