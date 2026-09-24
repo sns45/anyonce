@@ -179,12 +179,57 @@ describe('release: packed manifests', () => {
   });
 
   test('REQ-REL-2: checkPackedFiles fails a tarball without package/LICENSE', () => {
-    expect(checkPackedFiles(['package/package.json', 'package/LICENSE'], '@anyonce/hono')).toEqual(
-      [],
-    );
+    expect(
+      checkPackedFiles(
+        ['package/package.json', 'package/LICENSE', 'package/README.md'],
+        '@anyonce/hono',
+      ),
+    ).toEqual([]);
+    expect(
+      checkPackedFiles(
+        ['package/package.json', 'package/dist/index.js', 'package/README.md'],
+        '@anyonce/hono',
+      ),
+    ).toEqual(['@anyonce/hono: the tarball has no package/LICENSE']);
+  });
+
+  test('REQ-REL-2: checkPackedFiles fails a tarball without a README', () => {
+    expect(
+      checkPackedFiles(
+        ['package/package.json', 'package/LICENSE', 'package/README.md'],
+        '@anyonce/hono',
+      ),
+    ).toEqual([]);
+    // npm accepts README, README.md or readme.txt case-insensitively; the check matches the same way.
+    expect(
+      checkPackedFiles(
+        ['package/package.json', 'package/LICENSE', 'package/Readme'],
+        '@anyonce/hono',
+      ),
+    ).toEqual([]);
+    expect(checkPackedFiles(['package/package.json', 'package/LICENSE'], '@anyonce/hono')).toEqual([
+      '@anyonce/hono: the tarball has no README',
+    ]);
     expect(
       checkPackedFiles(['package/package.json', 'package/dist/index.js'], '@anyonce/hono'),
-    ).toEqual(['@anyonce/hono: the tarball has no package/LICENSE']);
+    ).toEqual([
+      '@anyonce/hono: the tarball has no package/LICENSE',
+      '@anyonce/hono: the tarball has no README',
+    ]);
+  });
+
+  test('NFR-3: every published package ships a source README.md, and npm packs it without a files entry', () => {
+    for (const dir of readdirSync(join(root, 'packages'))) {
+      const pkg = JSON.parse(readFileSync(join(root, 'packages', dir, 'package.json'), 'utf8')) as {
+        private?: boolean;
+        files?: string[];
+      };
+      if (pkg.private === true) continue;
+      const readme = readFileSync(join(root, 'packages', dir, 'README.md'), 'utf8');
+      expect(readme.length).toBeGreaterThan(0);
+      // README.md is not listed in "files": npm and bun pm pack always include it regardless.
+      expect(pkg.files ?? []).not.toContain('README.md');
+    }
   });
 
   test('NFR-3: the source manifests declare no workspace:* peer (bun pm pack would pin it exactly)', () => {
