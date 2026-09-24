@@ -55,7 +55,7 @@ Section 1 motivates the header by the difference between idempotent and non-idem
 
 > An HTTP request method is considered idempotent if the intended effect on the server of multiple identical requests with that method is the same as the effect for a single such request. Per [RFC9110], the methods OPTIONS, HEAD, GET, PUT and DELETE are idempotent while methods POST and PATCH are not.
 
-That is motivation, not a rule. Nothing in the draft says whether a key that arrives on a GET is honoured, stored and replayed, or ignored. Client libraries commonly attach the header to every request, so the question comes up in practice.
+That is motivation, not a rule. Nothing in the draft says whether a key that arrives on a GET is honoured, stored and replayed, or ignored. A client library that attaches the header to every request would raise the question on every GET it sends.
 
 ### Evidence from running code
 
@@ -110,6 +110,8 @@ Two of the three independent implementations in the run, hono-idempotency 0.9.1 
 ```text
 A resource that responds with the result of a previously completed operation SHOULD indicate that it has done so by including the Idempotency-Replayed HTTP response header field. Idempotency-Replayed is an Item Structured Header [RFC9651] whose value MUST be the Token "true". A resource MUST NOT include this field in a response to a first time request. The Idempotency-Replayed field name should be added to the "Hypertext Transfer Protocol (HTTP) Field Name Registry".
 ```
+
+The Token "true" follows what hono-idempotency and idempo already send. A Structured Fields Boolean (`?1`) is the more idiomatic form, and the WG may prefer it.
 
 ## G5: a 409 says nothing about when to come back
 
