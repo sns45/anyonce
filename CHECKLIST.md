@@ -76,6 +76,6 @@ Each gate is run with `verification-before-completion`. Paste the raw command ou
 
 ## P7 standards and launch
 
-- [ ] `docs/standards/S1-wg-pr.md`, `S2-mailing-list.md`, `S3-draft-issues.md` drafted; nothing sent
-- [ ] Five launch surfaces prepared via the project-launch skill: in8.sh case study (four-file template, "Why this is new" uses requirements.md 0.3 verbatim or narrowed with evidence), homepage card, GitHub profile README, resume (both variants, one Letter page, column balance within 20px), `/promote` drafts for Reddit and LinkedIn
-- [ ] Case study cites prior art table from requirements.md 0.2 with dates
+- [x] `docs/standards/S1-wg-pr.md`, `S2-mailing-list.md`, `S3-draft-issues.md` drafted; nothing sent (docs/standards, pinned to DRAFT-GAPS.md and conformance/results by test/standards.test.ts)
+- [ ] Five launch surfaces prepared via the project-launch skill: in8.sh case study (four-file template, "Why this is new" uses requirements.md 0.3 verbatim or narrowed with evidence), homepage card, GitHub profile README, resume (both variants, one Letter page, column balance within 20px), `/promote` drafts for Reddit and LinkedIn (open: case study, card, sitemap, llms.txt and redirects in https://github.com/sns45/in8-home/pull/1, profile README in https://github.com/sns45/sns45/pull/1, Reddit and LinkedIn drafts in docs/launch; the resume entry is https://github.com/sns45/resume/pull/1 as atsOnly, but the designed variant already measures two Letter pages with columns 51px apart on main, so one page and 20px are not met until the owner decides Q87)
+- [x] Case study cites prior art table from requirements.md 0.2 with dates (landscape table in the case study, https://github.com/sns45/in8-home/pull/1, dates re-verified 24 September 2026 with the quayside and Powertools rows added, Q82; pending merge of sns45/in8-home#1)

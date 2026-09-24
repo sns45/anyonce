@@ -387,7 +387,7 @@ REQ-DOC-1 asks for a conformance badge and a link to the case study. The case st
 
 Recommended resolution: link `https://in8.sh/anyonce` (the same host and prefix as the D11 problem base URI) with the words "case study, published at launch". The badge is a static shields.io image whose text states anyonce's own core and profile pass counts, links to `conformance/REPORT.md`, and is asserted against `conformance/results/` by a test, so it cannot drift from the report. No badge endpoint is hosted.
 
-**Decision: pending.** P6 proceeds on the recommendation.
+**Decision: pending.** P6 proceeds on the recommendation. Superseded in part by Q83.
 
 ## Q63: how NFR-1's "under 2 ms p50" is measured
 
@@ -468,3 +468,116 @@ REQ-HTTP-17 says the Worker example passes the URL-mode runner. The Worker examp
 Recommended resolution: read the acceptance criterion as satisfied and note it here; no change.
 
 **Decision: pending.** P6 proceeds on the recommendation.
+
+## Q80: the launch surfaces describe a 0.1.0 release that has not happened
+
+P7 writes install commands and package links into the case study, the homepage card, the profile README, the resume and the promote drafts. Checked on 24 September 2026: `npm view @anyonce/core` is a 404 and no `go/v0.1.0` tag exists (the release waits on the owner's go, Q64).
+
+Recommended resolution: every surface writes the commands exactly as they will work once 0.1.0 is published (`bun add @anyonce/core`, `go get github.com/sns45/anyonce/go@v0.1.0`) and says in plain words that the packages publish with the release; none says "available on npm" or links an npm page as live. The case study's "See it run" section uses commands that work today from a clone of the public repository (`bun install`, `bun run build`, `bun run test`, `bun run conformance`), so nothing on the page depends on the publish. The pages are merged and deployed only after the release (the site PR says so), and the "publishes with the release" sentence is removed in the same change that follows the publish.
+
+**Decision: pending.** P7 proceeds on the recommendation.
+
+## Q81: the project-launch skill says push to main, the P7 brief says branch and PR
+
+The project-launch skill's convention for the in8.sh site, the resume and the profile README is "no feature branches, no PRs; on explicit approval commit directly to main and push". The P7 brief says every change to another repository goes on a feature branch with a PR opened against it, never merged, never pushed to a default branch.
+
+Recommended resolution: the brief wins for this launch. Each of the three repositories gets one branch `anyonce-launch` and one PR; the PR is the approval surface the skill's Step 6 asks for (consolidated diff per repo plus caveats), and the owner merges or squashes it, which lands the same commit on main that the skill would have pushed. No deploy is run from any PR.
+
+**Decision: pending.** P7 proceeds on the recommendation.
+
+## Q82: the 0.3 novelty claim, re-verified at launch, needs item 3 narrowed
+
+Requirements 0.3 says the claim is narrowed in the article, not defended, if any item is already true of another project at launch. Re-verified on 24 September 2026 against npm, `proxy.golang.org`, GitHub topic `idempotency-key` and the IETF datatracker:
+
+- The four dated entries of the 0.2 table are unchanged: `hono-idempotency` 0.9.1 (18 July 2026), `idempo` v1.0.0 (2 June 2026), Fiber v3.5.0 (12 August 2026), draft -07 expired 18 April 2026 with no -08, and the WG repo's last commit is still `dab060c` (26 February 2025).
+- `quayside` 1.4.0 (npm, first published 15 August 2026, `github.com/pinceladasdaweb/quayside`, TypeScript only) was not in the 0.2 table. It has a transport-agnostic `execute(key, fn)` core, HTTP adapters for Express, Fastify and Hono with draft semantics, documented recipes (not adapters) for RabbitMQ and SQS consumers, no webhook receiver, no Go, no draft conformance suite, and five stores (memory, Redis, Postgres, MySQL, DynamoDB) that "pass the same storage-contract suite against a real server", with an atomic create-if-absent claim and "a 50-way concurrency race" in its tests. That is item 3 of the claim, in one language.
+- `@aws-lambda-powertools/idempotency` 2.35.0 (18 August 2026) applies one idempotency utility to any Lambda handler whatever the event source (API Gateway, SQS, EventBridge), in TypeScript, Python, Java and .NET, with no Go implementation, no draft header semantics and no conformance suite. It is the nearest prior art for item 1 and was also missing from 0.2.
+- `idempot-js` (`github.com/idempot-dev/idempot-js`, Express, Fastify, Hono, draft -07) and `idemgate` (a Go sidecar citing draft -04) are HTTP only and ship no suite for other implementations.
+
+Items 1 and 2 stand as written: no other project applies one state machine and one store contract across all three doors in both TypeScript and Go, and none ships a language-agnostic suite for the draft that grades third parties. Item 3 does not stand as "first": quayside makes the same single-atomic-write guarantee with a raced contract suite for its TypeScript stores.
+
+Recommended resolution: the case study states items 1 and 2 verbatim and narrows item 3 to what is still only true of anyonce, stated as: "guarantees the claim step is a single atomic write on every supported store in both TypeScript and Go, with each shared store's claim statement (SQL, Lua, DynamoDB condition expression) byte-identical across the two languages and enforced by a parity test, and the same concurrency race run against every backend in both", with quayside named and dated as the TypeScript project that already makes the one-language guarantee. The "What exists today" table adds quayside and Powertools rows with dates. requirements.md 0.2 and 0.3 are amended to match only after the owner decides (the same route Q51 took).
+
+**Decision: pending.** P7 proceeds on the recommendation.
+
+## Q83: the case study URL and the problem type URIs do not exist on in8.sh
+
+The README links the case study as `https://in8.sh/anyonce` (Q62), but in8.sh serves case studies at `/work/<slug>`, so the page will be `https://in8.sh/work/anyonce`. D11's default problem base URI is `https://in8.sh/anyonce/problems/`, and nothing on the site answers under that prefix, so every problem `type` anyonce emits is a URI that 404s when dereferenced. RFC 9457 does not require a `type` URI to resolve, but it recommends that it lead to human-readable documentation.
+
+Recommended resolution: the README links `https://in8.sh/work/anyonce`. The in8.sh PR adds two redirects, `/anyonce` to `/work/anyonce` and `/anyonce/problems/<code>` to the matching anchor of `docs/problems.md` on GitHub, so both the old link and every emitted `type` resolve without changing D11. No deploy until the owner's go.
+
+`conformance/schema.json` has `$id` `https://in8.sh/anyonce/conformance/schema.json`, which neither redirect covers. A JSON Schema `$id` is an identifier for the schema, and JSON Schema does not require it to resolve, so no change is recommended for it.
+
+**Decision: pending.** P7 proceeds on the recommendation.
+
+## Q84: what S1 proposes to the WG repository
+
+Requirements 0.4 S1 offers a PR adding `conformance/` vectors "or, if the WG prefers, an issue linking to the anyonce suite", plus an Implementation Status entry per RFC 7942. The WG repository `ietf-wg-httpapi/idempotency` holds only the draft source; a directory of Apache-2.0 JSON vectors contributed into an IETF repository becomes an IETF contribution under the Note Well (BCP 78 and BCP 79), and the WG has never carried test material for this draft.
+
+Recommended resolution: S1 is drafted as one PR that touches only the draft source, adding an anyonce entry to section 4 (Implementation Status) in the RFC 7942 shape with a link to the suite and to the cross-implementation report, and its body offers the vectors as a follow-up directory if the chairs want them in the WG repository. The alternative issue text is drafted beside it for the case where the editors prefer not to take a PR against an expired draft.
+
+**Decision: pending.** P7 proceeds on the recommendation.
+
+## Q85: how many S3 issues, and in what order
+
+`conformance/DRAFT-GAPS.md` carries seventeen entries, G1 to G17. Requirements 0.4 S3 names four known candidates (the replay header, the 5xx wording, sf-string syntax, 409 timing). Seventeen issues opened at once on an expired draft reads as a dump rather than as running-code feedback.
+
+Recommended resolution: `docs/standards/S3-draft-issues.md` drafts one issue per gap, each carrying the DRAFT-GAPS proposed text verbatim and the evidence from the P5 run, in two waves. Wave 1 is the four named candidates (G4 replay indication, G6 and G7 together as one issue on the "success or an error" sentence, G8 sf-string syntax, G5 Retry-After on 409) plus G16 (obsolete references, editorial and uncontroversial). Wave 2, the remaining eleven, is filed after the WG answers wave 1 or the S2 thread. When an issue is filed, the matching DRAFT-GAPS entry's `Status:` line becomes `issue filed <url>`.
+
+**Decision: pending.** P7 proceeds on the recommendation.
+
+## Q86: P7 has no REQ ids
+
+Requirements section 6 gives P7 the scope "0.4" rather than REQ ids, and the CLAUDE.md rule is that test names start with the REQ id they prove.
+
+Recommended resolution: the tests that pin the standards drafts are named after the 0.4 item they prove (`S1: ...`, `S2: ...`, `S3: ...`); `scripts/reqs.ts` does not count them, which is correct because 0.4 defines no REQ ids. `bun run test:reqs` gains `--phase p7`, which covers the transitive scope P0 to P6 and so still fails on any missing id. The one test that pins the launch drafts under `docs/launch/` proves no 0.4 item (the launch surfaces are the P7 row of section 6, not a standards action), so it is named after that row instead: `P7: ...`.
+
+**Decision: pending.** P7 proceeds on the recommendation.
+
+## Q87: the designed resume does not fit one Letter page, before anyonce
+
+CHECKLIST P7 asks for the resume in both variants on one Letter page with the two columns within 20px of each other. Measured with headless Chromium on `sns45/resume` main, before any anyonce change: the designed print sheet is 1074px against a 998px Letter content area, so it prints on two pages on `/`, `/eu` and `/alt` (the last three Technical Skills lines spill); the ATS variant prints on three pages; at 1400px the columns end at 1512px and 1563px, 51px apart, over the 20px target. A column ratio change alone does not fix it (1037px at 1.08/0.92). Adding anyonce to the combined "Anyq & anyhook" designed entry measured +91px.
+
+Recommended resolution: anyonce ships as `atsOnly` (https://github.com/sns45/resume/pull/1) and the designed variant is left byte identical to main. The owner chooses a curation change, for example extending the Anyq & anyhook entry to "Anyq, anyhook & anyonce" and demoting one other designed entry to `atsOnly`, after a manual print preview of main, since headless Chromium may differ from the owner's print path. The CHECKLIST resume item stays open until then.
+
+**Decision: pending.** P7 proceeds on the recommendation.
+
+## Q88: the REQ-HTTP-18 hijack test in go/httpmw races the abandon
+
+The CI run on PR #52 failed once in the Go job on oldstable at `TestStreaming/REQ-HTTP-18: a hijacked connection passes through and the claim is abandoned` (`go/httpmw/middleware_test.go`, around line 399). The test reads the store as soon as the client has the body, which can happen before the middleware's abandon runs. It passed on rerun; P7 changed no Go.
+
+Recommended resolution: in 0.1.x, make the test wait on a barrier instead of reading immediately: a store wrapper that signals on abandon, or a poll of the store state with a deadline (never a sleep to pass).
+
+**Decision: pending.** P7 proceeds on the recommendation.
+
+## Q89: requirements section 6 P7 row and section 7 items 4 and 6 need the owner's go
+
+The section 6 P7 row says "S1..S3 executed", section 7 item 4 says the S1 PR or issue is open, the S2 mail sent and the S3 issues filed, and item 6 says the case study is live on in8.sh. Each is an external action this phase may not take, like the release in Q64.
+
+Recommended resolution: P7 drafts only. The P7 row and section 7 items 4 and 6 stay open until the owner gives the go, in this order: the 0.1.0 release (Q64); then the S4 issues offered to hono-idempotency, idempo and Fiber together with the S2 mail, because S1 and S2 promise that the findings go to each project's authors first; then the S1 PR; then S3 wave 1 (Q85); then the in8.sh deploy and the merges of the three launch PRs (sns45/in8-home#1, sns45/sns45#1, sns45/resume#1), with the article re-pinned to the P7 merge commit first (Q90), since the case study, the profile README entry and the resume entry carry per project scores; then the Reddit and LinkedIn posts; then S3 wave 2. `docs/launch/README.md` and `docs/launch/schedule.md` carry the same order.
+
+**Decision: pending.** P7 proceeds on the recommendation.
+
+## Q90: the case study pins its source links to a commit older than the one it describes
+
+The case study in sns45/in8-home#1 pins every source link to `bc7f476` (the P6 merge), while its "See it run" section clones `main`. The two drift apart as soon as P7 merges: the DRAFT-GAPS link at `bc7f476` still carries the old G14 wording ("three different ways") that P7 corrected, and a test count captured at one commit is wrong at the next.
+
+Recommended resolution: before the deploy, re-pin the article's source links to the P7 merge commit on main and re-check every figure it quotes against that commit. The article's next revision drops the exact test count, so nothing has to be re-captured by hand beyond that check.
+
+**Decision: pending.** P7 proceeds on the recommendation.
+
+## Q91: the case study is longer than the project-launch word guideline
+
+The project-launch skill's article guideline is 1,800 to 2,800 prose words. The anyonce case study is about 3,380 prose words, level with the greplost case study the owner approved at 3,370.
+
+Recommended resolution: the owner signs off on the length as it stands, on the greplost precedent, or asks for further cuts.
+
+**Decision: pending.** P7 proceeds on the recommendation.
+
+## Q92: the project-launch skill's reference files are stale
+
+Running the project-launch skill for anyonce found its references out of date against the three repositories: `targets.md` says "no feature branches, no PRs", which Q81 overrode for this launch only; it says there is no headless print tooling, while in8-home ships Playwright; it counts 5 designed and 8 ATS resume projects where main now has 5 and 9; and the homepage card order, the `llms.txt` sections, the note that figures are hand-written SVG, and the resume entry example for anyq no longer match the repositories.
+
+Recommended resolution: refresh the skill's reference files after the launch, as the skill's own rule asks when a target changes. The files live outside this repository, so the refresh needs the owner's approval and is not part of any anyonce PR.
+
+**Decision: pending.** P7 proceeds on the recommendation.
