@@ -91,7 +91,7 @@
     },
     "packages/anyq": {
       "name": "@anyonce/anyq",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "devDependencies": {
         "@anyonce/core": "workspace:*",
         "@anyq/core": "0.5.0",
@@ -108,7 +108,7 @@
     },
     "packages/conformance": {
       "name": "@anyonce/conformance",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "bin": {
         "anyonce-conformance": "./dist/cli.js",
       },
@@ -118,7 +118,7 @@
     },
     "packages/core": {
       "name": "@anyonce/core",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "devDependencies": {
         "@anyonce/conformance": "workspace:*",
         "@anyonce/fixture-hono": "workspace:*",
@@ -126,7 +126,7 @@
     },
     "packages/hono": {
       "name": "@anyonce/hono",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "devDependencies": {
         "@anyonce/conformance": "workspace:*",
         "@anyonce/core": "workspace:*",
@@ -140,7 +140,7 @@
     },
     "packages/stores": {
       "name": "@anyonce/stores",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "devDependencies": {
         "@anyonce/conformance": "workspace:*",
         "@anyonce/core": "workspace:*",
@@ -176,7 +176,7 @@
     },
     "packages/webhooks": {
       "name": "@anyonce/webhooks",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "devDependencies": {
         "@anyhook/signing": "0.2.2",
         "@anyonce/conformance": "workspace:*",
