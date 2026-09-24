@@ -122,11 +122,16 @@ export function checkPackedManifest(manifest: unknown, name: string): string[] {
   return problems;
 }
 
-/** Checks a tarball's file listing (`tar -tzf`): the package must ship its LICENSE. */
+/** Checks a tarball's file listing (`tar -tzf`): the package must ship its LICENSE and a README. */
 export function checkPackedFiles(listing: string[], name: string): string[] {
-  return listing.some((f) => f === 'package/LICENSE')
-    ? []
-    : [`${name}: the tarball has no package/LICENSE`];
+  const problems: string[] = [];
+  if (!listing.some((f) => f === 'package/LICENSE')) {
+    problems.push(`${name}: the tarball has no package/LICENSE`);
+  }
+  if (!listing.some((f) => /^package\/readme/i.test(f))) {
+    problems.push(`${name}: the tarball has no README`);
+  }
+  return problems;
 }
 
 /** Reads `package/package.json` out of a packed tarball without unpacking it. */

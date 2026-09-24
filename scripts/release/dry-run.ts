@@ -171,14 +171,8 @@ function verify(
   return res.code === 0 && res.stderr.includes('Signature verification: PASSED');
 }
 
-/** Reported, not failed on: a tarball without a README ships without one on the npm page. */
-function publishNotes(name: string, listing: string[]): string[] {
-  return listing.some((f) => /^package\/readme/i.test(f)) ? [] : [`${name}: no README file`];
-}
-
 async function main(): Promise<void> {
   const failures: string[] = [];
-  const notes: string[] = [];
 
   step('clean release-dry-run');
   for (const dir of [
@@ -249,7 +243,6 @@ async function main(): Promise<void> {
     );
     for (const problem of problems) console.log(`  ${problem}`);
     failures.push(...problems);
-    notes.push(...publishNotes(pkg.name, listing));
     packed.push({ pkg, tarball });
   }
 
@@ -388,10 +381,6 @@ async function main(): Promise<void> {
   );
   console.log(`summary: ${relative(repo, join(out, 'summary.json'))}`);
   console.log('nothing was published, tagged, pushed or signed keyless');
-  if (notes.length > 0) {
-    console.log(`\nbefore the real publish (${notes.length} notes, not failures):`);
-    for (const n of notes) console.log(`  ${n}`);
-  }
 
   if (failures.length > 0) {
     console.error(`\nDRY RUN FAILED (${failures.length}):`);
