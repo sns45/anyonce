@@ -530,3 +530,19 @@ Requirements section 6 gives P7 the scope "0.4" rather than REQ ids, and the CLA
 Recommended resolution: the tests that pin the standards drafts are named after the 0.4 item they prove (`S1: ...`, `S2: ...`, `S3: ...`); `scripts/reqs.ts` does not count them, which is correct because 0.4 defines no REQ ids. `bun run test:reqs` gains `--phase p7`, which covers the transitive scope P0 to P6 and so still fails on any missing id.
 
 **Decision: pending.** P7 proceeds on the recommendation.
+
+## Q87: the designed resume does not fit one Letter page, before anyonce
+
+CHECKLIST P7 asks for the resume in both variants on one Letter page with the two columns within 20px of each other. Measured with headless Chromium on `sns45/resume` main, before any anyonce change: the designed print sheet is 1074px against a 998px Letter content area, so it prints on two pages on `/`, `/eu` and `/alt` (the last three Technical Skills lines spill); the ATS variant prints on three pages; at 1400px the columns end at 1512px and 1563px, 51px apart, over the 20px target. A column ratio change alone does not fix it (1037px at 1.08/0.92). Adding anyonce to the combined "Anyq & anyhook" designed entry measured +91px.
+
+Recommended resolution: anyonce ships as `atsOnly` (https://github.com/sns45/resume/pull/1) and the designed variant is left byte identical to main. The owner chooses a curation change, for example extending the Anyq & anyhook entry to "Anyq, anyhook & anyonce" and demoting one other designed entry to `atsOnly`, after a manual print preview of main, since headless Chromium may differ from the owner's print path. The CHECKLIST resume item stays open until then.
+
+**Decision: pending.** P7 proceeds on the recommendation.
+
+## Q88: the REQ-HTTP-18 hijack test in go/httpmw races the abandon
+
+The CI run on PR #52 failed once in the Go job on oldstable at `TestStreaming/REQ-HTTP-18: a hijacked connection passes through and the claim is abandoned` (`go/httpmw/middleware_test.go`, around line 399). The test reads the store as soon as the client has the body, which can happen before the middleware's abandon runs. It passed on rerun; P7 changed no Go.
+
+Recommended resolution: in 0.1.x, make the test wait on a barrier instead of reading immediately: a store wrapper that signals on abandon, or a poll of the store state with a deadline (never a sleep to pass).
+
+**Decision: pending.** P7 proceeds on the recommendation.

@@ -232,7 +232,7 @@ Each example has a README and a smoke test that runs in CI.
 - [requirements.md](requirements.md): the design.
 - [llms.txt](llms.txt): packages and semantics in one page for language models.
 
-The case study, [in8.sh/anyonce](https://in8.sh/anyonce), is published at launch.
+The case study, [in8.sh/work/anyonce](https://in8.sh/work/anyonce), is published at launch.
 
 ## Licence
 

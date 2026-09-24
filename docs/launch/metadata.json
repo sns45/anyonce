@@ -1,0 +1,22 @@
+{
+  "_note": "Unsent draft. Nothing has been posted. Posting waits on the owner's go and on the in8.sh deploy of the case study (which itself follows the 0.1.0 release, Q80).",
+  "project": "anyonce",
+  "generated": "2026-09-24",
+  "github_url": "https://github.com/sns45/anyonce",
+  "case_study_url": "https://in8.sh/work/anyonce",
+  "claims_source": "https://github.com/sns45/in8-home/pull/1 (content/anyonce/ARTICLE.md)",
+  "campaign": "anyonce-launch",
+  "tracked_urls": {
+    "reddit_comment": "https://in8.sh/work/anyonce?utm_source=reddit&utm_medium=comment&utm_campaign=anyonce-launch",
+    "linkedin": "https://in8.sh/work/anyonce?utm_source=linkedin&utm_medium=social&utm_campaign=anyonce-launch"
+  },
+  "platforms": {
+    "reddit": {
+      "subreddits": ["r/programming", "r/golang", "r/typescript", "r/serverless", "r/CloudFlare"],
+      "status": "draft_unsent",
+      "posted_at": null,
+      "urls": []
+    },
+    "linkedin": { "status": "draft_unsent", "posted_at": null, "url": null }
+  }
+}
