@@ -39,7 +39,7 @@ The second answer is the first one again, same `201` and same order id, with `Id
 
 ## Install
 
-The npm packages and the Go module are published at launch as 0.1.0; until then the lines below describe that release.
+The npm packages and the Go module are published as 0.1.0, with npm provenance and the Go module tagged `go/v0.1.0`.
 
 ```sh
 bun add @anyonce/core                      # engine, MemoryStore, and @anyonce/core/http (withIdempotency)
@@ -232,7 +232,7 @@ Each example has a README and a smoke test that runs in CI.
 - [requirements.md](requirements.md): the design.
 - [llms.txt](llms.txt): packages and semantics in one page for language models.
 
-The case study, [in8.sh/work/anyonce](https://in8.sh/work/anyonce), is published at launch.
+The case study is at [in8.sh/work/anyonce](https://in8.sh/work/anyonce).
 
 ## Licence
 

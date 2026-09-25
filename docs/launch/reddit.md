@@ -9,7 +9,7 @@ Links: no post body carries a link; the case study link goes in the author's fir
 - Tracked URL (first comment): `https://in8.sh/work/anyonce?utm_source=reddit&utm_medium=comment&utm_campaign=anyonce-launch`
 - Repository: `https://github.com/sns45/anyonce`
 
-Guardrails for every post and every reply in the thread: the 0.1.0 packages are not published until the release (say "publishes with 0.1.0", never "on npm"); no standards action has been sent (say "drafted"); the atomic claim point is only ever stated in its narrowed form (both languages, byte identical statements, parity test), and quayside is named as the TypeScript project that already makes the one language guarantee; no stars, downloads or adoption claims.
+Guardrails for every post and every reply in the thread: the 0.1.0 packages are published on npm with provenance and the Go module is tagged `go/v0.1.0` (say "on npm" and "go/v0.1.0", never "publishes with 0.1.0"); no standards action has been sent (say "drafted"); the atomic claim point is only ever stated in its narrowed form (both languages, byte identical statements, parity test), and quayside is named as the TypeScript project that already makes the one language guarantee; no stars, downloads or adoption claims.
 
 ---
 
@@ -35,7 +35,7 @@ Case study with the landscape table, the diagrams and the honest scope: https://
 
 Repository: https://github.com/sns45/anyonce
 
-It is 0.1.0 pre-release; the packages publish with the release. Question for anyone who runs this in production: do you replay a 500 to a retried request, or release the key? The three implementations I measured split three ways against a 201, a 404 and a 500.
+It is 0.1.0, published on npm with provenance and as a tagged Go module. Question for anyone who runs this in production: do you replay a 500 to a retried request, or release the key? The three implementations I measured split three ways against a 201, a 404 and a 500.
 
 ---
 
@@ -58,7 +58,7 @@ The part I would like Go eyes on is the store side. `begin` is one conditional w
 
 **First comment**
 
-Author here. Once 0.1.0 is published the module installs with `go get github.com/sns45/anyonce/go@v0.1.0`; until then it runs from a clone, and `go run -C go ./cmd/fixture -idempotent -store memory` starts the reference fixture the conformance runner grades.
+Author here. The module installs with `go get github.com/sns45/anyonce/go@v0.1.0`; it also runs from a clone, and `go run -C go ./cmd/fixture -idempotent -store memory` starts the reference fixture the conformance runner grades.
 
 One pattern worth arguing about: a lease plus a fence token instead of a lock. A crashed worker's lease expires and the next request takes the key over with the fence incremented; a worker that was only slow completes afterwards with a stale fence and its write is refused.
 
@@ -92,7 +92,7 @@ A retry of a completed request gets the stored answer with `Idempotency-Replayed
 
 **First comment**
 
-Author here. Install lines for when 0.1.0 is published: `bun add @anyonce/core @anyonce/hono`. The packages are not on the registry yet; today it runs from a clone with `bun install && bun run build && bun run test`.
+Author here. Install with `bun add @anyonce/core @anyonce/hono hono`. It also runs from a clone with `bun install && bun run build && bun run test`.
 
 Where I think it differs from quayside: the claim statement for each shared store is byte identical between the TypeScript and Go implementations, enforced by a parity test, and the same race runs against every backend in both languages. If you only need TypeScript over HTTP, quayside and hono-idempotency are both worth a look, and the case study's table says where each one stops.
 
@@ -119,7 +119,7 @@ The Hono middleware answers a completed duplicate from the store, a concurrent o
 
 Author here. The case study has the full trade off and the landscape: https://in8.sh/work/anyonce?utm_source=reddit&utm_medium=comment&utm_campaign=anyonce-launch
 
-Repository: https://github.com/sns45/anyonce (0.1.0 pre-release; the packages publish with the release).
+Repository: https://github.com/sns45/anyonce (0.1.0, published on npm and as a tagged Go module).
 
 For those running idempotency on Workers today: which store do you claim keys in, and have you hit the double write window with KV in practice?
 
@@ -142,6 +142,6 @@ Operationally: a claim is one conditional write (a DynamoDB condition expression
 Author here. Scope, stated plainly: the guarantee is at most one handler execution per key while the record is alive (24 hours by default), not exactly once side effects, and nothing has been load tested in production or run against live cloud accounts. CI runs the store suites against DynamoDB Local, Redis 7 and Postgres 16.
 
 Case study: https://in8.sh/work/anyonce?utm_source=reddit&utm_medium=comment&utm_campaign=anyonce-launch
-Repository: https://github.com/sns45/anyonce (0.1.0 pre-release; packages publish with the release)
+Repository: https://github.com/sns45/anyonce (0.1.0, published on npm and as a tagged Go module)
 
 How long do you keep idempotency records in your functions, and has a TTL shorter than your retry window ever bitten you?
